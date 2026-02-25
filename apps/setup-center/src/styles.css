@@ -1350,6 +1350,9 @@ button:disabled {
   padding: 8px 12px;
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
+  overflow: visible;
+  position: relative;
+  z-index: 10;
 }
 
 .chatTopBarBtn {
@@ -3085,4 +3088,128 @@ button:disabled {
 @keyframes convSpin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* ═══════════════════════════════════════════════════════
+   Agent Orbit Strip — floating avatars in top bar
+   ═══════════════════════════════════════════════════════ */
+
+.agentOrbitStrip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+  padding: 0 4px;
+  overflow: visible;
+}
+
+.agentOrbitNode {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  padding: 0;
+  outline: none;
+  color: inherit;
+  animation: orbitFadeIn 0.3s ease both;
+}
+.agentOrbitNode:nth-child(1) { animation-delay: 0ms; }
+.agentOrbitNode:nth-child(2) { animation-delay: 40ms; }
+.agentOrbitNode:nth-child(3) { animation-delay: 80ms; }
+.agentOrbitNode:nth-child(4) { animation-delay: 120ms; }
+.agentOrbitNode:nth-child(5) { animation-delay: 160ms; }
+.agentOrbitNode:nth-child(6) { animation-delay: 200ms; }
+.agentOrbitNode:nth-child(7) { animation-delay: 240ms; }
+.agentOrbitNode:nth-child(8) { animation-delay: 280ms; }
+
+@keyframes orbitFadeIn {
+  from { opacity: 0; transform: scale(0.5) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.agentOrbitNode:hover {
+  transform: scale(1.2);
+  border-color: var(--brand);
+  box-shadow: 0 0 12px rgba(14, 165, 233, 0.35);
+  z-index: 2;
+}
+
+.agentOrbitActive {
+  border-color: var(--brand);
+  box-shadow: 0 0 8px rgba(14, 165, 233, 0.25);
+}
+
+.agentOrbitRunning {
+  animation: orbitGlow 1.5s ease-in-out infinite;
+}
+
+.agentOrbitIcon {
+  font-size: 15px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.agentOrbitPulse {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid var(--brand);
+  opacity: 0;
+  animation: orbitPulseRing 1.5s ease-out infinite;
+  pointer-events: none;
+}
+
+/* Orbit tooltip — fixed position, portaled to body */
+.agentOrbitTooltip {
+  position: fixed;
+  transform: translateX(-50%) scale(0.92);
+  min-width: 100px;
+  max-width: 200px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  z-index: 99998;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+.agentOrbitTooltipVisible {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+}
+.agentOrbitTooltipName {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--brand);
+}
+.agentOrbitTooltipTitle {
+  font-size: 10px;
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+@keyframes orbitGlow {
+  0%, 100% { box-shadow: 0 0 4px rgba(14, 165, 233, 0.2); }
+  50% { box-shadow: 0 0 14px rgba(14, 165, 233, 0.5); }
+}
+
+@keyframes orbitPulseRing {
+  0% { transform: scale(0.85); opacity: 0.8; }
+  100% { transform: scale(1.4); opacity: 0; }
 }

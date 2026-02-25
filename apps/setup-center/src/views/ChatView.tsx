@@ -1469,8 +1469,12 @@ export function ChatView({
   const [selectedEndpoint, setSelectedEndpoint] = useState("auto");
   const [planMode, setPlanMode] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
+  const streamingConvIdRef = useRef<string | null>(null);
+  const liveMessagesCache = useRef<Map<string, ChatMessage[]>>(new Map());
+  const messagesSnapshotRef = useRef<ChatMessage[]>(messages);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [convSearchQuery, setConvSearchQuery] = useState("");
+  const [orbitTip, setOrbitTip] = useState<{ x: number; y: number; name: string; title: string } | null>(null);
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashFilter, setSlashFilter] = useState("");
   const [slashSelectedIdx, setSlashSelectedIdx] = useState(0);
@@ -1594,43 +1598,56 @@ export function ChatView({
     return () => { if (saveMessagesTimerRef.current) clearTimeout(saveMessagesTimerRef.current); };
   }, [messages, activeConvId, isStreaming]);
 
+  // Keep a ref that always points to latest messages (for snapshot without adding messages to deps)
+  useEffect(() => { messagesSnapshotRef.current = messages; }, [messages]);
+
   // ── 切换对话时加载对应消息 ──
   const prevConvIdRef = useRef<string | null>(activeConvId);
   const skipConvLoadRef = useRef(false); // sendMessage 创建新对话时跳过加载
   useEffect(() => {
     if (activeConvId && activeConvId !== prevConvIdRef.current) {
+      // Switching away from a streaming conversation — snapshot live messages
+      const leavingId = prevConvIdRef.current;
+      if (leavingId && streamingConvIdRef.current === leavingId) {
+        liveMessagesCache.current.set(leavingId, messagesSnapshotRef.current);
+      }
+
       if (skipConvLoadRef.current) {
         skipConvLoadRef.current = false;
       } else {
-        try {
-          const raw = localStorage.getItem(STORAGE_KEY_MSGS_PREFIX + activeConvId);
-          if (raw) {
-            setMessages(JSON.parse(raw));
-          } else {
-            setMessages([]);
-            // localStorage empty — try to restore from backend session
-            if (serviceRunning) {
-              const convId = activeConvId;
-              fetch(`${apiBaseUrl}/api/sessions/${encodeURIComponent(convId)}/history`)
-                .then((r) => r.ok ? r.json() : null)
-                .then((data) => {
-                  if (!data?.messages?.length) return;
-                  const restored: ChatMessage[] = data.messages.map((m: { id: string; role: string; content: string; timestamp: number; chain_summary?: ChainSummaryItem[] }) => ({
-                    id: m.id,
-                    role: m.role as "user" | "assistant" | "system",
-                    content: m.content,
-                    timestamp: m.timestamp,
-                    ...(m.chain_summary?.length ? { thinkingChain: buildChainFromSummary(m.chain_summary) } : {}),
-                  }));
-                  setMessages(restored);
-                })
-                .catch(() => {});
+        // Switching to a streaming conversation — restore live snapshot (preserves streaming flag)
+        const cached = liveMessagesCache.current.get(activeConvId);
+        if (cached && streamingConvIdRef.current === activeConvId) {
+          setMessages(cached);
+        } else {
+          try {
+            const raw = localStorage.getItem(STORAGE_KEY_MSGS_PREFIX + activeConvId);
+            if (raw) {
+              setMessages(JSON.parse(raw));
+            } else {
+              setMessages([]);
+              if (serviceRunning) {
+                const convId = activeConvId;
+                fetch(`${apiBaseUrl}/api/sessions/${encodeURIComponent(convId)}/history`)
+                  .then((r) => r.ok ? r.json() : null)
+                  .then((data) => {
+                    if (!data?.messages?.length) return;
+                    const restored: ChatMessage[] = data.messages.map((m: { id: string; role: string; content: string; timestamp: number; chain_summary?: ChainSummaryItem[] }) => ({
+                      id: m.id,
+                      role: m.role as "user" | "assistant" | "system",
+                      content: m.content,
+                      timestamp: m.timestamp,
+                      ...(m.chain_summary?.length ? { thinkingChain: buildChainFromSummary(m.chain_summary) } : {}),
+                    }));
+                    setMessages(restored);
+                  })
+                  .catch(() => {});
+              }
             }
-          }
-        } catch { setMessages([]); }
+          } catch { setMessages([]); }
+        }
       }
       isInitialScrollRef.current = true;
-      // Restore agent selection for the conversation
       if (multiAgentEnabled) {
         const conv = conversations.find((c) => c.id === activeConvId);
         if (conv?.agentProfileId) setSelectedAgent(conv.agentProfileId);
@@ -2064,6 +2081,7 @@ export function ChatView({
     setInputText("");
     setPendingAttachments([]);
     setIsStreaming(true);
+    streamingConvIdRef.current = convId ?? null;
     setSlashOpen(false);
 
     let convId = activeConvId;
@@ -2485,7 +2503,7 @@ export function ChatView({
                     content: `Agent 切换到：${event.agentName}${event.reason ? ` — ${event.reason}` : ""}`,
                     timestamp: Date.now(),
                   };
-                  return [...prev.filter((m) => m.id !== assistantMsg.id), switchMsg, {
+                  const updated = [...prev.filter((m) => m.id !== assistantMsg.id), switchMsg, {
                     ...assistantMsg,
                     content: currentContent,
                     thinking: currentThinking || null,
@@ -2496,6 +2514,10 @@ export function ChatView({
                     thinkingChain: chainGroups.length > 0 ? chainGroups.map(g => ({ ...g })) : null,
                     streaming: true,
                   }];
+                  if (convId && streamingConvIdRef.current === convId) {
+                    liveMessagesCache.current.set(convId, updated);
+                  }
+                  return updated;
                 });
                 continue; // skip normal update below
               case "error":
@@ -2526,22 +2548,29 @@ export function ChatView({
             }
 
             // 更新助手消息
+            const updatedFields = {
+              content: currentContent,
+              thinking: currentThinking || null,
+              agentName: currentAgent,
+              toolCalls: currentToolCalls.length > 0 ? [...currentToolCalls] : null,
+              plan: currentPlan ? { ...currentPlan } : null,
+              askUser: currentAsk ? { ...currentAsk } : null,
+              artifacts: currentArtifacts.length > 0 ? [...currentArtifacts] : null,
+              thinkingChain: chainGroups.length > 0 ? chainGroups.map(g => ({ ...g })) : null,
+              streaming: event.type !== "done",
+            };
             setMessages((prev) => prev.map((m) =>
-              m.id === assistantMsg.id
-                ? {
-                    ...m,
-                    content: currentContent,
-                    thinking: currentThinking || null,
-                    agentName: currentAgent,
-                    toolCalls: currentToolCalls.length > 0 ? [...currentToolCalls] : null,
-                    plan: currentPlan ? { ...currentPlan } : null,
-                    askUser: currentAsk ? { ...currentAsk } : null,
-                    artifacts: currentArtifacts.length > 0 ? [...currentArtifacts] : null,
-                    thinkingChain: chainGroups.length > 0 ? chainGroups.map(g => ({ ...g })) : null,
-                    streaming: event.type !== "done",
-                  }
-                : m
+              m.id === assistantMsg.id ? { ...m, ...updatedFields } : m
             ));
+            // Keep live cache in sync so switching back restores latest streaming state
+            if (convId && streamingConvIdRef.current === convId) {
+              const cached = liveMessagesCache.current.get(convId);
+              if (cached) {
+                liveMessagesCache.current.set(convId, cached.map((m) =>
+                  m.id === assistantMsg.id ? { ...m, ...updatedFields } : m
+                ));
+              }
+            }
 
             if (event.type === "done") break;
           } catch {
@@ -2590,6 +2619,8 @@ export function ChatView({
       try { readerRef.current?.cancel().catch(() => {}); } catch { /* ignore */ }
       readerRef.current = null;
       setIsStreaming(false);
+      streamingConvIdRef.current = null;
+      if (convId) liveMessagesCache.current.delete(convId);
       abortRef.current = null;
 
       if (convId) {
@@ -3120,9 +3151,8 @@ export function ChatView({
 
   const renderConvItem = (conv: ChatConversation) => {
     const isActive = conv.id === activeConvId;
-    const agentProfile = conv.agentProfileId && conv.agentProfileId !== "default"
-      ? agentProfiles.find((p) => p.id === conv.agentProfileId)
-      : null;
+    const profileId = conv.agentProfileId || "default";
+    const agentProfile = agentProfiles.find((p) => p.id === profileId) ?? null;
     return (
       <div
         key={conv.id}
@@ -3131,11 +3161,7 @@ export function ChatView({
         onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, convId: conv.id }); }}
       >
         <div className="convItemIcon">
-          {agentProfile ? (
-            <span title={agentProfile.name} style={{ fontSize: 16 }}>{agentProfile.icon}</span>
-          ) : (
-            <IconMessageCircle size={16} style={{ opacity: 0.5 }} />
-          )}
+          <span title={agentProfile?.name || ""} style={{ fontSize: 16 }}>{agentProfile?.icon || "💬"}</span>
         </div>
         <div className="convItemBody">
           {renamingId === conv.id ? (
@@ -3251,6 +3277,39 @@ export function ChatView({
           <button onClick={newConversation} className="chatTopBarBtn">
             <IconPlus size={14} />
           </button>
+
+          {/* Active agent orbits — shown when sidebar is closed */}
+          {!sidebarOpen && conversations.length > 0 && (
+            <div className="agentOrbitStrip">
+              {conversations
+                .slice()
+                .sort((a, b) => b.timestamp - a.timestamp)
+                .slice(0, 8)
+                .map((conv) => {
+                  const pid = conv.agentProfileId || "default";
+                  const ap = agentProfiles.find((p) => p.id === pid) ?? null;
+                  const isActive = conv.id === activeConvId;
+                  const isRunning = conv.status === "running";
+                  return (
+                    <button
+                      key={conv.id}
+                      className={`agentOrbitNode ${isActive ? "agentOrbitActive" : ""} ${isRunning ? "agentOrbitRunning" : ""}`}
+                      onClick={() => setActiveConvId(conv.id)}
+                      onMouseEnter={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setOrbitTip({ x: rect.left + rect.width / 2, y: rect.bottom + 6, name: ap?.name || "Default", title: conv.title });
+                      }}
+                      onMouseLeave={() => setOrbitTip(null)}
+                    >
+                      <span className="agentOrbitIcon">
+                        {ap?.icon || "💬"}
+                      </span>
+                      {isRunning && <span className="agentOrbitPulse" />}
+                    </button>
+                  );
+                })}
+            </div>
+          )}
 
           <div style={{ flex: 1 }} />
 
@@ -3675,6 +3734,15 @@ export function ChatView({
             )}
           </div>
         </div>
+      )}
+
+      {/* Orbit tooltip — portal to body to escape overflow:hidden */}
+      {orbitTip && createPortal(
+        <div className="agentOrbitTooltip agentOrbitTooltipVisible" style={{ left: orbitTip.x, top: orbitTip.y }}>
+          <span className="agentOrbitTooltipName">{orbitTip.name}</span>
+          <span className="agentOrbitTooltipTitle">{orbitTip.title}</span>
+        </div>,
+        document.body,
       )}
 
       {/* Image lightbox overlay */}

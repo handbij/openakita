@@ -104,6 +104,23 @@ async def pool_stats(request: Request):
     return stats
 
 
+@router.get("/api/debug/orchestrator-state")
+async def orchestrator_state(request: Request):
+    """Diagnostic: return orchestrator internal sub-agent states and active tasks."""
+    orchestrator = getattr(request.app.state, "orchestrator", None)
+    if orchestrator is None:
+        return {"error": "Orchestrator not available", "enabled": False}
+    return {
+        "enabled": True,
+        "sub_agent_states": dict(getattr(orchestrator, "_sub_agent_states", {})),
+        "active_tasks": list(getattr(orchestrator, "_active_tasks", {}).keys()),
+        "health_stats": {
+            k: {"total": v.total_requests, "success": v.successful, "failed": v.failed}
+            for k, v in getattr(orchestrator, "_health_stats", {}).items()
+        },
+    }
+
+
 @router.post("/api/health/check")
 async def health_check(request: Request, body: HealthCheckRequest):
     """

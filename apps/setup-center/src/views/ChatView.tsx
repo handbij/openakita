@@ -2593,8 +2593,8 @@ export function ChatView({
                       })
                       .catch(() => {});
                   };
-                  doFetch();
-                  sctx.pollingTimer = setInterval(doFetch, 3000);
+                  setTimeout(doFetch, 500);
+                  sctx.pollingTimer = setInterval(doFetch, 2000);
                 }
 
                 currentToolCalls = [...currentToolCalls, { tool: event.tool, args: event.args, status: "running", id: event.id }];

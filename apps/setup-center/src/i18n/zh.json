@@ -934,7 +934,20 @@
     "disabled": "多Agent模式未开启",
     "enableHint": "请先在侧边栏开启多Agent模式",
     "refresh": "刷新",
-    "loading": "加载中..."
+    "loading": "加载中...",
+    "requests": "请求",
+    "noActivity": "暂无活动",
+    "waiting": "等待神经元激活...",
+    "conversation": "会话",
+    "progress": "进度",
+    "tools": "工具",
+    "recentTools": "最近工具",
+    "status_running": "运行中",
+    "status_idle": "空闲",
+    "status_completed": "已完成",
+    "status_error": "错误",
+    "status_dormant": "休眠",
+    "allDormant": "所有 Agent 处于休眠状态，发起对话即可唤醒"
   },
   "feedback": {
     "trigger": "反馈"

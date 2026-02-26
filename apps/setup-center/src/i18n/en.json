@@ -934,7 +934,20 @@
     "disabled": "Multi-Agent mode is off",
     "enableHint": "Enable multi-agent mode in the sidebar first",
     "refresh": "Refresh",
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "requests": "requests",
+    "noActivity": "No activity",
+    "waiting": "Waiting for neurons to activate...",
+    "conversation": "Conversation",
+    "progress": "Progress",
+    "tools": "tools",
+    "recentTools": "Recent Tools",
+    "status_running": "Running",
+    "status_idle": "Idle",
+    "status_completed": "Done",
+    "status_error": "Error",
+    "status_dormant": "Dormant",
+    "allDormant": "All agents are dormant — start a conversation to awaken"
   },
   "feedback": {
     "trigger": "Feedback"

@@ -479,7 +479,7 @@ class AgentOrchestrator:
             self._sub_agent_states[key]["elapsed_s"] = round(elapsed)
 
         async def _delayed_cleanup() -> None:
-            await asyncio.sleep(30)
+            await asyncio.sleep(120)
             self._sub_agent_states.pop(key, None)
             self._sub_cleanup_tasks.pop(key, None)
 
@@ -608,6 +608,32 @@ class AgentOrchestrator:
         logger.info(
             f"[Orchestrator] Delegation: {from_agent} -> {to_agent} (depth={depth})"
         )
+
+        # Pre-register sub-agent state immediately so frontend polling
+        # can pick it up before _run_with_progress_timeout starts
+        state_key = f"{session.id}:{to_agent}"
+        profile_name = to_agent
+        profile_icon = "🤖"
+        if self._profile_store:
+            p = self._profile_store.get(to_agent)
+            if p:
+                profile_name = p.get_display_name()
+                profile_icon = p.icon or "🤖"
+        self._sub_agent_states[state_key] = {
+            "agent_id": to_agent,
+            "profile_id": to_agent,
+            "session_id": str(session.id),
+            "name": profile_name,
+            "icon": profile_icon,
+            "status": "starting",
+            "iteration": 0,
+            "tools_executed": [],
+            "tools_total": 0,
+            "elapsed_s": 0,
+            "from_agent": from_agent,
+            "reason": reason or "",
+        }
+
         # Emit handoff event for SSE stream (session.context.handoff_events)
         if session and hasattr(session, "context") and hasattr(session.context, "handoff_events"):
             session.context.handoff_events.append({

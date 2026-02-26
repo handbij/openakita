@@ -300,6 +300,179 @@ async def get_agent_health():
     return {"health": {}}
 
 
+@router.get("/api/agents/topology")
+async def get_topology(request: Request):
+    """Aggregated topology: pool entries + sub-agent states + delegation edges + stats.
+
+    Single endpoint for the neural-network dashboard to poll.
+    """
+    from openakita.agents.presets import SYSTEM_PRESETS
+    from openakita.agents.profile import ProfileStore
+    from openakita.config import settings
+
+    pool = getattr(request.app.state, "agent_pool", None)
+    orchestrator = getattr(request.app.state, "orchestrator", None)
+    session_manager = getattr(request.app.state, "session_manager", None)
+
+    profile_map: dict[str, dict] = {}
+    for p in SYSTEM_PRESETS:
+        profile_map[p.id] = {"name": p.name, "icon": p.icon or "🤖", "color": p.color or "#6b7280"}
+    try:
+        store = ProfileStore(settings.data_dir / "agents")
+        for p in store.list_all():
+            if p.id not in profile_map:
+                profile_map[p.id] = {"name": p.name, "icon": p.icon or "🤖", "color": p.color or "#6b7280"}
+    except Exception:
+        pass
+
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    seen_ids: set[str] = set()
+
+    if pool is not None:
+        stats = pool.get_stats()
+        for entry in stats.get("sessions", []):
+            sid = entry["session_id"]
+            pid = entry["profile_id"]
+            seen_ids.add(sid)
+
+            pinfo = profile_map.get(pid, {"name": pid, "icon": "🤖", "color": "#6b7280"})
+
+            # Determine running status from the agent instance
+            status = "idle"
+            iteration = 0
+            tools_executed: list[str] = []
+            tools_total = 0
+            elapsed_s = 0
+            agent_inst = pool.get_existing(sid)
+            if agent_inst is not None:
+                astate = getattr(agent_inst, "agent_state", None)
+                if astate:
+                    task = astate.get_task_for_session(sid) or astate.current_task
+                    if task and task.is_active:
+                        status = "running"
+                        iteration = task.iteration
+                        tools_executed = list(task.tools_executed[-5:]) if task.tools_executed else []
+                        tools_total = len(task.tools_executed)
+                        if hasattr(task, "started_at") and task.started_at:
+                            import time
+                            elapsed_s = int(time.time() - task.started_at)
+
+            conv_title = ""
+            if session_manager:
+                try:
+                    sess = session_manager.get_session("desktop", sid, "desktop_user", create_if_missing=False)
+                    if sess and hasattr(sess, "context"):
+                        msgs = sess.context.messages if hasattr(sess.context, "messages") else []
+                        for m in msgs:
+                            if m.get("role") == "user":
+                                conv_title = (m.get("content") or "")[:60]
+                except Exception:
+                    pass
+
+            nodes.append({
+                "id": sid,
+                "profile_id": pid,
+                "name": pinfo["name"],
+                "icon": pinfo["icon"],
+                "color": pinfo["color"],
+                "status": status,
+                "is_sub_agent": False,
+                "parent_id": None,
+                "iteration": iteration,
+                "tools_executed": tools_executed,
+                "tools_total": tools_total,
+                "elapsed_s": elapsed_s,
+                "conversation_title": conv_title,
+            })
+
+    # Sub-agent states from orchestrator
+    if orchestrator and pool:
+        for entry in pool.get_stats().get("sessions", []):
+            sid = entry["session_id"]
+            try:
+                sub_states = orchestrator.get_sub_agent_states(sid)
+                for sub in sub_states:
+                    sub_id = f"{sid}::{sub.get('profile_id', 'unknown')}"
+                    if sub_id not in seen_ids:
+                        seen_ids.add(sub_id)
+                        sub_pid = sub.get("profile_id", "")
+                        pinfo = profile_map.get(sub_pid, {"name": sub.get("name", sub_pid), "icon": sub.get("icon", "🤖"), "color": "#6b7280"})
+                        sub_status = sub.get("status", "running")
+                        if sub_status == "starting":
+                            sub_status = "running"
+                        nodes.append({
+                            "id": sub_id,
+                            "profile_id": sub_pid,
+                            "name": sub.get("name", pinfo["name"]),
+                            "icon": sub.get("icon", pinfo["icon"]),
+                            "color": pinfo["color"],
+                            "status": sub_status if sub_status in ("running", "completed", "error", "idle") else "running",
+                            "is_sub_agent": True,
+                            "parent_id": sid,
+                            "iteration": sub.get("iteration", 0),
+                            "tools_executed": sub.get("tools_executed", [])[-5:],
+                            "tools_total": sub.get("tools_total", 0),
+                            "elapsed_s": sub.get("elapsed_s", 0),
+                            "conversation_title": "",
+                        })
+                        edges.append({"from": sid, "to": sub_id, "type": "delegate"})
+            except Exception:
+                pass
+
+    # Always include system presets as dormant neurons when not active
+    active_profile_ids = {n["profile_id"] for n in nodes}
+    for pid, pinfo in profile_map.items():
+        if pid not in active_profile_ids:
+            dormant_id = f"dormant::{pid}"
+            if dormant_id not in seen_ids:
+                seen_ids.add(dormant_id)
+                nodes.append({
+                    "id": dormant_id,
+                    "profile_id": pid,
+                    "name": pinfo["name"],
+                    "icon": pinfo["icon"],
+                    "color": pinfo["color"],
+                    "status": "dormant",
+                    "is_sub_agent": False,
+                    "parent_id": None,
+                    "iteration": 0,
+                    "tools_executed": [],
+                    "tools_total": 0,
+                    "elapsed_s": 0,
+                    "conversation_title": "",
+                })
+
+    # Aggregate stats
+    total_req = 0
+    successful = 0
+    failed = 0
+    avg_latency = 0.0
+    if orchestrator:
+        try:
+            health = orchestrator.get_health_stats()
+            for h in health.values():
+                total_req += h.get("total_requests", 0)
+                successful += h.get("successful", 0)
+                failed += h.get("failed", 0)
+                avg_latency += h.get("avg_latency_ms", 0)
+            if health:
+                avg_latency /= len(health)
+        except Exception:
+            pass
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "stats": {
+            "total_requests": total_req,
+            "successful": successful,
+            "failed": failed,
+            "avg_latency_ms": round(avg_latency, 1),
+        },
+    }
+
+
 @router.get("/api/agents/collaboration/{session_id}")
 async def get_collaboration_info(session_id: str, request: Request):
     """Get collaboration info for a session (active_agents, delegation_chain)."""

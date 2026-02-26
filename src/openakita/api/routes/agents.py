@@ -412,6 +412,14 @@ async def get_topology(request: Request):
                         sub_status = sub.get("status", "running")
                         if sub_status == "starting":
                             sub_status = "running"
+
+                        # Resolve actual parent node id — the parent node
+                        # may be stored as "{sid}::{profile}" or just "{sid}"
+                        from_agent = sub.get("from_agent", "")
+                        parent_node_id = sid
+                        if from_agent and f"{sid}::{from_agent}" in seen_ids:
+                            parent_node_id = f"{sid}::{from_agent}"
+
                         nodes.append({
                             "id": sub_id,
                             "profile_id": sub_pid,
@@ -420,14 +428,14 @@ async def get_topology(request: Request):
                             "color": pinfo["color"],
                             "status": sub_status if sub_status in ("running", "completed", "error", "idle") else "running",
                             "is_sub_agent": True,
-                            "parent_id": sid,
+                            "parent_id": parent_node_id,
                             "iteration": sub.get("iteration", 0),
                             "tools_executed": sub.get("tools_executed", [])[-5:],
                             "tools_total": sub.get("tools_total", 0),
                             "elapsed_s": sub.get("elapsed_s", 0),
                             "conversation_title": "",
                         })
-                        edges.append({"from": sid, "to": sub_id, "type": "delegate"})
+                        edges.append({"from": parent_node_id, "to": sub_id, "type": "delegate"})
             except Exception:
                 pass
 

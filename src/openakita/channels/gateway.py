@@ -1882,6 +1882,7 @@ class MessageGateway:
                 content=_save_text,
                 **({"chain_summary": _chain_summary} if _chain_summary else {}),
             )
+
             self.session_manager.mark_dirty()
             self.session_manager.flush()
 

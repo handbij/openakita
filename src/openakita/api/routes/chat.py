@@ -355,6 +355,11 @@ async def _stream_chat(
             except Exception:
                 pass
 
+        # Ensure sub-agent records are flushed to disk
+        if session and hasattr(session, "context") and session_manager:
+            if getattr(session.context, "sub_agent_records", None):
+                session_manager.mark_dirty()
+
         # Collect usage from the last react trace
         _usage_data: dict | None = None
         try:
@@ -552,3 +557,22 @@ async def get_sub_agent_tasks(request: Request, conversation_id: str = ""):
     except Exception as e:
         logger.warning(f"[Chat API] sub-tasks query error: {e}")
         return []
+
+
+@router.get("/api/agents/sub-records")
+async def get_sub_agent_records(request: Request, conversation_id: str = ""):
+    """Return persisted sub-agent work records for a conversation."""
+    if not conversation_id:
+        return []
+    session_manager = getattr(request.app.state, "session_manager", None)
+    if session_manager is None:
+        return []
+    try:
+        session = session_manager.get_session(
+            "desktop", conversation_id, "desktop_user", create_if_missing=False,
+        )
+        if session and hasattr(session, "context"):
+            return getattr(session.context, "sub_agent_records", [])
+    except Exception as e:
+        logger.warning(f"[Chat API] sub-records query error: {e}")
+    return []

@@ -412,7 +412,7 @@ class AgentOrchestrator:
                     self._update_sub_state(state_key, "timeout", elapsed)
                     raise asyncio.TimeoutError()
 
-                fp = self._get_progress_fingerprint(agent, session.id)
+                fp = self._get_progress_fingerprint(agent, session.id, session)
                 if fp != last_fingerprint:
                     last_fingerprint = fp
                     last_progress_time = time.monotonic()
@@ -432,7 +432,7 @@ class AgentOrchestrator:
                     })
 
                 # Update live sub-agent state for frontend polling
-                tools_list = self._get_tools_executed(agent, session.id)
+                tools_list = self._get_tools_executed(agent, session.id, session)
                 idle_s = time.monotonic() - last_progress_time
                 self._sub_agent_states[state_key] = {
                     **self._sub_agent_states.get(state_key, {}),
@@ -483,6 +483,10 @@ class AgentOrchestrator:
             state_entry["status"] = status
             state_entry["elapsed_s"] = round(elapsed)
 
+        # Persist to disk on terminal state changes
+        if status in ("completed", "timeout", "cancelled", "error"):
+            self._persist_sub_states()
+
         # Clean up ephemeral profile on terminal states
         profile_id = state_entry.get("profile_id", "") if state_entry else ""
         if profile_id and status in ("completed", "timeout", "cancelled", "error"):
@@ -516,12 +520,16 @@ class AgentOrchestrator:
             logger.warning(f"[Orchestrator] Failed to cleanup ephemeral {profile_id}: {e}")
 
     @staticmethod
-    def _get_tools_executed(agent: Any, session_id: str) -> list[str]:
+    def _get_tools_executed(agent: Any, session_id: str, session: Any = None) -> list[str]:
         """Return the list of tool names executed by the agent in the current task."""
         state = getattr(agent, "agent_state", None)
         if state is None:
             return []
         task = state.get_task_for_session(session_id)
+        if task is None and session is not None:
+            sk = getattr(session, "session_key", None)
+            if sk and sk != session_id:
+                task = state.get_task_for_session(sk)
         if task is None:
             task = state.current_task
         if task is None:
@@ -559,15 +567,23 @@ class AgentOrchestrator:
         return result
 
     @staticmethod
-    def _get_progress_fingerprint(agent: Any, session_id: str) -> tuple[int, str, int]:
+    def _get_progress_fingerprint(
+        agent: Any, session_id: str, session: Any = None,
+    ) -> tuple[int, str, int]:
         """Return (iteration, status, tools_count) as a composite progress signal.
 
         Any change in this tuple means the agent is making progress.
+        Tries session.id first, then session.session_key (used by
+        ReasoningEngine as the task storage key), then current_task.
         """
         state = getattr(agent, "agent_state", None)
         if state is None:
             return (-1, "", 0)
         task = state.get_task_for_session(session_id)
+        if task is None and session is not None:
+            sk = getattr(session, "session_key", None)
+            if sk and sk != session_id:
+                task = state.get_task_for_session(sk)
         if task is None:
             task = state.current_task
         if task is None:
@@ -583,19 +599,65 @@ class AgentOrchestrator:
 
         Sets _is_sub_agent_call so that _finalize_session skips plan
         auto-close (the plan belongs to the parent agent, not this sub-agent).
+        After completion, persists the sub-agent's work record into the
+        parent session's ``sub_agent_records`` for full traceability.
         """
         agent._is_sub_agent_call = True
+        _start = time.time()
         try:
             session_messages = session.context.get_messages()
-            return await agent.chat_with_session(
+            result = await agent.chat_with_session(
                 message=message,
                 session_messages=session_messages,
                 session_id=session.id,
                 session=session,
                 gateway=gateway,
             )
+            # Persist sub-agent work record into parent session
+            try:
+                _persist_sub_agent_record(agent, session, message, result, _start)
+            except Exception as e:
+                logger.warning(f"[Orchestrator] Failed to persist sub-agent record: {e}")
+            return result
         finally:
             agent._is_sub_agent_call = False
+
+    # ------------------------------------------------------------------
+    # Sub-agent state persistence
+    # ------------------------------------------------------------------
+
+    def _persist_sub_states(self) -> None:
+        """Write _sub_agent_states to disk so they survive restarts."""
+        if self._log_dir is None:
+            return
+        try:
+            path = self._log_dir.parent / "sub_agent_states.json"
+            snapshot = {}
+            for key, state in list(self._sub_agent_states.items()):
+                snapshot[key] = {k: v for k, v in state.items() if isinstance(v, (str, int, float, bool, list, dict, type(None)))}
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(snapshot, f, ensure_ascii=False, indent=2, default=str)
+        except Exception:
+            logger.debug("[Orchestrator] Failed to persist sub-agent states", exc_info=True)
+
+    def _load_sub_states(self) -> None:
+        """Load persisted sub-agent states from disk on startup."""
+        if self._log_dir is None:
+            return
+        try:
+            path = self._log_dir.parent / "sub_agent_states.json"
+            if path.exists():
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    for key, state in data.items():
+                        status = state.get("status", "")
+                        if status in ("running", "starting"):
+                            state["status"] = "interrupted"
+                        self._sub_agent_states[key] = state
+                    logger.info(f"[Orchestrator] Restored {len(data)} sub-agent states from disk")
+        except Exception:
+            logger.debug("[Orchestrator] Failed to load sub-agent states", exc_info=True)
 
     async def _try_fallback_or(
         self,
@@ -744,17 +806,75 @@ class AgentOrchestrator:
     async def start(self) -> None:
         """Start background tasks (pool reaper, etc.)."""
         self._ensure_deps()
+        self._load_sub_states()
         await self._pool.start()
         logger.info("[Orchestrator] Started")
 
     async def shutdown(self) -> None:
-        """Clean shutdown: cancel active tasks, release pool."""
+        """Clean shutdown: cancel active tasks, release pool, persist states."""
         for task in self._active_tasks.values():
             if not task.done():
                 task.cancel()
         self._active_tasks.clear()
 
+        self._persist_sub_states()
+
         if self._pool:
             await self._pool.stop()
 
         logger.info("[Orchestrator] Shutdown complete")
+
+
+def _persist_sub_agent_record(
+    agent: Any, session: Any, message: str, result: str, start_time: float,
+) -> None:
+    """Save a sub-agent's full work record into the parent session.
+
+    Captures the react_trace (thinking + tool calls), agent profile info,
+    original task, and final result.  This is stored in
+    ``session.context.sub_agent_records`` and gets serialized with the
+    session to disk automatically.
+    """
+    profile = getattr(agent, "_agent_profile", None)
+    trace_raw = getattr(agent, "_last_finalized_trace", None) or []
+    trace_raw = list(trace_raw)
+
+    tools_used: list[dict] = []
+    for it in trace_raw:
+        for tc in it.get("tool_calls", []):
+            tools_used.append({
+                "name": tc.get("name", ""),
+                "input_preview": str(tc.get("input", tc.get("input_preview", "")))[:200],
+            })
+
+    thinking_preview = ""
+    for it in trace_raw:
+        t = (it.get("thinking") or "").strip()
+        if t:
+            thinking_preview = t[:300]
+            break
+
+    record = {
+        "agent_id": profile.id if profile else "unknown",
+        "agent_name": profile.get_display_name() if profile and hasattr(profile, "get_display_name") else (profile.name if profile else "unknown"),
+        "agent_icon": (profile.icon if profile else "🤖") or "🤖",
+        "task_message": message[:500],
+        "result_preview": (result or "")[:1000],
+        "result_full": result or "",
+        "thinking_preview": thinking_preview,
+        "tools_used": tools_used[:20],
+        "tools_total": sum(len(it.get("tool_calls", [])) for it in trace_raw),
+        "iterations": len(trace_raw),
+        "elapsed_s": round(time.time() - start_time),
+        "started_at": datetime.fromtimestamp(start_time).isoformat(),
+        "completed_at": datetime.now().isoformat(),
+    }
+
+    ctx = getattr(session, "context", None)
+    if ctx is not None and hasattr(ctx, "sub_agent_records"):
+        ctx.sub_agent_records.append(record)
+        logger.debug(
+            f"[Orchestrator] Persisted sub-agent record: "
+            f"agent={record['agent_id']}, tools={record['tools_total']}, "
+            f"elapsed={record['elapsed_s']}s"
+        )

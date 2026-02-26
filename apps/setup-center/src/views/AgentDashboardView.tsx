@@ -139,6 +139,8 @@ export function AgentDashboardView({
   const [topoData, setTopoData] = useState<TopoData | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
+  const [overlayTick, setOverlayTick] = useState(0);
+  const overlayTickRef = useRef(0);
 
   // ── Fetch topology ────────────────────────────────────────────
 
@@ -214,15 +216,17 @@ export function AgentDashboardView({
       }       else {
         const parent = n.parent_id ? map.get(n.parent_id) : null;
         let bx: number, by: number;
-        if (parent) {
-          // sub-agents: fan out below parent
-          const siblings = topoData.nodes.filter((s) => s.parent_id === n.parent_id);
+        if (n.is_sub_agent) {
+          // sub-agents: fan out below parent (or center if parent not found yet)
+          const siblings = topoData.nodes.filter((s) => s.parent_id === n.parent_id && s.is_sub_agent);
           const idx = siblings.indexOf(n);
           const count = siblings.length || 1;
-          const spread = Math.min(W * 0.6, count * 100);
+          const spread = Math.min(W * 0.6, count * 120);
           const xOffset = count === 1 ? 0 : -spread / 2 + (idx / (count - 1)) * spread;
-          bx = parent.x + xOffset;
-          by = parent.y + 100 + Math.random() * 30;
+          const px = parent ? parent.x : CX;
+          const py = parent ? parent.y : H * 0.2;
+          bx = px + xOffset;
+          by = py + 110 + Math.random() * 30;
         } else if (n.status === "dormant") {
           // dormant: scatter across full canvas, prefer edges
           const edge = Math.random();
@@ -358,14 +362,12 @@ export function AgentDashboardView({
         // gravity: dormant → none; sub-agent → toward parent; root → gentle center
         if (!aDorm) {
           const parent = a.parent_id ? map.get(a.parent_id) : null;
-          if (parent) {
-            // sub-agent: pull toward below-parent position
-            const targetX = parent.x;
-            const targetY = parent.y + 120;
+          if (a.is_sub_agent) {
+            const targetX = parent ? parent.x : CX;
+            const targetY = parent ? parent.y + 120 : CY * 0.7;
             a.vx += (targetX - a.x) * 0.008;
             a.vy += (targetY - a.y) * 0.008;
           } else {
-            // root active agent: very gentle center pull
             a.vx += (CX - a.x) * 0.002;
             a.vy += (CY * 0.5 - a.y) * 0.002;
           }
@@ -809,11 +811,13 @@ export function AgentDashboardView({
 
       // ── Update HTML overlay positions ──
       const overlay = overlayRef.current;
+      let visCount = 0;
       if (overlay) {
         const children = overlay.children;
         let idx = 0;
         for (const n of nodes) {
           if (n.opacity <= 0 || n.r <= 0) continue;
+          visCount++;
           const el = children[idx] as HTMLElement | undefined;
           if (el) {
             el.style.transform = `translate(${n.x}px, ${n.y}px)`;
@@ -821,6 +825,15 @@ export function AgentDashboardView({
           }
           idx++;
         }
+      } else {
+        for (const n of nodes) {
+          if (n.opacity > 0 && n.r > 0) visCount++;
+        }
+      }
+      // Trigger React re-render when visible node count changes
+      if (visCount !== overlayTickRef.current) {
+        overlayTickRef.current = visCount;
+        setOverlayTick(visCount);
       }
 
       animRef.current = requestAnimationFrame(step);
@@ -848,7 +861,8 @@ export function AgentDashboardView({
   const visibleNodes = useMemo(() => {
     const map = simNodesRef.current;
     return Array.from(map.values()).filter((n) => n.opacity > 0 && n.r > 0);
-  }, [topoData, selected, hovered]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topoData, selected, hovered, overlayTick]);
 
   // ── Disabled state ────────────────────────────────────────────
 

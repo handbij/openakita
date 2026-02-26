@@ -135,16 +135,18 @@ class AgentToolHandler:
 
             if agent_id in duplicated_ids:
                 seen_counter[agent_id] = seen_counter.get(agent_id, 0) + 1
-                if seen_counter[agent_id] > 1 and store:
-                    # Second+ occurrence: spawn an ephemeral clone
+                if store:
+                    # ALL occurrences (including the first) get ephemeral clones
+                    # to avoid sharing a pool instance with previous delegations
                     from ...agents.profile import AgentProfile, AgentType, SkillsMode
                     base = store.get(agent_id)
                     if base:
                         ts = int(time.time() * 1000)
-                        eph_id = f"ephemeral_{agent_id}_{ts}_{seen_counter[agent_id]}"
+                        idx = seen_counter[agent_id]
+                        eph_id = f"ephemeral_{agent_id}_{ts}_{idx}"
                         clone = AgentProfile(
                             id=eph_id,
-                            name=f"{base.name} (分身{seen_counter[agent_id]})",
+                            name=f"{base.name} (分身{idx})",
                             description=base.description,
                             type=AgentType.DYNAMIC,
                             skills=list(base.skills),

@@ -79,6 +79,8 @@ class SessionContext:
     active_agents: list[str] = field(default_factory=list)
     # Delegation chain for the current request
     delegation_chain: list[dict] = field(default_factory=list)
+    # Sub-agent work records — persisted traces of delegated tasks
+    sub_agent_records: list[dict] = field(default_factory=list)
     _msg_lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
 
     def add_message(self, role: str, content: str, **metadata) -> None:
@@ -143,6 +145,7 @@ class SessionContext:
             "handoff_events": self.handoff_events,
             "active_agents": self.active_agents,
             "delegation_chain": self.delegation_chain,
+            "sub_agent_records": self.sub_agent_records,
         }
 
     @classmethod
@@ -161,6 +164,7 @@ class SessionContext:
             handoff_events=data.get("handoff_events", []),
             active_agents=data.get("active_agents", []),
             delegation_chain=data.get("delegation_chain", []),
+            sub_agent_records=data.get("sub_agent_records", []),
         )
 
 

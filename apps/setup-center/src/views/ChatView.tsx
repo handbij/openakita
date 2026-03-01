@@ -1971,7 +1971,6 @@ export function ChatView({
       const conv = conversations.find((c) => c.id === activeConvId);
       const agentId = conv?.agentProfileId || "default";
       setSelectedAgent(agentId);
-      prevSelectedAgentRef.current = agentId;
     }
   }, [activeConvId, conversations, hydrateConversationMessages, multiAgentEnabled]);
 
@@ -2024,16 +2023,15 @@ export function ChatView({
   const prevSelectedAgentRef = useRef(selectedAgent);
   useEffect(() => {
     if (!multiAgentEnabled) return;
-    if (selectedAgent === prevSelectedAgentRef.current) {
-      prevSelectedAgentRef.current = selectedAgent;
-      return;
-    }
+    if (selectedAgent === prevSelectedAgentRef.current) return;
     prevSelectedAgentRef.current = selectedAgent;
     const convId = activeConvIdRef.current;
     if (!convId) return;
-    setConversations((prev) =>
-      prev.map((c) => c.id === convId ? { ...c, agentProfileId: selectedAgent } : c)
-    );
+    setConversations((prev) => {
+      const current = prev.find((c) => c.id === convId);
+      if (current?.agentProfileId === selectedAgent) return prev;
+      return prev.map((c) => c.id === convId ? { ...c, agentProfileId: selectedAgent } : c);
+    });
   }, [selectedAgent, multiAgentEnabled]);
 
   useEffect(() => {

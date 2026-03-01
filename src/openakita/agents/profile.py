@@ -33,9 +33,9 @@ class SkillsMode(str, Enum):
     ALL = "all"  # 全部技能
 
 
-# SYSTEM Profile 中不可被用户修改的核心字段
+# SYSTEM Profile 中不可被用户修改的身份字段（其余均可自定义）
 _SYSTEM_IMMUTABLE_FIELDS = frozenset({
-    "id", "type", "created_by", "skills", "skills_mode", "category",
+    "id", "type", "created_by",
 })
 
 
@@ -71,6 +71,9 @@ class AgentProfile:
     # 分类与可见性
     category: str = ""
     hidden: bool = False
+
+    # 用户自定义标记：系统预设被用户编辑后置 True，升级时不再覆盖
+    user_customized: bool = False
 
     # 临时 Agent 支持
     ephemeral: bool = False
@@ -117,7 +120,7 @@ class ProfileStore:
     持久化路径: {base_dir}/profiles/{profile_id}.json
     临时 Profile: 仅存内存 (_ephemeral dict)，不写磁盘，任务结束后自动清理。
     线程安全：使用 RLock 保护所有缓存。
-    SYSTEM Profile 保护：禁止删除，PUT 只允许修改自定义字段。
+    SYSTEM Profile 保护：禁止删除，id/type/created_by 不可变，其余均可编辑。
     """
 
     def __init__(self, base_dir: str | Path):
@@ -178,11 +181,18 @@ class ProfileStore:
             self._persist(profile)
         logger.info(f"ProfileStore saved: {profile.id} ({profile.type.value})")
 
+    # 仅用于判断"用户是否实质修改了系统 Agent"的字段集（hidden/visibility 不算）
+    _CUSTOMIZATION_FIELDS = frozenset({
+        "name", "description", "icon", "color", "skills", "skills_mode",
+        "custom_prompt", "category", "fallback_profile_id",
+    })
+
     def update(self, profile_id: str, updates: dict[str, Any]) -> AgentProfile:
         """
         部分更新 Profile 字段。
 
-        对 SYSTEM Profile，过滤掉不可修改的核心字段。
+        对 SYSTEM Profile，过滤掉身份字段（id/type/created_by）。
+        实质修改（非 hidden）时自动标记 user_customized=True。
         """
         with self._lock:
             existing = self._cache.get(profile_id)
@@ -200,6 +210,9 @@ class ProfileStore:
                         k: v for k, v in updates.items()
                         if k not in _SYSTEM_IMMUTABLE_FIELDS
                     }
+                # 实质修改时自动标记
+                if set(updates.keys()) & self._CUSTOMIZATION_FIELDS:
+                    updates["user_customized"] = True
 
             data = existing.to_dict()
             data.update(updates)

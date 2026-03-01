@@ -301,6 +301,40 @@ async def delete_agent_profile(profile_id: str):
     return {"status": "ok"}
 
 
+@router.post("/api/agents/profiles/{profile_id}/reset")
+async def reset_agent_profile(profile_id: str):
+    """Reset a system agent profile to its factory defaults."""
+    from openakita.agents.presets import get_preset_by_id
+    from openakita.agents.profile import ProfileStore
+    from openakita.config import settings
+
+    if not settings.multi_agent_enabled:
+        raise HTTPException(status_code=400, detail="Multi-agent mode is not enabled")
+
+    preset = get_preset_by_id(profile_id)
+    if preset is None:
+        raise HTTPException(status_code=404, detail=f"No system preset found for '{profile_id}'")
+
+    store = ProfileStore(settings.data_dir / "agents")
+    existing = store.get(profile_id)
+    if existing is None:
+        store.save(preset)
+    else:
+        reset_data = preset.to_dict()
+        keep_fields = {"hidden"}
+        for field in keep_fields:
+            reset_data[field] = getattr(existing, field, getattr(preset, field))
+        reset_data["user_customized"] = False
+        from openakita.agents.profile import AgentProfile
+        profile = AgentProfile.from_dict(reset_data)
+        store._cache[profile_id] = profile
+        store._persist(profile)
+
+    logger.info(f"[Agents API] Reset profile to defaults: {profile_id}")
+    result = store.get(profile_id)
+    return {"status": "ok", "profile": result.to_dict() if result else {}}
+
+
 @router.patch("/api/agents/profiles/{profile_id}/visibility")
 async def update_profile_visibility(profile_id: str, body: ProfileVisibilityRequest):
     """Show or hide an agent profile (works for both SYSTEM and CUSTOM)."""

@@ -14,6 +14,7 @@ type AgentProfile = {
   custom_prompt: string;
   category?: string;
   hidden?: boolean;
+  user_customized?: boolean;
 };
 
 type SkillItem = {
@@ -241,6 +242,23 @@ export function AgentManagerView({
     }
   };
 
+  const handleReset = async (profileId: string) => {
+    try {
+      const res = await fetch(`${apiBaseUrl}/api/agents/profiles/${profileId}/reset`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        fetchProfiles();
+        showToast(t("agentManager.resetSuccess"), "ok");
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(extractErrorMsg(data.detail, t("agentManager.resetFailed")), "err");
+      }
+    } catch (e) {
+      showToast(String(e), "err");
+    }
+  };
+
   const getCategoryLabel = (cat: string): string => {
     const map: Record<string, string> = {
       "": "categoryAll",
@@ -362,6 +380,16 @@ export function AgentManagerView({
                 >
                   {isSystem ? t("agentManager.systemBadge") : t("agentManager.customBadge")}
                 </span>
+                {isSystem && agent.user_customized && (
+                  <span
+                    style={{
+                      fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 4,
+                      background: "rgba(245,158,11,0.12)", color: "#f59e0b",
+                    }}
+                  >
+                    {t("agentManager.customizedBadge")}
+                  </span>
+                )}
               </div>
 
               {/* Content */}
@@ -377,33 +405,31 @@ export function AgentManagerView({
               </div>
 
               {/* Actions */}
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  onClick={() => openEditEditor(agent)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 4,
+                    padding: "4px 10px", borderRadius: 6, border: "1px solid var(--line)",
+                    background: "transparent", cursor: "pointer", fontSize: 12,
+                  }}
+                >
+                  <IconEdit size={12} />
+                  {t("agentManager.edit")}
+                </button>
                 {!isSystem && (
-                  <>
-                    <button
-                      onClick={() => openEditEditor(agent)}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 4,
-                        padding: "4px 10px", borderRadius: 6, border: "1px solid var(--line)",
-                        background: "transparent", cursor: "pointer", fontSize: 12,
-                      }}
-                    >
-                      <IconEdit size={12} />
-                      {t("agentManager.edit")}
-                    </button>
-                    <button
-                      onClick={() => setConfirmDeleteId(agent.id)}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 4,
-                        padding: "4px 10px", borderRadius: 6, border: "1px solid var(--line)",
-                        background: "transparent", cursor: "pointer", fontSize: 12,
-                        color: "#ef4444",
-                      }}
-                    >
-                      <IconTrash size={12} />
-                      {t("agentManager.delete")}
-                    </button>
-                  </>
+                  <button
+                    onClick={() => setConfirmDeleteId(agent.id)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 4,
+                      padding: "4px 10px", borderRadius: 6, border: "1px solid var(--line)",
+                      background: "transparent", cursor: "pointer", fontSize: 12,
+                      color: "#ef4444",
+                    }}
+                  >
+                    <IconTrash size={12} />
+                    {t("agentManager.delete")}
+                  </button>
                 )}
                 {isSystem && (
                   <button
@@ -416,6 +442,19 @@ export function AgentManagerView({
                     }}
                   >
                     {t("agentManager.hide")}
+                  </button>
+                )}
+                {isSystem && agent.user_customized && (
+                  <button
+                    onClick={() => handleReset(agent.id)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 4,
+                      padding: "4px 10px", borderRadius: 6, border: "1px solid var(--line)",
+                      background: "transparent", cursor: "pointer", fontSize: 12,
+                      color: "#f59e0b",
+                    }}
+                  >
+                    {t("agentManager.resetDefault")}
                   </button>
                 )}
               </div>
@@ -605,8 +644,7 @@ export function AgentManagerView({
             <select
               value={editingProfile.category || ""}
               onChange={(e) => setEditingProfile((p) => ({ ...p, category: e.target.value }))}
-              disabled={editingProfile.type === "system"}
-              style={{ ...inputStyle, cursor: editingProfile.type === "system" ? "not-allowed" : "pointer", opacity: editingProfile.type === "system" ? 0.5 : 1 }}
+              style={{ ...inputStyle, cursor: "pointer" }}
             >
               <option value="">—</option>
               {CATEGORIES.filter(Boolean).map((cat) => (

@@ -920,7 +920,11 @@
     "hiddenSection": "已隐藏的 Agent",
     "hideSuccess": "已隐藏",
     "restoreSuccess": "已恢复",
-    "noHidden": "没有已隐藏的 Agent"
+    "noHidden": "没有已隐藏的 Agent",
+    "customizedBadge": "已自定义",
+    "resetDefault": "恢复默认",
+    "resetSuccess": "已恢复为系统默认",
+    "resetFailed": "恢复默认失败"
   },
   "dashboard": {
     "title": "Agent 仪表盘",

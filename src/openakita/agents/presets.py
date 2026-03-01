@@ -572,8 +572,8 @@ def deploy_system_presets(store: ProfileStore) -> int:
     部署系统预置 Profile（首次启动或升级时调用）。
 
     - 不存在的预置 Profile 直接创建
-    - 已存在的 SYSTEM Profile 若 skills 列表与预置不同则同步更新
-      （保留用户自定义的 custom_prompt/name/icon 等字段）
+    - user_customized=True 的跳过（尊重用户的自定义修改）
+    - 未被用户自定义的 SYSTEM Profile 若 skills/category 与预置不同则同步更新
 
     Returns:
         新增或升级的 Profile 数量
@@ -587,6 +587,12 @@ def deploy_system_presets(store: ProfileStore) -> int:
         else:
             existing = store.get(preset.id)
             if existing and existing.is_system:
+                if existing.user_customized:
+                    logger.debug(
+                        f"Skipping customized preset: {preset.id} "
+                        f"(user_customized=True)"
+                    )
+                    continue
                 needs_upgrade = (
                     sorted(existing.skills) != sorted(preset.skills)
                     or existing.category != preset.category
@@ -607,6 +613,11 @@ def deploy_system_presets(store: ProfileStore) -> int:
     if deployed:
         logger.info(f"Deployed/upgraded {deployed} system preset profile(s)")
     return deployed
+
+
+def get_preset_by_id(profile_id: str) -> AgentProfile | None:
+    """按 ID 查找系统预设原始定义（用于恢复默认）。"""
+    return next((p for p in SYSTEM_PRESETS if p.id == profile_id), None)
 
 
 def cleanup_stale_dynamic_agents(agents_dir: str | Path, max_age_days: int = 7) -> int:

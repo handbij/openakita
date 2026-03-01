@@ -920,7 +920,11 @@
     "hiddenSection": "Hidden Agents",
     "hideSuccess": "Hidden",
     "restoreSuccess": "Restored",
-    "noHidden": "No hidden agents"
+    "noHidden": "No hidden agents",
+    "customizedBadge": "Customized",
+    "resetDefault": "Reset",
+    "resetSuccess": "Reset to default",
+    "resetFailed": "Reset failed"
   },
   "dashboard": {
     "title": "Agent Dashboard",

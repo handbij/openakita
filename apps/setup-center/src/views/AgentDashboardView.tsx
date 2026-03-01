@@ -363,10 +363,14 @@ export function AgentDashboardView({
           const areSiblings = a.is_sub_agent && b.is_sub_agent
             && a.parent_id && a.parent_id === b.parent_id;
           const bothRoot = !a.is_sub_agent && !b.is_sub_agent && !aDorm && !bDorm;
+          const bothActive = !aDorm && !bDorm;
           const strength = areSiblings ? 30000
             : bothRoot ? 35000
-            : (aDorm && bDorm) ? 6000 : (aDorm || bDorm) ? 10000 : 22000;
-          const minDist = areSiblings ? 120 : bothRoot ? 140 : (aDorm && bDorm) ? 80 : 100;
+            : bothActive ? 28000
+            : (aDorm && bDorm) ? 6000 : 10000;
+          const minDist = areSiblings ? 120 : bothRoot ? 140
+            : bothActive ? 110
+            : (aDorm && bDorm) ? 80 : 100;
           if (dist < minDist) dist = minDist;
           const repulse = strength / (dist * dist);
           const fx = (dx / dist) * repulse;
@@ -377,7 +381,6 @@ export function AgentDashboardView({
           b.vy -= fy * 0.016;
         }
 
-        // gravity: dormant → none; sub-agent → fan around parent; root → gentle center
         if (!aDorm) {
           const parent = a.parent_id ? map.get(a.parent_id) : null;
           if (a.is_sub_agent) {
@@ -396,8 +399,21 @@ export function AgentDashboardView({
             a.vx += (targetX - a.x) * 0.006;
             a.vy += (targetY - a.y) * 0.006;
           } else {
-            a.vx += (CX - a.x) * 0.002;
-            a.vy += (CY - a.y) * 0.002;
+            // Root agents: each gets a unique target spread around center
+            const roots = nodes.filter(
+              (r) => !r.is_sub_agent && r.status !== "dormant"
+            );
+            const rIdx = roots.indexOf(a);
+            const rCount = roots.length || 1;
+            let tgtX = CX, tgtY = CY;
+            if (rCount > 1) {
+              const rAng = (Math.PI * 2 * rIdx) / rCount - Math.PI / 2;
+              const rR = Math.min(W, H) * 0.15;
+              tgtX = CX + Math.cos(rAng) * rR;
+              tgtY = CY + Math.sin(rAng) * rR;
+            }
+            a.vx += (tgtX - a.x) * 0.003;
+            a.vy += (tgtY - a.y) * 0.003;
           }
         }
       }

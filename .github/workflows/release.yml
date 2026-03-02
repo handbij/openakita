@@ -471,9 +471,12 @@ jobs:
 
               # 3) Sign framework version main binaries LAST.
               #    Their signatures seal Resources/ (including the signed Python.app).
+              #    Include the top-level Python.framework/Python (may be a real file,
+              #    not a symlink, due to PyInstaller's copy behavior).
               for fwbin in \
                 "${FRAMEWORK_DIR}/Versions/3.11/Python" \
-                "${FRAMEWORK_DIR}/Versions/Current/Python"; do
+                "${FRAMEWORK_DIR}/Versions/Current/Python" \
+                "${FRAMEWORK_DIR}/Python"; do
                 if [ -f "${fwbin}" ]; then
                   REAL_FWBIN="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${fwbin}")"
                   if grep -Fqx -- "${REAL_FWBIN}" "${SIGNED_REALPATHS_FILE}"; then

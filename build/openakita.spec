@@ -343,7 +343,9 @@ def _collect_stdlib_modules():
         "lib2to3", "ensurepip", "venv", "distutils", "pydoc_data",
         "pydoc", "antigravity", "this",
     }
-    _SKIP_PREFIXES = ("__", "_pyrepl")
+    # Keep dunder stdlib modules like __future__; they are required by pip
+    # and some runtime code paths on Windows bundled interpreter checks.
+    _SKIP_PREFIXES = ("_pyrepl",)
 
     stdlib_names = set()
 

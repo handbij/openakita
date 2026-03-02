@@ -34,6 +34,8 @@ BUILD_MODE = os.environ.get("OPENAKITA_BUILD_MODE", "core")
 # Dynamic imports that PyInstaller static analysis may miss
 
 hidden_imports_core = [
+    # stdlib dunder module required by pip (e.g. `from __future__ import annotations`)
+    "__future__",
     # -- openakita internal modules --
     "openakita",
     "openakita.main",

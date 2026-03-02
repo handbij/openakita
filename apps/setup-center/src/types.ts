@@ -66,7 +66,7 @@ export type BundledPythonInstallResult = {
 };
 
 export type PythonContractStatus = "pass" | "warn" | "fail";
-export type PythonSummaryStatus = "healthy" | "repairable" | "broken";
+export type PythonSummaryStatus = "healthy" | "broken";
 
 export type PythonContractResult = {
   id: string;
@@ -84,20 +84,10 @@ export type PythonEnvironmentSnapshot = {
   openakitaVersion?: string | null;
 };
 
-export type PythonRepairStep = {
-  id: string;
-  title: string;
-  description: string;
-  destructive: boolean;
-  requiresConfirmation: boolean;
-  enabled: boolean;
-};
-
 export type PythonDiagnostic = {
   summary: PythonSummaryStatus;
   contracts: PythonContractResult[];
   environment: PythonEnvironmentSnapshot;
-  repairPlan: PythonRepairStep[];
   traceId: string;
   generatedAt: string;
 };

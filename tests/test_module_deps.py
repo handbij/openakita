@@ -520,13 +520,11 @@ class TestMirrorConsistency:
         # 新模型核心字段
         assert "summary: String" in content
         assert "contracts: Vec<PythonContractResult>" in content
-        assert "repair_plan: Vec<PythonRepairStep>" in content
         assert "trace_id: String" in content
         assert "generated_at: String" in content
 
         # 契约化错误码（最小覆盖）
         assert '"C1_BUNDLED_RUNTIME"' in content
-        assert '"C4_RUNTIME_LAYOUT_COMPAT"' in content
         assert '"PY_BUNDLE_MISSING"' in content
 
         # 已不再依赖 system python 诊断项

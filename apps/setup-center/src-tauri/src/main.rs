@@ -1983,7 +1983,6 @@ fn main() {
             workspace_update_env,
             detect_python,
             diagnose_python_env,
-            repair_python_env,
             export_python_diagnostic_report,
             check_python_for_pip,
             install_bundled_python,
@@ -3130,11 +3129,10 @@ fn detect_python() -> Vec<PythonCandidate> {
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct PythonDiagnostic {
-    /// healthy | repairable | broken
+    /// healthy | broken
     summary: String,
     contracts: Vec<PythonContractResult>,
     environment: PythonEnvironmentSnapshot,
-    repair_plan: Vec<PythonRepairStep>,
     trace_id: String,
     generated_at: String,
 }
@@ -3159,17 +3157,6 @@ struct PythonEnvironmentSnapshot {
     openakita_version: Option<String>,
 }
 
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct PythonRepairStep {
-    id: String,
-    title: String,
-    description: String,
-    destructive: bool,
-    requires_confirmation: bool,
-    enabled: bool,
-}
-
 fn python_diag_trace_id() -> String {
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -3184,22 +3171,6 @@ fn python_diag_generated_at() -> String {
         .unwrap_or_default()
         .as_secs()
         .to_string()
-}
-
-fn contract_failed(diag: &PythonDiagnostic, id: &str) -> bool {
-    diag.contracts
-        .iter()
-        .find(|c| c.id == id)
-        .map(|c| c.status != "pass")
-        .unwrap_or(true)
-}
-
-fn contract_failed_in(contracts: &[PythonContractResult], id: &str) -> bool {
-    contracts
-        .iter()
-        .find(|c| c.id == id)
-        .map(|c| c.status != "pass")
-        .unwrap_or(true)
 }
 
 /// Run a full diagnostic of the Python environment.
@@ -3287,148 +3258,20 @@ fn diagnose_python_env(venv_dir: String) -> PythonDiagnostic {
     };
     contracts.push(bundled_contract);
 
-    // C4: layout compatibility check (macOS only)
-    let layout_contract = if cfg!(target_os = "macos") {
-        let internal = bundled_dir.join("_internal");
-        let app_in_resources = internal.join("Resources").join("Python.app");
-        let app_in_framework = internal
-            .join("Python.framework")
-            .join("Versions")
-            .join("3.11")
-            .join("Resources")
-            .join("Python.app");
-        if app_in_resources.exists() || app_in_framework.exists() {
-            PythonContractResult {
-                id: "C4_RUNTIME_LAYOUT_COMPAT".into(),
-                title: "Runtime layout compatibility".into(),
-                status: "pass".into(),
-                code: "PY_OK".into(),
-                evidence: vec![
-                    format!("resources layout: {}", app_in_resources.exists()),
-                    format!("framework layout: {}", app_in_framework.exists()),
-                ],
-                auto_fix: false,
-                fix_hint: None,
-            }
-        } else {
-            PythonContractResult {
-                id: "C4_RUNTIME_LAYOUT_COMPAT".into(),
-                title: "Runtime layout compatibility".into(),
-                status: "fail".into(),
-                code: "PY_LAYOUT_MISMATCH".into(),
-                evidence: vec![
-                    format!("missing {}", app_in_resources.display()),
-                    format!("missing {}", app_in_framework.display()),
-                ],
-                auto_fix: false,
-                fix_hint: Some("内置运行时布局异常，建议重新安装 OpenAkita".into()),
-            }
-        }
-    } else {
-        PythonContractResult {
-            id: "C4_RUNTIME_LAYOUT_COMPAT".into(),
-            title: "Runtime layout compatibility".into(),
-            status: "pass".into(),
-            code: "PY_OK".into(),
-            evidence: vec!["not-applicable on non-macOS".into()],
-            auto_fix: false,
-            fix_hint: None,
-        }
-    };
-    contracts.push(layout_contract);
-
     let failing: Vec<&PythonContractResult> = contracts.iter().filter(|c| c.status != "pass").collect();
     let summary = if failing.is_empty() {
         "healthy".to_string()
-    } else if failing.iter().all(|c| c.auto_fix) {
-        "repairable".to_string()
     } else {
         "broken".to_string()
     };
-
-    let mut repair_plan = vec![];
-    if summary != "healthy" {
-        if contract_failed_in(&contracts, "C1_BUNDLED_RUNTIME")
-            || contract_failed_in(&contracts, "C4_RUNTIME_LAYOUT_COMPAT")
-        {
-            repair_plan.push(PythonRepairStep {
-                id: "reinstall_app".into(),
-                title: "重装应用".into(),
-                description: "内置 Python 运行时异常，建议重装 OpenAkita".into(),
-                destructive: false,
-                requires_confirmation: false,
-                enabled: false,
-            });
-        }
-    }
 
     PythonDiagnostic {
         summary,
         contracts,
         environment: env,
-        repair_plan,
         trace_id,
         generated_at: python_diag_generated_at(),
     }
-}
-
-/// One-click repair: diagnose, fix all issues, return final diagnostic.
-/// Emits `python_repair_event` events with progress updates.
-#[tauri::command]
-async fn repair_python_env(
-    app: tauri::AppHandle,
-    venv_dir: String,
-) -> Result<PythonDiagnostic, String> {
-    let venv_dir_clone = venv_dir.clone();
-    spawn_blocking_result(move || {
-        let emit = |stage: &str, percent: u8, detail: &str| {
-            let _ = app.emit("python_repair_event", serde_json::json!({
-                "stage": stage,
-                "percent": percent,
-                "detail": detail,
-            }));
-        };
-
-        // Phase 1: Diagnose
-        emit("诊断", 10, "检测当前 Python 环境状态...");
-        let diag = diagnose_python_env(venv_dir_clone.clone());
-        let need_bundled = contract_failed(&diag, "C1_BUNDLED_RUNTIME");
-
-        if diag.summary == "healthy" {
-            emit("完成", 100, "当前环境健康，无需修复");
-            return Ok(diag);
-        }
-
-        emit("诊断", 20, "已生成修复计划，开始执行...");
-
-        // Phase 2: Ensure bundled Python
-        if need_bundled {
-            emit("检查内置 Python", 30, "检查安装包内置 Python...");
-            match install_bundled_python_sync(None, None) {
-                Ok(result) => {
-                    emit("检查内置 Python", 60, &format!("内置 Python 就绪: {}", result.python_path));
-                }
-                Err(e) => {
-                    emit("错误", 60, &format!("内置 Python 不可用: {}", e));
-                    return Err(format!("内置 Python 不可用，请重新安装 OpenAkita: {}", e));
-                }
-            }
-        } else {
-            emit("检查", 60, "内置 Python 正常");
-        }
-
-        // Phase 3: Final verification
-        emit("验证", 80, "验证修复结果...");
-        let final_diag = diagnose_python_env(venv_dir_clone);
-        if final_diag.summary == "healthy" {
-            emit("完成", 100, "所有问题已修复，Python 环境正常");
-        } else {
-            let remains = final_diag.contracts.iter().filter(|c| c.status != "pass").count();
-            emit("完成", 100, &format!("修复完成，但仍有 {} 条契约未通过", remains));
-        }
-        Ok(final_diag)
-    })
-    .await
 }
 
 #[tauri::command]

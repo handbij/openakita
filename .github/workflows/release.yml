@@ -430,6 +430,24 @@ jobs:
           for app in "${APPS[@]}"; do
             FRAMEWORK_DIR="${app}/Contents/Resources/resources/openakita-server/_internal/Python.framework"
             if [ -d "${FRAMEWORK_DIR}" ]; then
+              # PyInstaller copies files instead of creating symlinks, but macOS
+              # framework conventions require top-level Python.framework/Python and
+              # Python.framework/Resources to be symlinks into Versions/Current/.
+              # Without this, codesign treats the framework root binary as a bundle
+              # entry point and fails with "bundle format is ambiguous".
+              FW_TOP_PYTHON="${FRAMEWORK_DIR}/Python"
+              if [ -f "${FW_TOP_PYTHON}" ] && [ ! -L "${FW_TOP_PYTHON}" ]; then
+                rm -f "${FW_TOP_PYTHON}"
+                ln -s "Versions/Current/Python" "${FW_TOP_PYTHON}"
+                echo "Fixed Python.framework/Python → symlink to Versions/Current/Python"
+              fi
+              FW_TOP_RESOURCES="${FRAMEWORK_DIR}/Resources"
+              if [ -d "${FW_TOP_RESOURCES}" ] && [ ! -L "${FW_TOP_RESOURCES}" ]; then
+                rm -rf "${FW_TOP_RESOURCES}"
+                ln -s "Versions/Current/Resources" "${FW_TOP_RESOURCES}"
+                echo "Fixed Python.framework/Resources → symlink to Versions/Current/Resources"
+              fi
+
               SIGNED_REALPATHS_FILE="$(mktemp)"
 
               # Apple code-signing requires strict inside-out order:
@@ -471,12 +489,11 @@ jobs:
 
               # 3) Sign framework version main binaries LAST.
               #    Their signatures seal Resources/ (including the signed Python.app).
-              #    Include the top-level Python.framework/Python (may be a real file,
-              #    not a symlink, due to PyInstaller's copy behavior).
+              #    Python.framework/Python is now a symlink (fixed above) and needs
+              #    no separate signing.
               for fwbin in \
                 "${FRAMEWORK_DIR}/Versions/3.11/Python" \
-                "${FRAMEWORK_DIR}/Versions/Current/Python" \
-                "${FRAMEWORK_DIR}/Python"; do
+                "${FRAMEWORK_DIR}/Versions/Current/Python"; do
                 if [ -f "${fwbin}" ]; then
                   REAL_FWBIN="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${fwbin}")"
                   if grep -Fqx -- "${REAL_FWBIN}" "${SIGNED_REALPATHS_FILE}"; then

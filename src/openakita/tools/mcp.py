@@ -212,7 +212,7 @@ class MCPClient:
 
         # stdio 模式预检查命令是否存在
         if config.transport == "stdio" and config.command:
-            if not shutil.which(config.command):
+            if not self._resolve_command(config):
                 msg = (
                     f"启动命令 '{config.command}' 未找到。"
                     f"请确认已安装并在 PATH 中可访问。"
@@ -232,6 +232,34 @@ class MCPClient:
             msg = f"{type(e).__name__}: {e}"
             logger.error(f"Failed to connect to {server_name}: {msg}")
             return MCPConnectResult(success=False, error=msg)
+
+    @staticmethod
+    def _resolve_command(config: MCPServerConfig) -> str | None:
+        """在子进程实际使用的 PATH / cwd 下查找命令，避免误判 'not found'。"""
+        cmd = config.command
+
+        # 1) 相对路径 + cwd：直接在目标 cwd 下判断文件是否存在
+        if config.cwd and (cmd.startswith("./") or cmd.startswith(".\\")):
+            candidate = Path(config.cwd) / cmd
+            if candidate.is_file():
+                return str(candidate.resolve())
+
+        # 2) 用子进程的 env.PATH 查找（用户可能通过 env 配置了自定义 PATH）
+        search_path = None
+        if config.env:
+            search_path = config.env.get("PATH") or config.env.get("Path")
+
+        found = shutil.which(cmd, path=search_path)
+        if found:
+            return found
+
+        # 3) 如果有 cwd，也在 cwd 下做一次绝对搜索
+        if config.cwd:
+            candidate = Path(config.cwd) / cmd
+            if candidate.is_file():
+                return str(candidate.resolve())
+
+        return None
 
     _CONNECT_TIMEOUT: int = 30
     _CALL_TIMEOUT: int = 60

@@ -23,10 +23,10 @@ main (开发分支)
 
 ### 规则
 
-| 分支 | 用途 | tag 发布后 | latest.json |
+| 分支 | 用途 | tag 发布后 | manifest |
 |---|---|---|---|
-| `main` | 开发、新功能 | 标记为 **pre-release** | 更新 `latest-dev.json` |
-| `v{x}.{y}.x` | 定稿稳定、只修 bug | 标记为 **正式版** | 更新 `latest.json`（用户可见） |
+| `main` | 开发、新功能 | 标记为 **pre-release** | 更新 `pre-release.json` |
+| `v{x}.{y}.x` | 定稿稳定、只修 bug | 标记为 **正式版** | 更新 `release.json`（用户可见） |
 
 ### 创建稳定分支
 
@@ -88,8 +88,8 @@ git push origin v<version>
 
 - Release 会先以 **Draft** 状态创建（用户不可见）
 - CI 自动检测 tag 来源：
-  - 来自 `v*.x` 稳定分支 → 发布为正式版，更新 `latest.json`
-  - 来自 `main` → 发布为 pre-release，更新 `latest-dev.json`
+  - 来自 `v*.x` 稳定分支 → 发布为正式版，更新 `release.json`
+  - 来自 `main` → 发布为 pre-release，更新 `pre-release.json`
 - 全平台 Desktop 构建成功后，Release 自动发布
 
 ---
@@ -124,9 +124,9 @@ GitHub Actions 页面 → 找到失败的 Release workflow → **"Re-run all job
 
 - **Draft Release 对用户不可见**，放心重跑
 - **PyPI 发布是幂等的**（`twine upload --skip-existing`）
-- 发布成功后，CI 自动更新 `latest.json`（稳定版）或 `latest-dev.json`（开发版）
-- 应用内自动更新默认检查 `latest.json`（稳定渠道），用户只会收到稳定版更新
-- 官网下载页默认展示 `latest.json` 中的稳定版
+- 发布成功后，CI 自动将 `release.json`（稳定版）或 `pre-release.json`（预览版）上传到阿里云 OSS
+- 应用内自动更新默认检查 `release.json`（稳定渠道），用户只会收到稳定版更新
+- 官网下载页从 OSS 实时获取 `release.json` / `pre-release.json` 展示下载信息
 
 ---
 

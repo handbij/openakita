@@ -28,6 +28,7 @@ export type ProviderInfo = {
   coding_plan_api_type?: string;   // Coding Plan 模式下的协议类型（不存在则与 api_type 相同）
   default_context_window?: number;
   default_max_tokens?: number;
+  note?: string;                   // i18n key — 显示在服务商选择下方的提示信息
 };
 
 export type ListedModel = {
@@ -68,7 +69,7 @@ export type BundledPythonInstallResult = {
 };
 
 export type PythonContractStatus = "pass" | "warn" | "fail";
-export type PythonSummaryStatus = "healthy" | "repairable" | "broken";
+export type PythonSummaryStatus = "healthy" | "broken";
 
 export type PythonContractResult = {
   id: string;
@@ -83,25 +84,13 @@ export type PythonContractResult = {
 export type PythonEnvironmentSnapshot = {
   platform: string;
   bundledPythonPath?: string | null;
-  venvPath?: string | null;
-  venvPythonVersion?: string | null;
   openakitaVersion?: string | null;
-};
-
-export type PythonRepairStep = {
-  id: string;
-  title: string;
-  description: string;
-  destructive: boolean;
-  requiresConfirmation: boolean;
-  enabled: boolean;
 };
 
 export type PythonDiagnostic = {
   summary: PythonSummaryStatus;
   contracts: PythonContractResult[];
   environment: PythonEnvironmentSnapshot;
-  repairPlan: PythonRepairStep[];
   traceId: string;
   generatedAt: string;
 };

@@ -257,15 +257,25 @@ fn bundled_backend_dir() -> PathBuf {
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
         .unwrap_or_else(|| PathBuf::from("."));
 
-    // macOS: exe 在 .app/Contents/MacOS/，resources 在 .app/Contents/Resources/
+    // macOS: exe 在 .app/Contents/MacOS/，Tauri 将 resources 放在
+    // .app/Contents/Resources/ 下并保留原始目录结构。
+    // tauri.conf.json 配置 "resources": ["resources/openakita-server/"]，
+    // 因此实际路径是 .app/Contents/Resources/resources/openakita-server/
     #[cfg(target_os = "macos")]
     {
-        let macos_resource = exe_dir
-            .parent() // Contents/
-            .map(|p| p.join("Resources").join("openakita-server"))
-            .unwrap_or_else(|| exe_dir.join("resources").join("openakita-server"));
-        if macos_resource.exists() {
-            return macos_resource;
+        if let Some(contents_dir) = exe_dir.parent() {
+            let primary = contents_dir
+                .join("Resources")
+                .join("resources")
+                .join("openakita-server");
+            if primary.exists() {
+                return primary;
+            }
+            // 兼容可能的简化布局（无额外 resources/ 前缀）
+            let fallback = contents_dir.join("Resources").join("openakita-server");
+            if fallback.exists() {
+                return fallback;
+            }
         }
     }
 
@@ -373,19 +383,7 @@ fn check_python_for_pip() -> Result<String, String> {
     }
 }
 
-// ── 模块管理 ──
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct ModuleInfo {
-    id: String,
-    name: String,
-    description: String,
-    installed: bool,
-    bundled: bool,
-    size_mb: u32,
-    category: String,
-}
+// ── 模块定义（供 build_modules_pythonpath 使用） ──
 
 fn module_definitions() -> Vec<(&'static str, &'static str, &'static str, &'static [&'static str], u32, &'static str)> {
     // (id, name, description, pip_packages, estimated_size_mb, category)
@@ -399,293 +397,6 @@ fn module_definitions() -> Vec<(&'static str, &'static str, &'static str, &'stat
     ]
 }
 
-fn is_module_installed(module_id: &str) -> bool {
-    let sp = modules_dir().join(module_id).join("site-packages");
-    if sp.exists() && sp.read_dir().map(|mut d| d.next().is_some()).unwrap_or(false) {
-        return true;
-    }
-    // Also check if bundled (PyInstaller full mode includes them)
-    let bundled = bundled_backend_dir();
-    if bundled.exists() {
-        // For full builds, check marker files
-        let marker = modules_dir().join(module_id).join(".installed");
-        if marker.exists() {
-            return true;
-        }
-    }
-    false
-}
-
-fn is_module_bundled(module_id: &str) -> bool {
-    let bundled_modules = bundled_backend_dir()
-        .parent()
-        .map(|p| p.join("modules").join(module_id))
-        .unwrap_or_default();
-    bundled_modules.exists()
-}
-
-#[tauri::command]
-fn detect_modules() -> Vec<ModuleInfo> {
-    module_definitions()
-        .iter()
-        .map(|(id, name, desc, _pkgs, size, cat)| ModuleInfo {
-            id: id.to_string(),
-            name: name.to_string(),
-            description: desc.to_string(),
-            installed: is_module_installed(id),
-            bundled: is_module_bundled(id),
-            size_mb: *size,
-            category: cat.to_string(),
-        })
-        .collect()
-}
-
-#[tauri::command]
-async fn install_module(
-    app: tauri::AppHandle,
-    module_id: String,
-    mirror: Option<String>,
-) -> Result<String, String> {
-    // 从 module_definitions() 获取包列表（单一数据源，避免重复定义）
-    let defs = module_definitions();
-    let (_, _, _, packages, _, _) = defs
-        .iter()
-        .find(|(id, _, _, _, _, _)| *id == module_id.as_str())
-        .ok_or_else(|| format!("未知模块: {}", module_id))?;
-
-    let target_dir = modules_dir().join(&module_id).join("site-packages");
-    fs::create_dir_all(&target_dir)
-        .map_err(|e| format!("创建模块目录失败: {e}"))?;
-
-    // Check for bundled wheels first
-    let bundled_wheels = bundled_backend_dir()
-        .parent()
-        .map(|p| p.join("modules").join(&module_id).join("wheels"))
-        .unwrap_or_default();
-
-    let effective_mirror = mirror.clone().unwrap_or_else(|| {
-        "https://mirrors.aliyun.com/pypi/simple/".to_string()
-    });
-
-    // ── 查找 Python 解释器 ──
-    // 优先级：venv > 打包内 _internal/python.exe
-    let python_exe = match find_pip_python() {
-        Some(p) => p,
-        None => {
-            let _ = app.emit("module-install-progress", serde_json::json!({
-                "moduleId": module_id,
-                "status": "installing",
-                "message": "未找到可用 Python 环境，正在检查安装包内置 Python...",
-            }));
-            let result = install_bundled_python_sync(None, None)?;
-            let p = PathBuf::from(&result.python_path);
-            if !p.exists() {
-                return Err(format!("安装包内置 Python 不可用: {}", p.display()));
-            }
-            let mut ep = Command::new(&p);
-            apply_bundled_python_env(&mut ep, &bundled_backend_dir().join("_internal"));
-            ep.args(["-m", "ensurepip", "--upgrade"]);
-            apply_no_window(&mut ep);
-            let _ = ep.output();
-            p
-        }
-    };
-
-    // ── 执行 pip install（离线 vs 多源在线） ──
-    let run_pip_result = |output: std::process::Output, label: &str| -> Result<String, String> {
-        if output.status.success() {
-            // ── Post-install hooks (模块特定的额外安装步骤) ──
-            // 注: browser 模块已内置到 core 包，不再需要 post-install hook
-
-            let marker = modules_dir().join(&module_id).join(".installed");
-            let _ = fs::write(&marker, format!("installed_at={}", now_epoch_secs()));
-            let _ = app.emit("module-install-progress", serde_json::json!({
-                "moduleId": module_id, "status": "done",
-                "message": format!("{} 安装完成 ({})", module_id, label),
-            }));
-            // 提示用户重启服务以加载新安装的模块
-            let _ = app.emit("module-install-progress", serde_json::json!({
-                "moduleId": module_id, "status": "restart-hint",
-                "message": "模块已安装，建议重启 OpenAkita 服务以加载新模块",
-            }));
-            Ok(format!("{} 安装成功", module_id))
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let combined = if stderr.trim().is_empty() { stdout.to_string() }
-                else if stdout.trim().is_empty() { stderr.to_string() }
-                else { format!("{}\n{}", stderr, stdout) };
-            let detail = &combined[..combined.len().min(800)];
-            let exit_code = output.status.code().unwrap_or(-1);
-            let err_msg = format!("[{}] pip 退出码 {}: {}", label, exit_code, detail);
-            Err(err_msg)
-        }
-    };
-
-    if bundled_wheels.exists() {
-        // ── 离线安装：从预打包的 wheels 安装 ──
-        let _ = app.emit("module-install-progress", serde_json::json!({
-            "moduleId": module_id, "status": "installing",
-            "message": format!("正在安装 {} (离线 wheels) ...", module_id),
-        }));
-        let mut c = Command::new(&python_exe);
-        apply_python_env_for(&mut c, &python_exe);
-        c.args(["-m", "pip", "install", "--no-index", "--find-links"]);
-        c.arg(&bundled_wheels);
-        c.arg("--target").arg(&target_dir);
-        for pkg in *packages { c.arg(*pkg); }
-        apply_no_window(&mut c);
-        let output = c.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped())
-            .output().map_err(|e| format!("执行 pip 失败: {e}"))?;
-        let result = run_pip_result(output, "离线");
-        if let Err(ref e) = result {
-            let _ = app.emit("module-install-progress", serde_json::json!({
-                "moduleId": module_id, "status": "error", "message": &e[..e.len().min(800)],
-            }));
-        }
-        return result;
-    }
-
-    // ── 在线安装：多源自动切换 ──
-    // 镜像优先级列表：用户指定源 > 阿里云 > 清华 > 官方 PyPI
-    let user_host = effective_mirror.split("//").nth(1).unwrap_or("").split('/').next().unwrap_or("").to_string();
-    let mirror_list: Vec<(&str, String)> = if mirror.is_some() {
-        vec![
-            (effective_mirror.as_str(), user_host.clone()),
-            ("https://mirrors.aliyun.com/pypi/simple/", "mirrors.aliyun.com".into()),
-            ("https://pypi.tuna.tsinghua.edu.cn/simple/", "pypi.tuna.tsinghua.edu.cn".into()),
-            ("https://pypi.org/simple/", "pypi.org".into()),
-        ]
-    } else {
-        vec![
-            ("https://mirrors.aliyun.com/pypi/simple/", "mirrors.aliyun.com".into()),
-            ("https://pypi.tuna.tsinghua.edu.cn/simple/", "pypi.tuna.tsinghua.edu.cn".into()),
-            ("https://pypi.org/simple/", "pypi.org".into()),
-        ]
-    };
-
-    // 根据模块估算大小调整超时时间
-    // whisper/vector-memory 含 PyTorch(~2.5GB)，需要更长超时
-    let is_heavy_module = module_id == "whisper" || module_id == "vector-memory";
-    let base_timeout = if is_heavy_module { "600" } else { "120" };
-    let retry_timeout = if is_heavy_module { "300" } else { "60" };
-
-    // 对含 PyTorch 的大模块，先单独安装 torch 以获得更好的错误提示
-    if is_heavy_module {
-        let _ = app.emit("module-install-progress", serde_json::json!({
-            "moduleId": module_id,
-            "status": "installing",
-            "message": "正在预安装 PyTorch（约 2.5GB，可能需要较长时间）...",
-        }));
-        // 尝试用第一个镜像源预装 torch
-        let (first_mirror, ref first_host) = mirror_list[0];
-        let mut torch_cmd = Command::new(&python_exe);
-        apply_python_env_for(&mut torch_cmd, &python_exe);
-        torch_cmd.args(["-m", "pip", "install", "--target"]);
-        torch_cmd.arg(&target_dir);
-        torch_cmd.args(["-i", first_mirror]);
-        torch_cmd.args(["--trusted-host", first_host.as_str()]);
-        torch_cmd.args(["--timeout", "600"]);
-        torch_cmd.args(["--prefer-binary", "--no-cache-dir"]);
-        torch_cmd.arg("torch");
-        apply_no_window(&mut torch_cmd);
-        match torch_cmd.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).output() {
-            Ok(out) if out.status.success() => {
-                let _ = app.emit("module-install-progress", serde_json::json!({
-                    "moduleId": module_id, "status": "installing",
-                    "message": "PyTorch 安装完成，继续安装其余组件...",
-                }));
-            }
-            Ok(out) => {
-                let err = String::from_utf8_lossy(&out.stderr);
-                let _ = app.emit("module-install-progress", serde_json::json!({
-                    "moduleId": module_id, "status": "warning",
-                    "message": format!("PyTorch 预安装失败（将在后续步骤重试）: {}", &err[..err.len().min(200)]),
-                }));
-            }
-            Err(_) => {}
-        }
-    }
-
-    let mut last_err = String::from("所有镜像源均安装失败");
-    for (idx, (mirror_url, ref trusted_host)) in mirror_list.iter().enumerate() {
-        let _ = app.emit("module-install-progress", serde_json::json!({
-            "moduleId": module_id,
-            "status": "installing",
-            "message": if idx == 0 {
-                format!("正在安装 {} (源: {}) ...", module_id, trusted_host)
-            } else {
-                format!("切换镜像源: {} (第 {} 次重试) ...", trusted_host, idx)
-            },
-        }));
-
-        let mut c = Command::new(&python_exe);
-        apply_python_env_for(&mut c, &python_exe);
-        c.args(["-m", "pip", "install", "--target"]);
-        c.arg(&target_dir);
-        c.args(["-i", mirror_url]);
-        c.args(["--trusted-host", trusted_host.as_str()]);
-        let timeout = if idx == 0 { base_timeout } else { retry_timeout };
-        c.args(["--timeout", timeout]);
-        c.args(["--prefer-binary", "--no-cache-dir"]);
-        for pkg in *packages { c.arg(*pkg); }
-        apply_no_window(&mut c);
-
-        match c.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).output() {
-            Ok(output) => {
-                if output.status.success() {
-                    return run_pip_result(output, trusted_host);
-                }
-                // 安装失败 - 判断是否值得切换源
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let combined = format!("{}\n{}", stderr, stdout);
-                let exit_code = output.status.code().unwrap_or(-1);
-                last_err = format!("[{}] pip 退出码 {}: {}", trusted_host, exit_code, &combined[..combined.len().min(500)]);
-
-                let combined_lower = combined.to_lowercase();
-                if combined_lower.contains("no matching distribution")
-                    || combined_lower.contains("could not find a version")
-                    || combined_lower.contains("conflicting dependencies")
-                {
-                    // 逻辑错误，不是源的问题 - 但给用户更友好的提示
-                    if combined_lower.contains("no matching distribution") || combined_lower.contains("could not find a version") {
-                        last_err = format!(
-                            "找不到兼容的安装包。可能原因：Python 版本 ({}) 或系统平台不受支持。\n详情: {}",
-                            std::env::consts::ARCH,
-                            &combined[..combined.len().min(300)]
-                        );
-                    }
-                    break;
-                }
-                let _ = app.emit("module-install-progress", serde_json::json!({
-                    "moduleId": module_id, "status": "retrying",
-                    "message": format!("源 {} 安装失败 (退出码 {})，尝试切换...", trusted_host, exit_code),
-                }));
-            }
-            Err(e) => {
-                last_err = format!("执行 pip 失败: {}", e);
-                break; // pip 本身执行失败
-            }
-        }
-    }
-
-    let _ = app.emit("module-install-progress", serde_json::json!({
-        "moduleId": module_id, "status": "error",
-        "message": &last_err[..last_err.len().min(800)],
-    }));
-    Err(last_err)
-}
-
-#[tauri::command]
-fn uninstall_module(module_id: String) -> Result<String, String> {
-    let module_path = modules_dir().join(&module_id);
-    if module_path.exists() {
-        force_remove_dir(&module_path)
-            .map_err(|e| format!("删除模块目录失败: {e}"))?;
-    }
-    Ok(format!("{} 已卸载", module_id))
-}
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -2041,6 +1752,130 @@ fn set_current_workspace(id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// 读取安装包内 bundled 后端版本号（不启动 Python，直接读文件）。
+fn bundled_backend_version() -> Option<String> {
+    let version_file = bundled_backend_dir()
+        .join("_internal")
+        .join("openakita")
+        .join("_bundled_version.txt");
+    fs::read_to_string(&version_file)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
+/// 启动时后端版本对账的结果。
+///
+/// 三种状态覆盖所有情况，调用方据此决定是否启动新后端，
+/// 且只需一次 HTTP 健康检查，避免重复请求。
+enum VersionCheckResult {
+    /// 端口上没有后端在运行。
+    NotRunning,
+    /// 后端正在运行且版本可接受（匹配、dev 版本、或重启无法改善）。
+    RunningOk,
+    /// 旧版后端已被终止，需要启动新后端。
+    Upgraded,
+}
+
+/// DMG 覆盖安装后版本对账：检查运行中后端的版本，必要时替换。
+///
+/// macOS 上通过 DMG 拖拽覆盖安装后，旧的 openakita-server 进程可能仍在端口上
+/// 服务。新版 app 启动时必须检测版本不匹配并主动替换，否则会一直使用旧后端。
+///
+/// 此函数合并了「是否有后端在运行」和「版本是否匹配」两个检查，
+/// 只发一次 HTTP 请求，避免 setup 阶段重复探测。
+fn startup_version_check(app_version: &str, port: u16) -> VersionCheckResult {
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return VersionCheckResult::NotRunning,
+    };
+
+    let resp = match client
+        .get(format!("http://127.0.0.1:{}/api/health", port))
+        .send()
+    {
+        Ok(r) if r.status().is_success() => r,
+        _ => return VersionCheckResult::NotRunning,
+    };
+
+    let json: serde_json::Value = match resp.json() {
+        Ok(v) => v,
+        Err(_) => return VersionCheckResult::RunningOk, // 响应成功但 JSON 解析失败，保守处理
+    };
+
+    let backend_version = json
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim_start_matches('v');
+    let desktop_version = app_version.trim_start_matches('v');
+
+    // 版本一致、dev 版本、或无法判断 → 保持现有后端
+    if backend_version.is_empty()
+        || backend_version == "0.0.0-dev"
+        || backend_version == desktop_version
+    {
+        return VersionCheckResult::RunningOk;
+    }
+
+    // 核心防护：检查安装包内 bundled 后端版本。
+    // 如果 bundled 版本和运行中版本相同，重启只会拉起同样版本的后端，
+    // 杀死毫无意义且可能影响用户正在使用的服务。
+    let bundled_v = bundled_backend_version()
+        .unwrap_or_default()
+        .trim_start_matches('v')
+        .to_string();
+    if !bundled_v.is_empty() && bundled_v == backend_version {
+        eprintln!(
+            "Version mismatch: backend={} desktop={}, but bundled backend is also {}. \
+             Restart would not help — keeping current backend.",
+            backend_version, desktop_version, bundled_v
+        );
+        return VersionCheckResult::RunningOk;
+    }
+
+    eprintln!(
+        "Version mismatch: running={} bundled={} desktop={}. Stopping old backend for upgrade...",
+        backend_version,
+        if bundled_v.is_empty() { "?" } else { &bundled_v },
+        desktop_version
+    );
+
+    // graceful_stop_pid 内部已包含：POST /api/shutdown → 等待 5s → force kill → 等待 2s
+    // 无需手动再发 shutdown 或 sleep。
+    let pid = match json.get("pid").and_then(|v| v.as_u64()).map(|p| p as u32) {
+        Some(p) => p,
+        None => {
+            eprintln!("Cannot determine backend PID from health response; keeping current backend.");
+            return VersionCheckResult::RunningOk;
+        }
+    };
+
+    if let Err(e) = graceful_stop_pid(pid, Some(port)) {
+        eprintln!(
+            "Failed to stop old backend (pid={}): {}. Keeping current backend.",
+            pid, e
+        );
+        return VersionCheckResult::RunningOk;
+    }
+
+    // 清理被终止进程对应的 PID 文件
+    for ent in list_service_pids() {
+        if let Some(data) = read_pid_file(&ent.workspace_id) {
+            if data.pid == pid || !is_pid_running(data.pid) {
+                let _ = fs::remove_file(service_pid_file(&ent.workspace_id));
+                remove_heartbeat_file(&ent.workspace_id);
+            }
+        }
+    }
+
+    eprintln!("Old backend (pid={}) stopped. New backend will be started automatically.", pid);
+    VersionCheckResult::Upgraded
+}
+
 /// 启动对账：清理残留锁文件和已死的 PID 文件
 fn startup_reconcile() {
     let dir = run_dir();
@@ -2182,26 +2017,27 @@ fn main() {
             // dev 模式（cargo tauri dev）跳过，避免与手动启动的开发后端冲突。
             // 前端通过 is_backend_auto_starting 查询此状态，
             // 在启动期间显示提示并禁用启动/重启按钮。
-            if !cfg!(debug_assertions) {
-                let state = read_state_file();
-                if let Some(ref ws_id) = state.current_workspace_id {
-                    let port = read_workspace_api_port(ws_id).unwrap_or(18900);
-                    let already_running = reqwest::blocking::Client::builder()
-                        .timeout(std::time::Duration::from_secs(2))
-                        .build()
-                        .ok()
-                        .and_then(|c| c.get(format!("http://127.0.0.1:{}/api/health", port)).send().ok())
-                        .map(|r| r.status().is_success())
-                        .unwrap_or(false);
-                    if !already_running {
-                        AUTO_START_IN_PROGRESS.store(true, Ordering::SeqCst);
-                        let venv_dir = openakita_root_dir().join("venv").to_string_lossy().to_string();
-                        let ws_clone = ws_id.clone();
-                        std::thread::spawn(move || {
-                            let _ = openakita_service_start(venv_dir, ws_clone);
-                            AUTO_START_IN_PROGRESS.store(false, Ordering::SeqCst);
-                        });
-                    }
+            //
+            // startup_version_check 合并了「健康检查」和「版本对账」两步：
+            //   - NotRunning  → 端口无响应，需要启动
+            //   - RunningOk   → 后端在运行且版本可接受
+            //   - Upgraded    → 旧版后端已被终止，需要启动新版
+            let app_version = app.package_info().version.to_string();
+            let state = read_state_file();
+            if let Some(ref ws_id) = state.current_workspace_id {
+                let port = read_workspace_api_port(ws_id).unwrap_or(18900);
+                let need_start = !matches!(
+                    startup_version_check(&app_version, port),
+                    VersionCheckResult::RunningOk
+                );
+                if need_start {
+                    AUTO_START_IN_PROGRESS.store(true, Ordering::SeqCst);
+                    let venv_dir = openakita_root_dir().join("venv").to_string_lossy().to_string();
+                    let ws_clone = ws_id.clone();
+                    std::thread::spawn(move || {
+                        let _ = openakita_service_start(venv_dir, ws_clone);
+                        AUTO_START_IN_PROGRESS.store(false, Ordering::SeqCst);
+                    });
                 }
             }
             Ok(())
@@ -2229,14 +2065,12 @@ fn main() {
             import_workspace_backup,
             detect_python,
             diagnose_python_env,
-            repair_python_env,
             export_python_diagnostic_report,
             check_python_for_pip,
             install_bundled_python,
             create_venv,
             pip_install,
             pip_uninstall,
-            remove_openakita_runtime,
             autostart_is_enabled,
             autostart_set_enabled,
             openakita_service_status,
@@ -2268,12 +2102,11 @@ fn main() {
             download_file,
             show_item_in_folder,
             open_file_with_default,
+            export_env_backup,
+            export_diagnostic_bundle,
             open_external_url,
             openakita_list_processes,
             openakita_stop_all_processes,
-            detect_modules,
-            install_module,
-            uninstall_module,
             is_first_run,
             check_environment,
             cleanup_old_environment,
@@ -2284,8 +2117,24 @@ fn main() {
             unregister_cli,
             get_cli_status
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                // Safety-net: clean up backend processes on ANY exit path
+                // (SIGTERM, system shutdown, unexpected termination, etc.)
+                // Idempotent — harmless if tray-quit already stopped everything.
+                let entries = list_service_pids();
+                for ent in &entries {
+                    if ent.started_by == "external" {
+                        continue;
+                    }
+                    let port = read_workspace_api_port(&ent.workspace_id);
+                    let _ = stop_service_pid_entry(ent, port);
+                }
+                kill_openakita_orphans();
+            }
+        });
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -2464,20 +2313,34 @@ fn strip_harmful_python_env(cmd: &mut Command) {
     cmd.env_remove("PIP_REQUIRE_VIRTUALENV");
 }
 
-/// 为直接调用 PyInstaller 打包的 `_internal/python.exe` 配置环境。
+/// Configure environment for invoking `_internal/python{3}` directly.
 ///
-/// PyInstaller 将 `encodings`、`codecs` 等 Python 启动必需的核心模块
-/// 打包在 `base_library.zip` 中，裸调用 `python.exe` 时需要将其加入
-/// `sys.path`，否则报 `init_fs_encoding: No module named 'encodings'`。
+/// PyInstaller packs `encodings`, `codecs` and other bootstrap modules into
+/// `base_library.zip`.  When calling the raw Python binary we must make sure
+/// it can find them.
 ///
-/// 采用三层防护：
-/// 1. 确保 `python3XX._pth` 文件存在（最底层，._pth 在 Python 启动最早阶段生效）
-/// 2. 清除外部有害环境变量（Anaconda、用户 PYTHONPATH 等）
-/// 3. 设置 `PYTHONHOME` + `PYTHONPATH` 作为后备（._pth 不存在的旧安装）
+/// Platform-specific behaviour:
+/// - **Windows**: `._pth` files (created by `ensure_bundled_pth_file`) are the
+///   primary mechanism; `PYTHONHOME` + `PYTHONPATH` serve as fallback.
+/// - **macOS / Linux**: `._pth` files are Windows-only and ignored.
+///   Setting `PYTHONHOME` to `_internal/` fails because Python expects
+///   `PYTHONHOME/lib/pythonX.Y/` which does not exist in a PyInstaller layout.
+///   We rely on `PYTHONPATH` alone and suppress user site-packages.
 fn apply_bundled_python_env(cmd: &mut Command, internal_dir: &std::path::Path) {
     ensure_bundled_pth_file(internal_dir);
     strip_harmful_python_env(cmd);
+
+    // PYTHONHOME: Windows only.  On macOS/Linux it breaks stdlib resolution
+    // because _internal/ lacks the expected lib/pythonX.Y/ subdirectory.
+    #[cfg(target_os = "windows")]
     cmd.env("PYTHONHOME", internal_dir);
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        cmd.env_remove("PYTHONHOME");
+        cmd.env("PYTHONNOUSERSITE", "1");
+    }
+
     let mut parts: Vec<PathBuf> = vec![];
     let base_lib = internal_dir.join("base_library.zip");
     if base_lib.exists() {
@@ -3698,11 +3561,10 @@ fn detect_python() -> Vec<PythonCandidate> {
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct PythonDiagnostic {
-    /// healthy | repairable | broken
+    /// healthy | broken
     summary: String,
     contracts: Vec<PythonContractResult>,
     environment: PythonEnvironmentSnapshot,
-    repair_plan: Vec<PythonRepairStep>,
     trace_id: String,
     generated_at: String,
 }
@@ -3724,20 +3586,7 @@ struct PythonContractResult {
 struct PythonEnvironmentSnapshot {
     platform: String,
     bundled_python_path: Option<String>,
-    venv_path: Option<String>,
-    venv_python_version: Option<String>,
     openakita_version: Option<String>,
-}
-
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct PythonRepairStep {
-    id: String,
-    title: String,
-    description: String,
-    destructive: bool,
-    requires_confirmation: bool,
-    enabled: bool,
 }
 
 fn python_diag_trace_id() -> String {
@@ -3756,477 +3605,277 @@ fn python_diag_generated_at() -> String {
         .to_string()
 }
 
-fn contract_failed(diag: &PythonDiagnostic, id: &str) -> bool {
-    diag.contracts
-        .iter()
-        .find(|c| c.id == id)
-        .map(|c| c.status != "pass")
-        .unwrap_or(true)
-}
-
-fn contract_failed_in(contracts: &[PythonContractResult], id: &str) -> bool {
-    contracts
-        .iter()
-        .find(|c| c.id == id)
-        .map(|c| c.status != "pass")
-        .unwrap_or(true)
-}
-
-/// Run a full diagnostic of the Python environment.
+/// Run a full diagnostic.
+///
+/// Strategy:
+///   0. Check heartbeat to distinguish "not started" / "starting" / "running".
+///   1. If the backend is running → call GET /api/diagnostics (the backend
+///      self-reports, no fragile _internal/python3 invocation needed).
+///   2. If the backend is NOT running → basic file-existence check on the
+///      bundled openakita-server binary.
 #[tauri::command]
 fn diagnose_python_env(venv_dir: String) -> PythonDiagnostic {
+    let _ = venv_dir;
     let trace_id = python_diag_trace_id();
-    let mut env = PythonEnvironmentSnapshot {
-        platform: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
-        bundled_python_path: None,
-        venv_path: Some(venv_dir.clone()),
-        venv_python_version: None,
-        openakita_version: None,
+
+    let state = read_state_file();
+    let ws_id = state.current_workspace_id.clone();
+
+    // Determine the API port of the current workspace's backend.
+    let port = ws_id.as_deref()
+        .and_then(read_workspace_api_port)
+        .unwrap_or(18900);
+
+    // --- Strategy 0: check heartbeat to understand backend lifecycle ---
+    let heartbeat = ws_id.as_deref().and_then(read_heartbeat_file);
+    let backend_phase = heartbeat.as_ref().map(|hb| hb.phase.as_str()).unwrap_or("");
+    let http_ready = heartbeat.as_ref().map(|hb| hb.http_ready).unwrap_or(false);
+    let hb_fresh = heartbeat.as_ref().map(|hb| {
+        let age = now_epoch_secs() as f64 - hb.timestamp;
+        age <= 30.0
+    }).unwrap_or(false);
+
+    // Backend process is alive with fresh heartbeat but HTTP not yet ready
+    // → it's still initializing; skip the API call (would just time out).
+    if hb_fresh && !http_ready && matches!(backend_phase, "starting" | "initializing") {
+        return make_backend_starting_diagnostic(trace_id, port, backend_phase);
+    }
+
+    // --- Strategy 1: ask the running backend ---
+    if let Some(diag) = diagnose_via_backend_api(port) {
+        return PythonDiagnostic {
+            summary: diag.summary,
+            contracts: diag.contracts,
+            environment: diag.environment,
+            trace_id,
+            generated_at: python_diag_generated_at(),
+        };
+    }
+
+    // API call failed — but if heartbeat says backend is alive, give a
+    // more specific message than a generic "unreachable".
+    if hb_fresh && http_ready {
+        return make_backend_api_unreachable_diagnostic(trace_id, port);
+    }
+
+    // --- Strategy 2: backend not reachable — static file check ---
+    let bundled_dir = bundled_backend_dir();
+    let bundled_exe = if cfg!(windows) {
+        bundled_dir.join("openakita-server.exe")
+    } else {
+        bundled_dir.join("openakita-server")
     };
+    let internal_dir = bundled_dir.join("_internal");
 
     let mut contracts: Vec<PythonContractResult> = vec![];
 
-    // C1: bundled runtime contract
-    let bundled_dir = bundled_backend_dir();
-    let bundled_candidates: Vec<PathBuf> = if cfg!(windows) {
-        vec![bundled_dir.join("_internal").join("python.exe")]
-    } else {
-        vec![
-            bundled_dir.join("_internal").join("python3"),
-            bundled_dir.join("_internal").join("python"),
-        ]
-    };
-    let existing_bundled: Vec<PathBuf> = bundled_candidates
-        .iter()
-        .filter(|p| p.exists())
-        .cloned()
-        .collect();
-
-    let bundled_contract = if existing_bundled.is_empty() {
-        PythonContractResult {
+    if bundled_exe.exists() && internal_dir.exists() {
+        contracts.push(PythonContractResult {
             id: "C1_BUNDLED_RUNTIME".into(),
-            title: "Bundled Python runtime".into(),
-            status: "fail".into(),
-            code: "PY_BUNDLE_MISSING".into(),
-            evidence: vec![format!("candidates: {}", bundled_candidates.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", "))],
-            auto_fix: false,
-            fix_hint: Some("请重装 OpenAkita 以恢复内置 Python 运行时".into()),
-        }
-    } else {
-        let mut usable_path: Option<PathBuf> = None;
-        let mut errors = vec![];
-        let internal_dir = bundled_dir.join("_internal");
-        for py in &existing_bundled {
-            let mut c = Command::new(py);
-            c.args(["-c", "import pip; print(pip.__version__)"]);
-            apply_bundled_python_env(&mut c, &internal_dir);
-            apply_no_window(&mut c);
-            match c.output() {
-                Ok(out) if out.status.success() => {
-                    usable_path = Some(py.clone());
-                    break;
-                }
-                Ok(out) => {
-                    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-                    errors.push(format!("{} -> exit {} {}", py.display(), out.status.code().unwrap_or(-1), stderr));
-                }
-                Err(e) => errors.push(format!("{} -> spawn error: {}", py.display(), e)),
-            }
-        }
-        if let Some(py) = usable_path {
-            env.bundled_python_path = Some(py.to_string_lossy().to_string());
-            PythonContractResult {
-                id: "C1_BUNDLED_RUNTIME".into(),
-                title: "Bundled Python runtime".into(),
-                status: "pass".into(),
-                code: "PY_OK".into(),
-                evidence: vec![py.to_string_lossy().to_string()],
-                auto_fix: false,
-                fix_hint: None,
-            }
-        } else {
-            PythonContractResult {
-                id: "C1_BUNDLED_RUNTIME".into(),
-                title: "Bundled Python runtime".into(),
-                status: "fail".into(),
-                code: "PY_BUNDLE_PIP_UNUSABLE".into(),
-                evidence: errors,
-                auto_fix: false,
-                fix_hint: Some("内置 Python 不可执行或 pip 不可用，建议重装 OpenAkita".into()),
-            }
-        }
-    };
-    contracts.push(bundled_contract);
-
-    // C2: venv health contract
-    let venv = PathBuf::from(&venv_dir);
-    let venv_py = venv_python_path(&venv_dir);
-    let venv_contract = if !venv.exists() {
-        PythonContractResult {
-            id: "C2_VENV_HEALTH".into(),
-            title: "Virtual environment health".into(),
-            status: "fail".into(),
-            code: "PY_VENV_MISSING".into(),
-            evidence: vec![format!("missing: {}", venv.display())],
-            auto_fix: true,
-            fix_hint: Some("可一键修复：使用内置 Python 重建 venv".into()),
-        }
-    } else if !venv_py.exists() {
-        PythonContractResult {
-            id: "C2_VENV_HEALTH".into(),
-            title: "Virtual environment health".into(),
-            status: "fail".into(),
-            code: "PY_VENV_BROKEN".into(),
-            evidence: vec![format!("venv exists but python missing: {}", venv_py.display())],
-            auto_fix: true,
-            fix_hint: Some("可一键修复：删除并重建 venv".into()),
-        }
-    } else {
-        let mut c = Command::new(&venv_py);
-        c.arg("--version");
-        apply_no_window(&mut c);
-        match c.output() {
-            Ok(out) if out.status.success() => {
-                let ver = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                env.venv_python_version = Some(ver.clone());
-                PythonContractResult {
-                    id: "C2_VENV_HEALTH".into(),
-                    title: "Virtual environment health".into(),
-                    status: "pass".into(),
-                    code: "PY_OK".into(),
-                    evidence: vec![format!("{} ({})", venv_py.display(), ver)],
-                    auto_fix: false,
-                    fix_hint: None,
-                }
-            }
-            Ok(out) => {
-                let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-                PythonContractResult {
-                    id: "C2_VENV_HEALTH".into(),
-                    title: "Virtual environment health".into(),
-                    status: "fail".into(),
-                    code: "PY_VENV_BROKEN".into(),
-                    evidence: vec![format!("{} -> exit {} {}", venv_py.display(), out.status.code().unwrap_or(-1), stderr)],
-                    auto_fix: true,
-                    fix_hint: Some("可一键修复：删除并重建 venv".into()),
-                }
-            }
-            Err(e) => PythonContractResult {
-                id: "C2_VENV_HEALTH".into(),
-                title: "Virtual environment health".into(),
-                status: "fail".into(),
-                code: "PY_VENV_BROKEN".into(),
-                evidence: vec![format!("spawn error: {}", e)],
-                auto_fix: true,
-                fix_hint: Some("可一键修复：删除并重建 venv".into()),
-            },
-        }
-    };
-    let venv_ok = venv_contract.status == "pass";
-    contracts.push(venv_contract);
-
-    // C3: openakita importability in venv
-    let openakita_contract = if venv_ok {
-        let mut c = Command::new(&venv_py);
-        apply_no_window(&mut c);
-        c.env("PYTHONUTF8", "1");
-        c.args(["-c", "import openakita; print(getattr(openakita,'__version__','unknown'))"]);
-        match c.output() {
-            Ok(out) if out.status.success() => {
-                let ver = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                env.openakita_version = Some(ver.clone());
-                PythonContractResult {
-                    id: "C3_OPENAKITA_IN_VENV".into(),
-                    title: "OpenAkita package in venv".into(),
-                    status: "pass".into(),
-                    code: "PY_OK".into(),
-                    evidence: vec![format!("openakita=={}", ver)],
-                    auto_fix: false,
-                    fix_hint: None,
-                }
-            }
-            Ok(out) => {
-                let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-                PythonContractResult {
-                    id: "C3_OPENAKITA_IN_VENV".into(),
-                    title: "OpenAkita package in venv".into(),
-                    status: "fail".into(),
-                    code: "PY_OPENAKITA_IMPORT_FAIL".into(),
-                    evidence: vec![format!("exit {} {}", out.status.code().unwrap_or(-1), stderr)],
-                    auto_fix: true,
-                    fix_hint: Some("可一键修复：在 venv 中重新安装 openakita".into()),
-                }
-            }
-            Err(e) => PythonContractResult {
-                id: "C3_OPENAKITA_IN_VENV".into(),
-                title: "OpenAkita package in venv".into(),
-                status: "fail".into(),
-                code: "PY_OPENAKITA_IMPORT_FAIL".into(),
-                evidence: vec![format!("spawn error: {}", e)],
-                auto_fix: true,
-                fix_hint: Some("可一键修复：在 venv 中重新安装 openakita".into()),
-            },
-        }
-    } else {
-        PythonContractResult {
-            id: "C3_OPENAKITA_IN_VENV".into(),
-            title: "OpenAkita package in venv".into(),
-            status: "fail".into(),
-            code: "PY_OPENAKITA_IMPORT_FAIL".into(),
-            evidence: vec!["skipped because venv is not healthy".into()],
-            auto_fix: true,
-            fix_hint: Some("先修复 venv，再安装 openakita".into()),
-        }
-    };
-    contracts.push(openakita_contract);
-
-    // C4: layout compatibility check (macOS only)
-    let layout_contract = if cfg!(target_os = "macos") {
-        let internal = bundled_dir.join("_internal");
-        let app_in_resources = internal.join("Resources").join("Python.app");
-        let app_in_framework = internal
-            .join("Python.framework")
-            .join("Versions")
-            .join("3.11")
-            .join("Resources")
-            .join("Python.app");
-        if app_in_resources.exists() || app_in_framework.exists() {
-            PythonContractResult {
-                id: "C4_RUNTIME_LAYOUT_COMPAT".into(),
-                title: "Runtime layout compatibility".into(),
-                status: "pass".into(),
-                code: "PY_OK".into(),
-                evidence: vec![
-                    format!("resources layout: {}", app_in_resources.exists()),
-                    format!("framework layout: {}", app_in_framework.exists()),
-                ],
-                auto_fix: false,
-                fix_hint: None,
-            }
-        } else {
-            PythonContractResult {
-                id: "C4_RUNTIME_LAYOUT_COMPAT".into(),
-                title: "Runtime layout compatibility".into(),
-                status: "fail".into(),
-                code: "PY_LAYOUT_MISMATCH".into(),
-                evidence: vec![
-                    format!("missing {}", app_in_resources.display()),
-                    format!("missing {}", app_in_framework.display()),
-                ],
-                auto_fix: false,
-                fix_hint: Some("内置运行时布局异常，建议重新安装 OpenAkita".into()),
-            }
-        }
-    } else {
-        PythonContractResult {
-            id: "C4_RUNTIME_LAYOUT_COMPAT".into(),
-            title: "Runtime layout compatibility".into(),
+            title: "内置运行时".into(),
             status: "pass".into(),
-            code: "PY_OK".into(),
-            evidence: vec!["not-applicable on non-macOS".into()],
+            code: "RUNTIME_OK".into(),
+            evidence: vec![format!("binary: {}", bundled_exe.display())],
             auto_fix: false,
             fix_hint: None,
-        }
-    };
-    contracts.push(layout_contract);
-
-    let failing: Vec<&PythonContractResult> = contracts.iter().filter(|c| c.status != "pass").collect();
-    let summary = if failing.is_empty() {
-        "healthy".to_string()
-    } else if failing.iter().all(|c| c.auto_fix) {
-        "repairable".to_string()
-    } else {
-        "broken".to_string()
-    };
-
-    let mut repair_plan = vec![];
-    if summary == "healthy" {
-        repair_plan.push(PythonRepairStep {
-            id: "force_rebuild_venv".into(),
-            title: "强制重建 venv".into(),
-            description: "当前环境健康。仅在明确需要时执行（会删除并重建 venv）".into(),
-            destructive: true,
-            requires_confirmation: true,
-            enabled: true,
         });
     } else {
-        if contract_failed_in(&contracts, "C2_VENV_HEALTH") {
-            repair_plan.push(PythonRepairStep {
-                id: "rebuild_venv".into(),
-                title: "重建 venv".into(),
-                description: "删除损坏 venv 并使用内置 Python 重新创建".into(),
-                destructive: true,
-                requires_confirmation: false,
-                enabled: true,
-            });
+        let mut missing = vec![];
+        if !bundled_exe.exists() {
+            missing.push(format!("missing: {}", bundled_exe.display()));
         }
-        if contract_failed_in(&contracts, "C3_OPENAKITA_IN_VENV") {
-            repair_plan.push(PythonRepairStep {
-                id: "reinstall_openakita".into(),
-                title: "重装 openakita".into(),
-                description: "在 venv 中执行 pip install openakita[all]".into(),
-                destructive: false,
-                requires_confirmation: false,
-                enabled: true,
-            });
+        if !internal_dir.exists() {
+            missing.push(format!("missing: {}", internal_dir.display()));
         }
-        if contract_failed_in(&contracts, "C1_BUNDLED_RUNTIME")
-            || contract_failed_in(&contracts, "C4_RUNTIME_LAYOUT_COMPAT")
-        {
-            repair_plan.push(PythonRepairStep {
-                id: "reinstall_app".into(),
-                title: "重装应用".into(),
-                description: "内置 Python 运行时异常，建议重装 OpenAkita".into(),
-                destructive: false,
-                requires_confirmation: false,
-                enabled: false,
-            });
-        }
+        contracts.push(PythonContractResult {
+            id: "C1_BUNDLED_RUNTIME".into(),
+            title: "内置运行时".into(),
+            status: "fail".into(),
+            code: "RUNTIME_MISSING".into(),
+            evidence: missing,
+            auto_fix: false,
+            fix_hint: Some("请重装 OpenAkita 以恢复内置运行时".into()),
+        });
     }
+
+    contracts.push(PythonContractResult {
+        id: "C0_BACKEND_OFFLINE".into(),
+        title: "后端服务".into(),
+        status: "warn".into(),
+        code: "BACKEND_NOT_RUNNING".into(),
+        evidence: vec![format!("port {} unreachable", port)],
+        auto_fix: false,
+        fix_hint: Some("启动后端服务后可获得完整诊断信息".into()),
+    });
+
+    let failing: Vec<&PythonContractResult> = contracts
+        .iter()
+        .filter(|c| c.status == "fail")
+        .collect();
+    let summary = if failing.is_empty() { "healthy" } else { "broken" }.to_string();
 
     PythonDiagnostic {
         summary,
         contracts,
-        environment: env,
-        repair_plan,
+        environment: PythonEnvironmentSnapshot {
+            platform: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
+            bundled_python_path: None,
+            openakita_version: None,
+        },
         trace_id,
         generated_at: python_diag_generated_at(),
     }
 }
 
-/// One-click repair: diagnose, fix all issues, return final diagnostic.
-/// Emits `python_repair_event` events with progress updates.
-#[tauri::command]
-async fn repair_python_env(
-    app: tauri::AppHandle,
-    venv_dir: String,
-    force_rebuild: Option<bool>,
-) -> Result<PythonDiagnostic, String> {
-    let venv_dir_clone = venv_dir.clone();
-    let force_rebuild = force_rebuild.unwrap_or(false);
-    spawn_blocking_result(move || {
-        let emit = |stage: &str, percent: u8, detail: &str| {
-            let _ = app.emit("python_repair_event", serde_json::json!({
-                "stage": stage,
-                "percent": percent,
-                "detail": detail,
-            }));
-        };
+/// Diagnostic result when backend is still initializing (heartbeat alive, HTTP not ready).
+fn make_backend_starting_diagnostic(trace_id: String, port: u16, phase: &str) -> PythonDiagnostic {
+    PythonDiagnostic {
+        summary: "healthy".into(),
+        contracts: vec![PythonContractResult {
+            id: "C0_BACKEND_STARTING".into(),
+            title: "后端服务".into(),
+            status: "warn".into(),
+            code: "BACKEND_STARTING".into(),
+            evidence: vec![format!("phase: {}, port {}", phase, port)],
+            auto_fix: false,
+            fix_hint: Some("后端正在启动，请稍后再试".into()),
+        }],
+        environment: PythonEnvironmentSnapshot {
+            platform: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
+            bundled_python_path: None,
+            openakita_version: None,
+        },
+        trace_id,
+        generated_at: python_diag_generated_at(),
+    }
+}
 
-        // Phase 1: Diagnose
-        emit("诊断", 5, "检测当前 Python 环境状态...");
-        let diag = diagnose_python_env(venv_dir_clone.clone());
-        let need_bundled = contract_failed(&diag, "C1_BUNDLED_RUNTIME");
-        let need_venv = force_rebuild || contract_failed(&diag, "C2_VENV_HEALTH");
-        let need_openakita = need_venv || contract_failed(&diag, "C3_OPENAKITA_IN_VENV");
+/// Diagnostic result when heartbeat says http_ready=true but API call still fails.
+fn make_backend_api_unreachable_diagnostic(trace_id: String, port: u16) -> PythonDiagnostic {
+    PythonDiagnostic {
+        summary: "healthy".into(),
+        contracts: vec![PythonContractResult {
+            id: "C0_BACKEND_OFFLINE".into(),
+            title: "后端服务".into(),
+            status: "warn".into(),
+            code: "BACKEND_API_UNREACHABLE".into(),
+            evidence: vec![format!("heartbeat ok, port {} API unreachable — retrying may help", port)],
+            auto_fix: false,
+            fix_hint: Some("后端进程正在运行但 API 暂时不可达，请稍后重试".into()),
+        }],
+        environment: PythonEnvironmentSnapshot {
+            platform: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
+            bundled_python_path: None,
+            openakita_version: None,
+        },
+        trace_id,
+        generated_at: python_diag_generated_at(),
+    }
+}
 
-        if diag.summary == "healthy" && !force_rebuild {
-            emit("完成", 100, "当前环境健康，需用户确认后才能执行强制重建");
-            return Err("当前环境健康。若需强制重建 venv，请勾选确认后重试。".into());
+/// Call GET /api/diagnostics on the running backend and map the response
+/// to our diagnostic structures.
+///
+/// Uses a quick TCP probe first; if nothing is listening, returns None
+/// immediately without wasting time on HTTP. On transient failures
+/// (timeout, reset) retries once after a short delay.
+fn diagnose_via_backend_api(port: u16) -> Option<PythonDiagnostic> {
+    // Quick TCP probe: if nothing is listening, bail out immediately.
+    {
+        use std::net::TcpStream;
+        let addr = format!("127.0.0.1:{}", port);
+        if TcpStream::connect_timeout(
+            &addr.parse().ok()?,
+            std::time::Duration::from_secs(2),
+        ).is_err() {
+            return None;
         }
+    }
 
-        emit("诊断", 10, "已生成修复计划，开始执行...");
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(6))
+        .build()
+        .ok()?;
 
-        // Phase 2: Ensure bundled Python
-        let python_path: PathBuf;
-        if need_bundled {
-            emit("检查内置 Python", 15, "检查安装包内置 Python...");
-            match install_bundled_python_sync(None, None) {
-                Ok(result) => {
-                    python_path = PathBuf::from(&result.python_path);
-                    emit("检查内置 Python", 40, &format!("内置 Python 就绪: {}", result.python_path));
+    let url = format!("http://127.0.0.1:{}/api/diagnostics", port);
+    let max_attempts: u8 = 2;
+    let mut last_err = String::new();
+
+    for attempt in 0..max_attempts {
+        if attempt > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+        }
+        match client.get(&url).send() {
+            Ok(resp) if resp.status().is_success() => {
+                match resp.json::<serde_json::Value>() {
+                    Ok(json) => return parse_diagnostics_json(&json),
+                    Err(e) => { last_err = format!("json parse: {e}"); continue; }
                 }
-                Err(e) => {
-                    emit("错误", 40, &format!("内置 Python 不可用: {}", e));
-                    return Err(format!("内置 Python 不可用: {}", e));
+            }
+            Ok(resp) => { last_err = format!("HTTP {}", resp.status()); continue; }
+            Err(e) => {
+                let msg = format!("{e}");
+                // Connection refused → nothing is listening, don't retry.
+                if msg.contains("onnection refused") || msg.contains("No connection") {
+                    eprintln!("[diagnose] connection refused on port {port}");
+                    return None;
                 }
-            }
-        } else if let Some(ref p) = diag.environment.bundled_python_path {
-            python_path = PathBuf::from(p);
-            emit("检查", 20, "内置 Python 正常");
-        } else {
-            match bundled_internal_python_path() {
-                Some(p) => {
-                    python_path = p;
-                    emit("检查", 20, "使用安装包内置 Python");
-                }
-                None => {
-                    return Err("安装包内置 Python 不可用，请重新安装 OpenAkita".into());
-                }
+                last_err = msg;
+                continue;
             }
         }
+    }
 
-        // Phase 3: Ensure venv
-        let venv = PathBuf::from(&venv_dir_clone);
-        if need_venv {
-            // Remove corrupted venv first
-            if venv.exists() {
-                emit("修复 venv", 45, "删除损坏的 venv...");
-                let _ = fs::remove_dir_all(&venv);
-            }
-            emit("修复 venv", 50, "创建新的 venv...");
-            let mut c = Command::new(&python_path);
-            apply_no_window(&mut c);
-            apply_bundled_python_env(&mut c, &bundled_backend_dir().join("_internal"));
-            c.args(["-m", "venv"]).arg(&venv);
-            let status = c.status().map_err(|e| format!("创建 venv 失败: {e}"))?;
-            if !status.success() {
-                return Err("创建 venv 失败（python -m venv 返回非零退出码）".into());
-            }
-            emit("修复 venv", 60, "venv 创建成功");
-        } else {
-            emit("检查", 50, "venv 正常");
+    eprintln!("[diagnose] backend API unreachable after {max_attempts} attempts (port={port}): {last_err}");
+    None
+}
+
+fn parse_diagnostics_json(json: &serde_json::Value) -> Option<PythonDiagnostic> {
+
+    let summary = json.get("summary")
+        .and_then(|v| v.as_str())
+        .unwrap_or("healthy")
+        .to_string();
+
+    let mut contracts: Vec<PythonContractResult> = vec![];
+    if let Some(checks) = json.get("checks").and_then(|v| v.as_array()) {
+        for c in checks {
+            contracts.push(PythonContractResult {
+                id: c.get("id").and_then(|v| v.as_str()).unwrap_or("").into(),
+                title: c.get("title").and_then(|v| v.as_str()).unwrap_or("").into(),
+                status: c.get("status").and_then(|v| v.as_str()).unwrap_or("pass").into(),
+                code: c.get("code").and_then(|v| v.as_str()).unwrap_or("").into(),
+                evidence: c.get("evidence")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                    .unwrap_or_default(),
+                auto_fix: c.get("autoFix").and_then(|v| v.as_bool()).unwrap_or(false),
+                fix_hint: c.get("fixHint").and_then(|v| v.as_str()).map(String::from),
+            });
         }
+    }
 
-        // Phase 4: Ensure openakita installed
-        if need_venv || need_openakita {
-            emit("安装 openakita", 65, "在 venv 中安装 openakita...");
-            let venv_py = if cfg!(windows) {
-                venv.join("Scripts").join("python.exe")
-            } else {
-                venv.join("bin").join("python")
-            };
+    let env_obj = json.get("environment");
+    let environment = PythonEnvironmentSnapshot {
+        platform: env_obj
+            .and_then(|e| e.get("platform"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        bundled_python_path: None,
+        openakita_version: env_obj
+            .and_then(|e| e.get("openakitaVersion"))
+            .and_then(|v| v.as_str())
+            .map(String::from),
+    };
 
-            // Upgrade pip first (best-effort)
-            let mut pip_up = Command::new(&venv_py);
-            apply_no_window(&mut pip_up);
-            strip_harmful_python_env(&mut pip_up);
-            pip_up.env("PYTHONUTF8", "1");
-            pip_up.args(["-m", "pip", "install", "--upgrade", "pip"]);
-            let _ = pip_up.status();
-
-            // Install openakita
-            let mut install = Command::new(&venv_py);
-            apply_no_window(&mut install);
-            strip_harmful_python_env(&mut install);
-            install.env("PYTHONUTF8", "1");
-            install.env("PYTHONIOENCODING", "utf-8");
-            install.args(["-m", "pip", "install", "openakita[all]"]);
-            emit("安装 openakita", 75, "pip install openakita[all] ...");
-            let out = install.output().map_err(|e| format!("pip install 执行失败: {e}"))?;
-            if !out.status.success() {
-                let stderr = String::from_utf8_lossy(&out.stderr);
-                let tail = if stderr.len() > 3000 { &stderr[stderr.len()-3000..] } else { &stderr };
-                emit("错误", 90, &format!("pip install 失败: {}", tail));
-                return Err(format!("pip install openakita 失败:\n{}", tail));
-            }
-            emit("安装 openakita", 90, "openakita 安装完成");
-        } else {
-            emit("检查", 80, "openakita 已安装");
-        }
-
-        // Phase 5: Final verification
-        emit("验证", 95, "验证修复结果...");
-        let final_diag = diagnose_python_env(venv_dir_clone);
-        if final_diag.summary == "healthy" {
-            emit("完成", 100, "所有问题已修复，Python 环境正常");
-        } else {
-            let remains = final_diag.contracts.iter().filter(|c| c.status != "pass").count();
-            emit("完成", 100, &format!("修复完成，但仍有 {} 条契约未通过", remains));
-        }
-        Ok(final_diag)
+    Some(PythonDiagnostic {
+        summary,
+        contracts,
+        environment,
+        trace_id: String::new(),
+        generated_at: String::new(),
     })
-    .await
 }
 
 #[tauri::command]
@@ -4238,10 +3887,6 @@ fn export_python_diagnostic_report(venv_dir: String) -> Result<String, String> {
     let text = serde_json::to_string_pretty(&diag).map_err(|e| format!("序列化报告失败: {e}"))?;
     fs::write(&report_path, text).map_err(|e| format!("写入报告失败: {e}"))?;
     Ok(report_path.to_string_lossy().to_string())
-}
-
-fn runtime_dir() -> PathBuf {
-    openakita_root_dir().join("runtime")
 }
 
 /// 校验并返回安装包内置 Python（不再运行时下载 Python）。
@@ -4600,24 +4245,6 @@ async fn pip_uninstall(venv_dir: String, package_name: String) -> Result<String,
         Ok("ok".into())
     })
     .await
-}
-
-#[tauri::command]
-fn remove_openakita_runtime(remove_venv: bool, remove_embedded_python: bool) -> Result<String, String> {
-    let root = openakita_root_dir();
-    if remove_venv {
-        let venv = root.join("venv");
-        if venv.exists() {
-            fs::remove_dir_all(&venv).map_err(|e| format!("remove venv failed: {e}"))?;
-        }
-    }
-    if remove_embedded_python {
-        let rt = runtime_dir();
-        if rt.exists() {
-            fs::remove_dir_all(&rt).map_err(|e| format!("remove runtime failed: {e}"))?;
-        }
-    }
-    Ok("ok".into())
 }
 
 fn run_python_module_json(
@@ -5203,6 +4830,130 @@ fn open_file_with_default(path: String) -> Result<(), String> {
             .map_err(|e| format!("Failed to open file: {e}"))?;
     }
     Ok(())
+}
+
+/// Export the workspace .env file to Downloads as a timestamped backup.
+#[tauri::command]
+fn export_env_backup(workspace_id: String) -> Result<String, String> {
+    let env_path = workspace_dir(&workspace_id).join(".env");
+    if !env_path.exists() {
+        return Err("No .env file found in workspace".to_string());
+    }
+
+    let downloads_dir = dirs_next::download_dir()
+        .or_else(|| dirs_next::home_dir().map(|h| h.join("Downloads")))
+        .ok_or_else(|| "Cannot determine Downloads directory".to_string())?;
+    fs::create_dir_all(&downloads_dir)
+        .map_err(|e| format!("Cannot create Downloads dir: {e}"))?;
+
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let filename = format!("openakita-env-backup-{ts}.env");
+    let mut dest = downloads_dir.join(&filename);
+    let mut counter = 1u32;
+    while dest.exists() {
+        dest = downloads_dir.join(format!("openakita-env-backup-{ts} ({counter}).env"));
+        counter += 1;
+    }
+
+    fs::copy(&env_path, &dest)
+        .map_err(|e| format!("Failed to copy .env: {e}"))?;
+
+    Ok(dest.to_string_lossy().to_string())
+}
+
+/// Export diagnostic bundle (logs, llm_debug, system info) as a zip in Downloads.
+#[tauri::command]
+fn export_diagnostic_bundle(
+    workspace_id: String,
+    system_info_json: Option<String>,
+) -> Result<String, String> {
+    let ws_dir = workspace_dir(&workspace_id);
+    let logs_dir = ws_dir.join("logs");
+    let llm_debug_dir = ws_dir.join("data").join("llm_debug");
+
+    let downloads_dir = dirs_next::download_dir()
+        .or_else(|| dirs_next::home_dir().map(|h| h.join("Downloads")))
+        .ok_or_else(|| "Cannot determine Downloads directory".to_string())?;
+    fs::create_dir_all(&downloads_dir)
+        .map_err(|e| format!("Cannot create Downloads dir: {e}"))?;
+
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let zip_name = format!("openakita-diagnostic-{ts}.zip");
+    let mut dest = downloads_dir.join(&zip_name);
+    let mut counter = 1u32;
+    while dest.exists() {
+        dest = downloads_dir.join(format!("openakita-diagnostic-{ts} ({counter}).zip"));
+        counter += 1;
+    }
+
+    let file = fs::File::create(&dest)
+        .map_err(|e| format!("Failed to create zip file: {e}"))?;
+    let mut zip_writer = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+
+    fn collect_files(dir: &Path) -> Vec<PathBuf> {
+        let mut result = Vec::new();
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    result.extend(collect_files(&path));
+                } else {
+                    result.push(path);
+                }
+            }
+        }
+        result
+    }
+
+    fn add_dir_to_zip(
+        zip_writer: &mut zip::ZipWriter<fs::File>,
+        dir: &Path,
+        prefix: &str,
+        options: zip::write::SimpleFileOptions,
+    ) -> Result<(), String> {
+        if !dir.exists() {
+            return Ok(());
+        }
+        for file_path in collect_files(dir) {
+            if let Ok(rel) = file_path.strip_prefix(dir) {
+                let name = format!("{}/{}", prefix, rel.to_string_lossy().replace('\\', "/"));
+                zip_writer
+                    .start_file(&name, options)
+                    .map_err(|e| format!("zip start error: {e}"))?;
+                let data = fs::read(&file_path).unwrap_or_default();
+                zip_writer
+                    .write_all(&data)
+                    .map_err(|e| format!("zip write error: {e}"))?;
+            }
+        }
+        Ok(())
+    }
+
+    add_dir_to_zip(&mut zip_writer, &logs_dir, "logs", options)?;
+    add_dir_to_zip(&mut zip_writer, &llm_debug_dir, "llm_debug", options)?;
+
+    if let Some(info) = system_info_json {
+        zip_writer
+            .start_file("system-info.json", options)
+            .map_err(|e| format!("zip error: {e}"))?;
+        zip_writer
+            .write_all(info.as_bytes())
+            .map_err(|e| format!("zip write error: {e}"))?;
+    }
+
+    zip_writer
+        .finish()
+        .map_err(|e| format!("zip finish error: {e}"))?;
+
+    Ok(dest.to_string_lossy().to_string())
 }
 
 /// Open an external URL in the OS default browser.

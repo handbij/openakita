@@ -181,6 +181,7 @@ hidden_imports_core = [
     "hpack",                    # h2 依赖: HTTP/2 头部压缩
     "hyperframe",               # h2 依赖: HTTP/2 帧协议
     "httpcore",                 # httpx 传输层
+    "socksio",                  # httpx SOCKS 代理支持 (系统代理工具常用 socks5://)
     "certifi",                  # SSL CA bundle (httpx/urllib3 依赖)
     "psutil",                   # Process info (~1MB)
     "pyperclip",                # Clipboard (~50KB)

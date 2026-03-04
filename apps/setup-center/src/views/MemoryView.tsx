@@ -253,7 +253,7 @@ export function MemoryView({ serviceRunning, apiBaseUrl = "" }: Props) {
               onChange={e => setSearchQuery(e.target.value)}
               onKeyDown={e => e.key === "Enter" && loadMemories()}
               style={{
-                width: "100%", padding: "6px 8px 6px 28px", border: "1px solid var(--border)",
+                width: "100%", padding: "6px 8px 6px 28px", border: "1px solid var(--line)",
                 borderRadius: 6, background: "var(--bg)", color: "var(--text)", fontSize: 13,
               }}
             />
@@ -263,7 +263,7 @@ export function MemoryView({ serviceRunning, apiBaseUrl = "" }: Props) {
             value={filterType}
             onChange={e => setFilterType(e.target.value)}
             style={{
-              padding: "6px 8px", border: "1px solid var(--border)",
+              padding: "6px 8px", border: "1px solid var(--line)",
               borderRadius: 6, background: "var(--bg)", color: "var(--text)", fontSize: 13,
             }}
           >
@@ -278,7 +278,7 @@ export function MemoryView({ serviceRunning, apiBaseUrl = "" }: Props) {
             disabled={loading}
             style={{
               display: "flex", alignItems: "center", gap: 4, padding: "6px 12px",
-              border: "1px solid var(--border)", borderRadius: 6,
+              border: "1px solid var(--line)", borderRadius: 6,
               background: "var(--bg)", color: "var(--text)", cursor: "pointer", fontSize: 13,
             }}
           >
@@ -345,7 +345,7 @@ export function MemoryView({ serviceRunning, apiBaseUrl = "" }: Props) {
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
-            <tr style={{ background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
+            <tr style={{ background: "var(--bg)", borderBottom: "1px solid var(--line)" }}>
               <th style={{ padding: "8px 12px", textAlign: "left", width: 36 }}>
                 <input
                   type="checkbox"
@@ -377,7 +377,7 @@ export function MemoryView({ serviceRunning, apiBaseUrl = "" }: Props) {
               <tr
                 key={m.id}
                 style={{
-                  borderBottom: "1px solid var(--border)",
+                  borderBottom: "1px solid var(--line)",
                   background: selected.has(m.id) ? "rgba(99,102,241,0.06)" : undefined,
                   transition: "background 0.15s",
                 }}
@@ -390,6 +390,7 @@ export function MemoryView({ serviceRunning, apiBaseUrl = "" }: Props) {
                 <td style={{ padding: "8px 12px" }}>
                   <span style={{
                     display: "inline-block", padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 500,
+                    whiteSpace: "nowrap",
                     background: `${TYPE_COLORS[m.type] || "#6b7280"}18`,
                     color: TYPE_COLORS[m.type] || "#6b7280",
                     border: `1px solid ${TYPE_COLORS[m.type] || "#6b7280"}30`,
@@ -405,7 +406,7 @@ export function MemoryView({ serviceRunning, apiBaseUrl = "" }: Props) {
                         onChange={e => setEditContent(e.target.value)}
                         rows={3}
                         style={{
-                          width: "100%", padding: 6, border: "1px solid var(--border)",
+                          width: "100%", padding: 6, border: "1px solid var(--line)",
                           borderRadius: 4, background: "var(--bg)", color: "var(--text)",
                           fontSize: 12, resize: "vertical",
                         }}
@@ -417,7 +418,7 @@ export function MemoryView({ serviceRunning, apiBaseUrl = "" }: Props) {
                           value={editScore}
                           onChange={e => setEditScore(parseFloat(e.target.value) || 0)}
                           style={{
-                            width: 70, padding: "2px 6px", border: "1px solid var(--border)",
+                            width: 70, padding: "2px 6px", border: "1px solid var(--line)",
                             borderRadius: 4, background: "var(--bg)", color: "var(--text)", fontSize: 12,
                           }}
                         />
@@ -447,6 +448,7 @@ export function MemoryView({ serviceRunning, apiBaseUrl = "" }: Props) {
                             <span key={tag} style={{
                               padding: "1px 6px", borderRadius: 8, fontSize: 10,
                               background: "rgba(99,102,241,0.1)", color: "#6366f1",
+                              whiteSpace: "nowrap",
                             }}>
                               {tag}
                             </span>
@@ -473,7 +475,7 @@ export function MemoryView({ serviceRunning, apiBaseUrl = "" }: Props) {
                       onClick={() => startEdit(m)}
                       title="编辑"
                       style={{
-                        background: "none", border: "1px solid var(--border)", borderRadius: 4,
+                        background: "none", border: "1px solid var(--line)", borderRadius: 4,
                         cursor: "pointer", padding: "3px 6px", color: "var(--text)",
                       }}
                     >

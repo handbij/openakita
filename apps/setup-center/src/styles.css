@@ -1364,12 +1364,6 @@ button:disabled {
   line-height: 1.2;
   white-space: nowrap;
 }
-.endpointPrimaryWrap {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-}
 .endpointPrimaryHint {
   min-height: 16px;
   max-width: 260px;
@@ -2361,19 +2355,6 @@ button:disabled {
   margin-top: 8px;
 }
 
-.obLinkBtn {
-  background: none;
-  border: none;
-  color: var(--brand);
-  font-size: 13px;
-  cursor: pointer;
-  text-decoration: underline;
-  opacity: 0.7;
-}
-.obLinkBtn:hover {
-  opacity: 1;
-}
-
 .obWarning {
   background: rgba(245, 158, 11, 0.1);
   border: 1px solid rgba(245, 158, 11, 0.3);
@@ -2462,10 +2443,6 @@ button:disabled {
   background: var(--panel);
   border: 1px solid var(--line);
   color: var(--text);
-  padding: 8px 16px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
 }
 .obSkipBtn:hover {
   background: var(--nav-hover);

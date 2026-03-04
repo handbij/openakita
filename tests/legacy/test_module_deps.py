@@ -448,27 +448,6 @@ class TestMirrorConsistency:
                 break
         assert found, "未找到 official preset 数据行"
 
-    def test_install_module_has_domestic_fallback(self):
-        """install_module 的在线安装应有国内源回退"""
-        main_rs_path = (
-            Path(__file__).parent.parent
-            / "apps"
-            / "setup-center"
-            / "src-tauri"
-            / "src"
-            / "main.rs"
-        )
-        if not main_rs_path.exists():
-            pytest.skip("main.rs not found")
-
-        content = main_rs_path.read_text(encoding="utf-8")
-
-        # 应包含阿里云和清华两个国内镜像
-        assert "mirrors.aliyun.com/pypi/simple" in content
-        assert "pypi.tuna.tsinghua.edu.cn/simple" in content
-        # pypi.org 作为兜底
-        assert "pypi.org/simple" in content
-
     def test_bundled_python_contract_in_main_rs(self):
         """契约A：运行时应使用打包内置 Python（不走运行时下载）"""
         main_rs_path = (
@@ -518,18 +497,12 @@ class TestMirrorConsistency:
         # 新模型核心字段
         assert "summary: String" in content
         assert "contracts: Vec<PythonContractResult>" in content
-        assert "repair_plan: Vec<PythonRepairStep>" in content
         assert "trace_id: String" in content
         assert "generated_at: String" in content
 
         # 契约化错误码（最小覆盖）
         assert '"C1_BUNDLED_RUNTIME"' in content
-        assert '"C2_VENV_HEALTH"' in content
-        assert '"C3_OPENAKITA_IN_VENV"' in content
-        assert '"C4_RUNTIME_LAYOUT_COMPAT"' in content
         assert '"PY_BUNDLE_MISSING"' in content
-        assert '"PY_VENV_MISSING"' in content
-        assert '"PY_OPENAKITA_IMPORT_FAIL"' in content
 
         # 已不再依赖 system python 诊断项
         assert "system_python_ok" not in content
@@ -580,59 +553,12 @@ class TestMirrorConsistency:
 
 
 # ─────────────────────────────────────────────
-# 6. 模块安装后的 post-install hook
+# 6. Playwright / browser runtime
 # ─────────────────────────────────────────────
 
 
 class TestPostInstallHooks:
-    """验证模块安装后的后处理逻辑"""
-
-    def test_browser_post_install_in_main_rs(self):
-        """browser 模块安装后应执行 playwright install chromium"""
-        main_rs_path = (
-            Path(__file__).parent.parent
-            / "apps"
-            / "setup-center"
-            / "src-tauri"
-            / "src"
-            / "main.rs"
-        )
-        if not main_rs_path.exists():
-            pytest.skip("main.rs not found")
-
-        content = main_rs_path.read_text(encoding="utf-8")
-
-        assert 'module_id == "browser"' in content, (
-            "install_module 应包含 browser 模块特殊处理"
-        )
-        assert "playwright" in content and "install" in content and "chromium" in content, (
-            "应执行 playwright install chromium"
-        )
-        assert "PLAYWRIGHT_DOWNLOAD_HOST" in content, (
-            "应设置 PLAYWRIGHT_DOWNLOAD_HOST 加速下载"
-        )
-        assert "cdn.npmmirror.com" in content, (
-            "PLAYWRIGHT_DOWNLOAD_HOST 应使用国内 CDN"
-        )
-
-    def test_restart_hint_emitted(self):
-        """安装完成后应 emit restart-hint"""
-        main_rs_path = (
-            Path(__file__).parent.parent
-            / "apps"
-            / "setup-center"
-            / "src-tauri"
-            / "src"
-            / "main.rs"
-        )
-        if not main_rs_path.exists():
-            pytest.skip("main.rs not found")
-
-        content = main_rs_path.read_text(encoding="utf-8")
-
-        assert "restart-hint" in content, (
-            "安装完成后应 emit restart-hint 状态"
-        )
+    """验证浏览器相关运行时配置"""
 
     def test_playwright_browsers_path_set_at_launch(self):
         """Tauri 启动后端时应设置 PLAYWRIGHT_BROWSERS_PATH"""

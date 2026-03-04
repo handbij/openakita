@@ -148,43 +148,43 @@ jobs:
             bundles: "nsis"
             args: ""
             build_mode: "core"
-            suffix: "-core"
+            suffix: "windows-x64-core"
           # Linux Ubuntu 22.04
           - platform: ubuntu-22.04
             bundles: "deb"
             args: ""
             build_mode: "core"
-            suffix: "-ubuntu22-amd64"
+            suffix: "ubuntu22-amd64"
           - platform: ubuntu-22.04-arm
             bundles: "deb"
             args: ""
             build_mode: "core"
-            suffix: "-ubuntu22-arm64"
+            suffix: "ubuntu22-arm64"
           # Linux Ubuntu 24.04
           - platform: ubuntu-24.04
             bundles: "deb"
             args: ""
             build_mode: "core"
-            suffix: "-ubuntu24-amd64"
+            suffix: "ubuntu24-amd64"
           - platform: ubuntu-24.04-arm
             bundles: "deb"
             args: ""
             build_mode: "core"
-            suffix: "-ubuntu24-arm64"
+            suffix: "ubuntu24-arm64"
           # macOS - Apple Silicon (arm64)
           - platform: macos-latest
             bundles: "app,dmg"
             args: "--target aarch64-apple-darwin"
             rust_target: "aarch64-apple-darwin"
             build_mode: "core"
-            suffix: "-macos-arm64"
+            suffix: "macos-arm64"
           # macOS - Intel (x86_64)
           - platform: macos-15-intel
             bundles: "app,dmg"
             args: "--target x86_64-apple-darwin"
             rust_target: "x86_64-apple-darwin"
             build_mode: "core"
-            suffix: "-macos-x64"
+            suffix: "macos-x64"
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -430,6 +430,24 @@ jobs:
           for app in "${APPS[@]}"; do
             FRAMEWORK_DIR="${app}/Contents/Resources/resources/openakita-server/_internal/Python.framework"
             if [ -d "${FRAMEWORK_DIR}" ]; then
+              # PyInstaller copies files instead of creating symlinks, but macOS
+              # framework conventions require top-level Python.framework/Python and
+              # Python.framework/Resources to be symlinks into Versions/Current/.
+              # Without this, codesign treats the framework root binary as a bundle
+              # entry point and fails with "bundle format is ambiguous".
+              FW_TOP_PYTHON="${FRAMEWORK_DIR}/Python"
+              if [ -f "${FW_TOP_PYTHON}" ] && [ ! -L "${FW_TOP_PYTHON}" ]; then
+                rm -f "${FW_TOP_PYTHON}"
+                ln -s "Versions/Current/Python" "${FW_TOP_PYTHON}"
+                echo "Fixed Python.framework/Python → symlink to Versions/Current/Python"
+              fi
+              FW_TOP_RESOURCES="${FRAMEWORK_DIR}/Resources"
+              if [ -d "${FW_TOP_RESOURCES}" ] && [ ! -L "${FW_TOP_RESOURCES}" ]; then
+                rm -rf "${FW_TOP_RESOURCES}"
+                ln -s "Versions/Current/Resources" "${FW_TOP_RESOURCES}"
+                echo "Fixed Python.framework/Resources → symlink to Versions/Current/Resources"
+              fi
+
               SIGNED_REALPATHS_FILE="$(mktemp)"
 
               # Apple code-signing requires strict inside-out order:
@@ -471,6 +489,8 @@ jobs:
 
               # 3) Sign framework version main binaries LAST.
               #    Their signatures seal Resources/ (including the signed Python.app).
+              #    Python.framework/Python is now a symlink (fixed above) and needs
+              #    no separate signing.
               for fwbin in \
                 "${FRAMEWORK_DIR}/Versions/3.11/Python" \
                 "${FRAMEWORK_DIR}/Versions/Current/Python"; do
@@ -494,10 +514,17 @@ jobs:
             codesign --verify --deep --strict --verbose=2 "${app}"
           done
 
+          # Install create-dmg for polished DMG installer layout
+          brew install create-dmg 2>/dev/null || true
+
           # Recreate DMG from the signed .app.
-          # Tauri creates the DMG during build (step 20) BEFORE our re-signing,
+          # Tauri creates the DMG during build BEFORE our re-signing,
           # so the DMG contains the original Tauri-signed app without runtime
           # hardening or timestamps.  We must rebuild it.
+          #
+          # The old DMG may still be held open by diskimages-helper (macOS
+          # auto-mounts DMGs for verification). Detach all volumes and retry
+          # to avoid "Resource busy" failures.
           DMG_DIR="${BUNDLE_DIR}/dmg"
           if [ -d "${DMG_DIR}" ]; then
             for dmg_file in "${DMG_DIR}"/*.dmg; do
@@ -506,13 +533,87 @@ jobs:
                 app="${APPS[0]}"
                 app_name="$(basename "${app}" .app)"
                 echo "Recreating DMG from signed app: ${dmg_file}"
+
+                # Detach any volumes mounted from the old DMG
+                for vol in /Volumes/"${app_name}"*; do
+                  [ -d "${vol}" ] && hdiutil detach "${vol}" -force 2>/dev/null || true
+                done
+                sleep 1
+
                 rm -f "${dmg_file}"
-                hdiutil create \
-                  -volname "${app_name}" \
-                  -srcfolder "${app}" \
-                  -ov -format UDZO \
-                  "${dmg_file}"
-                echo "DMG recreated: ${dmg_file}"
+
+                DMG_STAGE="$(mktemp -d)"
+                cp -a "${app}" "${DMG_STAGE}/"
+
+                # Use create-dmg for polished layout: App (left) → arrow → Applications (right)
+                if command -v create-dmg &>/dev/null; then
+                  # Generate background image with a directional arrow (ImageMagick is pre-installed)
+                  DMG_BG="/tmp/dmg_bg_$$.png"
+                  if command -v magick &>/dev/null; then
+                    magick -size 660x400 xc:'#EDEDED' \
+                      -fill '#A8A8AD' \
+                      -draw "rectangle 290,195 340,205" \
+                      -draw "polygon 335,178 368,200 335,222" \
+                      "${DMG_BG}" 2>/dev/null || true
+                  elif command -v convert &>/dev/null; then
+                    convert -size 660x400 xc:'#EDEDED' \
+                      -fill '#A8A8AD' \
+                      -draw "rectangle 290,195 340,205" \
+                      -draw "polygon 335,178 368,200 335,222" \
+                      "${DMG_BG}" 2>/dev/null || true
+                  fi
+
+                  CREATE_DMG_ARGS=(
+                    --volname "${app_name}"
+                    --window-pos 200 120
+                    --window-size 660 400
+                    --icon-size 100
+                    --icon "${app_name}.app" 180 200
+                    --hide-extension "${app_name}.app"
+                    --app-drop-link 480 200
+                    --no-internet-enable
+                  )
+                  [ -f "${DMG_BG:-}" ] && CREATE_DMG_ARGS+=(--background "${DMG_BG}")
+
+                  dmg_created=false
+                  for attempt in 1 2 3; do
+                    rm -f "${dmg_file}"
+                    create-dmg "${CREATE_DMG_ARGS[@]}" \
+                      "${dmg_file}" "${DMG_STAGE}/" || true
+                    if [ -f "${dmg_file}" ]; then
+                      echo "DMG created with custom layout: ${dmg_file}"
+                      dmg_created=true
+                      break
+                    fi
+                    echo "create-dmg attempt ${attempt} failed, retrying in 3s..."
+                    sleep 3
+                  done
+                  rm -f "${DMG_BG:-}" 2>/dev/null || true
+
+                  # Fallback to basic hdiutil if create-dmg failed
+                  if [ "${dmg_created}" != "true" ]; then
+                    echo "create-dmg failed; falling back to hdiutil"
+                    ln -s /Applications "${DMG_STAGE}/Applications"
+                    hdiutil create -volname "${app_name}" \
+                      -srcfolder "${DMG_STAGE}" -ov -format UDZO "${dmg_file}"
+                  fi
+                else
+                  # Fallback: create-dmg not available
+                  ln -s /Applications "${DMG_STAGE}/Applications"
+                  for attempt in 1 2 3; do
+                    if hdiutil create \
+                      -volname "${app_name}" \
+                      -srcfolder "${DMG_STAGE}" \
+                      -ov -format UDZO \
+                      "${dmg_file}"; then
+                      echo "DMG recreated: ${dmg_file}"
+                      break
+                    fi
+                    echo "hdiutil create attempt ${attempt} failed, retrying in 3s..."
+                    sleep 3
+                  done
+                fi
+                rm -rf "${DMG_STAGE}"
               fi
             done
           fi
@@ -657,13 +758,14 @@ jobs:
             local f="$1"
             local base
             base="$(basename "$f")"
-            # 统一文件名：把空格换成点，避免 Release 里出现重复/难找的资产名
             local norm="${base// /.}"
-            # 在扩展名前插入构建模式后缀（如 -core, -full）
             if [ -n "${SUFFIX}" ]; then
               local ext="${norm##*.}"
-              local name="${norm%.*}"
-              norm="${name}${SUFFIX}.${ext}"
+              local name_no_ext="${norm%.*}"
+              # 去掉 Tauri 自动生成的架构前缀（最后一个 _ 之后的部分），
+              # 替换为统一的平台标识符，如 windows-x64-core、macos-arm64
+              local base_name="${name_no_ext%_*}"
+              norm="${base_name}_${SUFFIX}.${ext}"
             fi
             cp -f "$f" "${OUT_DIR}/${norm}"
           }
@@ -741,7 +843,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 5
 
-  # ── Job 3: 全部成功后发布 Release + 生成 latest.json ──
+  # ── Job 3: 全部成功后发布 Release + 生成 manifest ──
   publish_release:
     needs: [create_release, python_release, desktop_release]
     if: ${{ !cancelled() && needs.create_release.result == 'success' }}
@@ -751,6 +853,7 @@ jobs:
     env:
       HAS_WEBSITE_TOKEN: ${{ secrets.WEBSITE_DEPLOY_TOKEN }}
       HAS_R2_KEY: ${{ secrets.R2_ACCESS_KEY_ID }}
+      HAS_OSS_KEY: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_ID }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -777,7 +880,7 @@ jobs:
             --draft=false \
             ${LATEST_FLAG}
 
-      - name: Generate latest.json for updater
+      - name: Generate release manifest
         env:
           GH_TOKEN: ${{ github.token }}
           IS_STABLE: ${{ needs.create_release.outputs.is_stable }}
@@ -786,9 +889,14 @@ jobs:
           echo "Release channel: ${CHANNEL} (is_stable=${IS_STABLE})"
 
           # 始终生成当前版本的 manifest
-          # 如果配置了 R2，则使用 CDN 域名作为下载链接
+          # 优先使用阿里云 OSS CDN（国内加速），R2 作为国际备用
           CDN_ARGS=""
-          if [ -n "${HAS_R2_KEY}" ]; then
+          if [ -n "${HAS_OSS_KEY}" ]; then
+            CDN_ARGS="--cdn-base-url https://${{ secrets.ALIYUN_OSS_CDN_DOMAIN }}"
+            if [ -n "${HAS_R2_KEY}" ]; then
+              CDN_ARGS="${CDN_ARGS} --cdn-fallback-url https://dl.openakita.ai"
+            fi
+          elif [ -n "${HAS_R2_KEY}" ]; then
             CDN_ARGS="--cdn-base-url https://dl.openakita.ai"
           fi
           python scripts/generate_latest_json.py \
@@ -801,32 +909,35 @@ jobs:
           echo "New version: ${NEW_VER}"
 
           if [ "$IS_STABLE" = "true" ]; then
-            # ── 稳定版：只有版本号更大才覆盖 latest.json（防止老分支 bugfix 降级） ──
+            # ── 稳定版：版本号更大则覆盖，相同则也覆盖（支持重新发布），更小则跳过 ──
             SHOULD_UPDATE="true"
-            # 尝试获取当前线上的 latest.json
-            if curl -sf "https://openakita.ai/api/latest.json" -o existing-latest.json 2>/dev/null; then
-              OLD_VER=$(python -c "import json; print(json.load(open('existing-latest.json'))['version'])" 2>/dev/null || echo "0.0.0")
+            MANIFEST_CHECK_URL="https://openakita.ai/api/release.json"
+            if [ -n "${HAS_OSS_KEY}" ]; then
+              MANIFEST_CHECK_URL="https://${{ secrets.ALIYUN_OSS_CDN_DOMAIN }}/api/release.json"
+            fi
+            if curl -sf "${MANIFEST_CHECK_URL}" -o existing-release.json 2>/dev/null; then
+              OLD_VER=$(python -c "import json; print(json.load(open('existing-release.json'))['version'])" 2>/dev/null || echo "0.0.0")
               echo "Existing stable version: ${OLD_VER}"
-              # 比较版本号：如果新版本不大于旧版本，跳过更新
-              IS_NEWER=$(python -c "old=list(map(int,'${OLD_VER}'.split('.')));new=list(map(int,'${NEW_VER}'.split('.')));print('true' if new>old else 'false')")
-              if [ "$IS_NEWER" = "false" ]; then
-                echo "⏭️ Skipping latest.json update: ${NEW_VER} <= ${OLD_VER}"
+              IS_OLDER=$(python -c "old=list(map(int,'${OLD_VER}'.split('.')));new=list(map(int,'${NEW_VER}'.split('.')));print('true' if new<old else 'false')")
+              if [ "$IS_OLDER" = "true" ]; then
+                echo "⏭️ Skipping release.json update: ${NEW_VER} < ${OLD_VER} (older version)"
                 SHOULD_UPDATE="false"
+              elif [ "${NEW_VER}" = "${OLD_VER}" ]; then
+                echo "🔄 Same version ${NEW_VER}, will overwrite (re-release)"
               fi
             else
-              echo "No existing latest.json found, will create"
+              echo "No existing release.json found, will create"
             fi
 
             if [ "$SHOULD_UPDATE" = "true" ]; then
-              cp latest-this.json latest.json
-              echo "📦 Stable release → latest.json (${NEW_VER})"
+              cp latest-this.json release.json
+              echo "📦 Stable release → release.json (${NEW_VER})"
             fi
-            # 不管是否更新 latest.json，总是写入对应分支的 manifest
-            cp latest-this.json "latest-stable-${NEW_VER}.json"
+            cp latest-this.json "release-${NEW_VER}.json"
             echo "SHOULD_UPDATE_STABLE=${SHOULD_UPDATE}" >> "$GITHUB_ENV"
           else
-            cp latest-this.json latest-dev.json
-            echo "🔧 Dev release → latest-dev.json"
+            cp latest-this.json pre-release.json
+            echo "🔧 Dev release → pre-release.json"
             echo "SHOULD_UPDATE_STABLE=false" >> "$GITHUB_ENV"
           fi
 
@@ -841,24 +952,13 @@ jobs:
           # 始终把当前版本的 manifest 上传到对应 Release
           gh release upload "${{ env.RELEASE_TAG }}" latest-this.json --clobber
 
-      # ── 上传安装包到 Cloudflare R2（国内加速下载） ──
-      - name: Upload release assets to Cloudflare R2
-        if: ${{ env.HAS_R2_KEY != '' }}
+      # ── 下载 Release 资产到临时目录（供后续上传步骤使用） ──
+      - name: Download release assets
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
-          R2_BUCKET: openakita-releases
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          pip install awscli
-
           TAG="${{ env.RELEASE_TAG }}"
-          VERSION="${TAG#v}"
-          echo "Uploading release assets to R2 for ${TAG}..."
-
-          # 下载所有 Release 资产到临时目录
           mkdir -p /tmp/release-assets
           gh release download "${TAG}" \
             --repo "${{ github.repository }}" \
@@ -867,8 +967,71 @@ jobs:
             --pattern "*.AppImage" --pattern "*.appimage" \
             --pattern "*.app.tar.gz" --pattern "*.sig" \
             --clobber || true
+          echo "Downloaded $(ls /tmp/release-assets | wc -l) asset(s)"
 
-          # 上传到 R2（按版本号组织目录）
+      # ── 上传安装包 + manifest 到阿里云 OSS（国内加速） ──
+      - name: Upload to Aliyun OSS
+        if: ${{ env.HAS_OSS_KEY != '' }}
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_SECRET }}
+          OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
+          OSS_ENDPOINT: ${{ secrets.ALIYUN_OSS_ENDPOINT }}
+          IS_STABLE: ${{ needs.create_release.outputs.is_stable }}
+        run: |
+          set -euo pipefail
+
+          # 安装 ossutil
+          curl -fsSL https://gosspublic.alicdn.com/ossutil/install.sh | sudo bash
+          ossutil config \
+            -e "${OSS_ENDPOINT}" \
+            -i "${OSS_ACCESS_KEY_ID}" \
+            -k "${OSS_ACCESS_KEY_SECRET}"
+
+          TAG="${{ env.RELEASE_TAG }}"
+
+          # 1) 上传安装包到 OSS（按版本号组织目录）
+          ASSET_COUNT=0
+          for file in /tmp/release-assets/*; do
+            [ -f "$file" ] || continue
+            FILENAME="$(basename "$file")"
+            echo "  Uploading: ${FILENAME}"
+            ossutil cp "$file" "oss://${OSS_BUCKET}/${TAG}/${FILENAME}" -f
+            ASSET_COUNT=$((ASSET_COUNT + 1))
+          done
+          echo "Uploaded ${ASSET_COUNT} asset(s) to OSS (${OSS_BUCKET}/${TAG}/)"
+
+          # 2) 上传 manifest 到 OSS api/ 目录（替代 push 到 openakita-web）
+          #    设置短 Cache-Control，确保客户端能快速获取最新版本信息
+          if [ "$IS_STABLE" = "true" ] && [ "$SHOULD_UPDATE_STABLE" = "true" ]; then
+            ossutil cp "$GITHUB_WORKSPACE/release.json" \
+              "oss://${OSS_BUCKET}/api/release.json" -f \
+              --meta "Cache-Control:public, max-age=60"
+            echo "✅ Uploaded release.json to OSS"
+          fi
+
+          if [ "$IS_STABLE" != "true" ]; then
+            ossutil cp "$GITHUB_WORKSPACE/pre-release.json" \
+              "oss://${OSS_BUCKET}/api/pre-release.json" -f \
+              --meta "Cache-Control:public, max-age=60"
+            echo "✅ Uploaded pre-release.json to OSS"
+          fi
+
+      # ── 上传安装包到 Cloudflare R2（国际备用） ──
+      - name: Upload release assets to Cloudflare R2
+        if: ${{ env.HAS_R2_KEY != '' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_BUCKET: openakita-releases
+        run: |
+          set -euo pipefail
+          pip install -q awscli
+
+          TAG="${{ env.RELEASE_TAG }}"
+          echo "Uploading release assets to R2 for ${TAG}..."
+
           ASSET_COUNT=0
           for file in /tmp/release-assets/*; do
             [ -f "$file" ] || continue
@@ -882,8 +1045,9 @@ jobs:
 
           echo "Uploaded ${ASSET_COUNT} asset(s) to R2 (${R2_BUCKET}/${TAG}/)"
 
-      - name: Push to website repo
-        if: ${{ env.HAS_WEBSITE_TOKEN != '' }}
+      # ── 推送到官网仓库（回退方案，仅在未配置 OSS 时使用） ──
+      - name: Push to website repo (fallback)
+        if: ${{ env.HAS_OSS_KEY == '' && env.HAS_WEBSITE_TOKEN != '' }}
         env:
           GH_TOKEN: ${{ secrets.WEBSITE_DEPLOY_TOKEN }}
           IS_STABLE: ${{ needs.create_release.outputs.is_stable }}
@@ -897,19 +1061,15 @@ jobs:
           CHANGED="false"
 
           if [ "$IS_STABLE" = "true" ] && [ "$SHOULD_UPDATE_STABLE" = "true" ]; then
-            # 稳定版且版本号更大 → 更新 latest.json
-            cp "$GITHUB_WORKSPACE/latest.json" api/latest.json
-            git add api/latest.json
+            cp "$GITHUB_WORKSPACE/release.json" api/release.json
+            git add api/release.json
             CHANGED="true"
-            echo "Will update latest.json"
           fi
 
           if [ "$IS_STABLE" != "true" ]; then
-            # 开发版 → 更新 latest-dev.json
-            cp "$GITHUB_WORKSPACE/latest-dev.json" api/latest-dev.json
-            git add api/latest-dev.json
+            cp "$GITHUB_WORKSPACE/pre-release.json" api/pre-release.json
+            git add api/pre-release.json
             CHANGED="true"
-            echo "Will update latest-dev.json"
           fi
 
           if [ "$CHANGED" = "true" ] && ! git diff --cached --quiet; then

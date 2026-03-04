@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 """
-Generate latest.json for Tauri updater from GitHub Release assets.
+Generate release manifest for Tauri updater from GitHub Release assets.
 
 This script is called by the release CI after all platform builds succeed.
 It fetches the release assets and .sig files, then generates a JSON manifest
 compatible with tauri-plugin-updater.
 
-Usage:
-    python scripts/generate_latest_json.py --tag v1.22.0 --output latest.json
-    python scripts/generate_latest_json.py --tag v1.22.0 --output latest.json --repo openakita/openakita
+Output files:
+    - release.json     → stable release manifest
+    - pre-release.json → pre-release (dev channel) manifest
 
-    # With Cloudflare R2 CDN acceleration:
-    python scripts/generate_latest_json.py --tag v1.22.0 --output latest.json --cdn-base-url https://dl.openakita.ai
+Usage:
+    python scripts/generate_latest_json.py --tag v1.22.0 --output release.json
+    python scripts/generate_latest_json.py --tag v1.22.0 --output release.json --repo openakita/openakita
+
+    # With Aliyun OSS CDN (primary) + Cloudflare R2 (fallback):
+    python scripts/generate_latest_json.py --tag v1.22.0 --output release.json \
+        --cdn-base-url https://dl-cn.openakita.ai \
+        --cdn-fallback-url https://dl.openakita.ai
 """
 
 import argparse
@@ -123,18 +129,25 @@ def rewrite_url_to_cdn(github_url: str, cdn_base: str, tag: str) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate latest.json for Tauri updater")
+    parser = argparse.ArgumentParser(description="Generate release manifest for Tauri updater")
     parser.add_argument("--tag", required=True, help="Release tag (e.g. v1.22.0)")
     parser.add_argument("--output", required=True, help="Output JSON file path")
     parser.add_argument("--repo", default=DEFAULT_REPO, help="GitHub repository (owner/repo)")
     parser.add_argument(
         "--cdn-base-url",
         default=os.environ.get("CDN_BASE_URL", ""),
-        help="CDN base URL for download acceleration (e.g. https://dl.openakita.ai). "
+        help="Primary CDN base URL for download acceleration (e.g. https://dl-cn.openakita.ai). "
         "Falls back to env var CDN_BASE_URL. If empty, uses GitHub Release URLs.",
+    )
+    parser.add_argument(
+        "--cdn-fallback-url",
+        default=os.environ.get("CDN_FALLBACK_URL", ""),
+        help="Secondary/fallback CDN URL (e.g. https://dl.openakita.ai for Cloudflare R2). "
+        "Added as 'fallback_url' in the manifest for international users.",
     )
     args = parser.parse_args()
     cdn_base = args.cdn_base_url.strip()
+    cdn_fallback = args.cdn_fallback_url.strip()
 
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     tag = args.tag
@@ -183,6 +196,8 @@ def main():
         }
         if cdn_base:
             entry["github_url"] = github_url
+        if cdn_fallback:
+            entry["fallback_url"] = rewrite_url_to_cdn(github_url, cdn_fallback, tag)
         platforms[platform_key] = entry
         print(f"  {platform_key}: {asset['name']} → {download_url} ✓")
 
@@ -262,6 +277,8 @@ def main():
             }
             if cdn_base:
                 dl_entry["github_url"] = github_url
+            if cdn_fallback:
+                dl_entry["fallback_url"] = rewrite_url_to_cdn(github_url, cdn_fallback, tag)
             downloads[dl_key] = dl_entry
             print(f"  download.{dl_key}: {asset['name']} → {download_url} ✓")
 

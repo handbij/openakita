@@ -17,7 +17,7 @@ on:
           - stable
           - dev
       force_update:
-        description: "强制覆盖 latest.json（跳过版本号比较）"
+        description: "强制覆盖 release.json（跳过版本号比较）"
         required: false
         default: false
         type: boolean
@@ -30,6 +30,7 @@ jobs:
     env:
       HAS_WEBSITE_TOKEN: ${{ secrets.WEBSITE_DEPLOY_TOKEN }}
       HAS_R2_KEY: ${{ secrets.R2_ACCESS_KEY_ID }}
+      HAS_OSS_KEY: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_ID }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -88,7 +89,12 @@ jobs:
           echo "Tag: ${TAG}, Channel: ${CHANNEL}, Force: ${FORCE}"
 
           CDN_ARGS=""
-          if [ -n "${HAS_R2_KEY}" ]; then
+          if [ -n "${HAS_OSS_KEY}" ]; then
+            CDN_ARGS="--cdn-base-url https://${{ secrets.ALIYUN_OSS_CDN_DOMAIN }}"
+            if [ -n "${HAS_R2_KEY}" ]; then
+              CDN_ARGS="${CDN_ARGS} --cdn-fallback-url https://dl.openakita.ai"
+            fi
+          elif [ -n "${HAS_R2_KEY}" ]; then
             CDN_ARGS="--cdn-base-url https://dl.openakita.ai"
           fi
           python scripts/generate_latest_json.py \
@@ -104,29 +110,35 @@ jobs:
             SHOULD_UPDATE="true"
 
             if [ "$FORCE" != "true" ]; then
-              if curl -sf "https://openakita.ai/api/latest.json" -o existing-latest.json 2>/dev/null; then
-                OLD_VER=$(python -c "import json; print(json.load(open('existing-latest.json'))['version'])" 2>/dev/null || echo "0.0.0")
+              MANIFEST_CHECK_URL="https://openakita.ai/api/release.json"
+              if [ -n "${HAS_OSS_KEY}" ]; then
+                MANIFEST_CHECK_URL="https://${{ secrets.ALIYUN_OSS_CDN_DOMAIN }}/api/release.json"
+              fi
+              if curl -sf "${MANIFEST_CHECK_URL}" -o existing-release.json 2>/dev/null; then
+                OLD_VER=$(python -c "import json; print(json.load(open('existing-release.json'))['version'])" 2>/dev/null || echo "0.0.0")
                 echo "Existing stable version: ${OLD_VER}"
-                IS_NEWER=$(python -c "old=list(map(int,'${OLD_VER}'.split('.')));new=list(map(int,'${NEW_VER}'.split('.')));print('true' if new>old else 'false')")
-                if [ "$IS_NEWER" = "false" ]; then
-                  echo "⏭️ Skipping: ${NEW_VER} <= ${OLD_VER} (use force_update to override)"
+                IS_OLDER=$(python -c "old=list(map(int,'${OLD_VER}'.split('.')));new=list(map(int,'${NEW_VER}'.split('.')));print('true' if new<old else 'false')")
+                if [ "$IS_OLDER" = "true" ]; then
+                  echo "⏭️ Skipping: ${NEW_VER} < ${OLD_VER} (use force_update to override)"
                   SHOULD_UPDATE="false"
+                elif [ "${NEW_VER}" = "${OLD_VER}" ]; then
+                  echo "🔄 Same version ${NEW_VER}, will overwrite (re-release)"
                 fi
               else
-                echo "No existing latest.json found, will create"
+                echo "No existing release.json found, will create"
               fi
             else
               echo "⚡ Force update enabled, skipping version comparison"
             fi
 
             if [ "$SHOULD_UPDATE" = "true" ]; then
-              cp latest-this.json latest.json
-              echo "📦 Will update latest.json (${NEW_VER})"
+              cp latest-this.json release.json
+              echo "📦 Will update release.json (${NEW_VER})"
             fi
             echo "SHOULD_UPDATE_STABLE=${SHOULD_UPDATE}" >> "$GITHUB_ENV"
           else
-            cp latest-this.json latest-dev.json
-            echo "🔧 Will update latest-dev.json (${NEW_VER})"
+            cp latest-this.json pre-release.json
+            echo "🔧 Will update pre-release.json (${NEW_VER})"
             echo "SHOULD_UPDATE_STABLE=false" >> "$GITHUB_ENV"
           fi
 
@@ -139,8 +151,41 @@ jobs:
         run: |
           gh release upload "${{ inputs.tag }}" latest-this.json --clobber || echo "Warning: failed to upload to release (may not exist)"
 
-      - name: Push to website repo
-        if: ${{ env.HAS_WEBSITE_TOKEN != '' }}
+      # ── 上传 manifest 到阿里云 OSS ──
+      - name: Upload manifest to Aliyun OSS
+        if: ${{ env.HAS_OSS_KEY != '' }}
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_SECRET }}
+          OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
+          OSS_ENDPOINT: ${{ secrets.ALIYUN_OSS_ENDPOINT }}
+          IS_STABLE: ${{ steps.detect.outputs.is_stable }}
+        run: |
+          set -euo pipefail
+
+          curl -fsSL https://gosspublic.alicdn.com/ossutil/install.sh | bash
+          ossutil config \
+            -e "${OSS_ENDPOINT}" \
+            -i "${OSS_ACCESS_KEY_ID}" \
+            -k "${OSS_ACCESS_KEY_SECRET}"
+
+          if [ "$IS_STABLE" = "true" ] && [ "$SHOULD_UPDATE_STABLE" = "true" ]; then
+            ossutil cp "$GITHUB_WORKSPACE/release.json" \
+              "oss://${OSS_BUCKET}/api/release.json" -f \
+              --meta "Cache-Control:public, max-age=60"
+            echo "✅ Uploaded release.json to OSS"
+          fi
+
+          if [ "$IS_STABLE" != "true" ]; then
+            ossutil cp "$GITHUB_WORKSPACE/pre-release.json" \
+              "oss://${OSS_BUCKET}/api/pre-release.json" -f \
+              --meta "Cache-Control:public, max-age=60"
+            echo "✅ Uploaded pre-release.json to OSS"
+          fi
+
+      # ── 推送到官网仓库（回退方案，仅在未配置 OSS 时使用） ──
+      - name: Push to website repo (fallback)
+        if: ${{ env.HAS_OSS_KEY == '' && env.HAS_WEBSITE_TOKEN != '' }}
         env:
           GH_TOKEN: ${{ secrets.WEBSITE_DEPLOY_TOKEN }}
           IS_STABLE: ${{ steps.detect.outputs.is_stable }}
@@ -154,17 +199,15 @@ jobs:
           CHANGED="false"
 
           if [ "$IS_STABLE" = "true" ] && [ "$SHOULD_UPDATE_STABLE" = "true" ]; then
-            cp "$GITHUB_WORKSPACE/latest.json" api/latest.json
-            git add api/latest.json
+            cp "$GITHUB_WORKSPACE/release.json" api/release.json
+            git add api/release.json
             CHANGED="true"
-            echo "Will update latest.json"
           fi
 
           if [ "$IS_STABLE" != "true" ]; then
-            cp "$GITHUB_WORKSPACE/latest-dev.json" api/latest-dev.json
-            git add api/latest-dev.json
+            cp "$GITHUB_WORKSPACE/pre-release.json" api/pre-release.json
+            git add api/pre-release.json
             CHANGED="true"
-            echo "Will update latest-dev.json"
           fi
 
           if [ "$CHANGED" = "true" ] && ! git diff --cached --quiet; then

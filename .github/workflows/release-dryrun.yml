@@ -25,39 +25,39 @@ jobs:
           - platform: windows-latest
             bundles: "nsis"
             build_mode: "core"
-            suffix: "-core"
+            suffix: "windows-x64-core"
           # Linux Ubuntu 22.04
           - platform: ubuntu-22.04
             bundles: "deb"
             build_mode: "core"
-            suffix: "-ubuntu22-amd64"
+            suffix: "ubuntu22-amd64"
           - platform: ubuntu-22.04-arm
             bundles: "deb"
             build_mode: "core"
-            suffix: "-ubuntu22-arm64"
+            suffix: "ubuntu22-arm64"
           # Linux Ubuntu 24.04
           - platform: ubuntu-24.04
             bundles: "deb"
             build_mode: "core"
-            suffix: "-ubuntu24-amd64"
+            suffix: "ubuntu24-amd64"
           - platform: ubuntu-24.04-arm
             bundles: "deb"
             build_mode: "core"
-            suffix: "-ubuntu24-arm64"
+            suffix: "ubuntu24-arm64"
           # macOS - Apple Silicon (arm64)
           - platform: macos-latest
             bundles: "app,dmg"
             args: "--target aarch64-apple-darwin"
             rust_target: "aarch64-apple-darwin"
             build_mode: "core"
-            suffix: "-macos-arm64"
+            suffix: "macos-arm64"
           # macOS - Intel (x86_64)
           - platform: macos-15-intel
             bundles: "app,dmg"
             args: "--target x86_64-apple-darwin"
             rust_target: "x86_64-apple-darwin"
             build_mode: "core"
-            suffix: "-macos-x64"
+            suffix: "macos-x64"
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -299,6 +299,24 @@ jobs:
           for app in "${APPS[@]}"; do
             FRAMEWORK_DIR="${app}/Contents/Resources/resources/openakita-server/_internal/Python.framework"
             if [ -d "${FRAMEWORK_DIR}" ]; then
+              # PyInstaller copies files instead of creating symlinks, but macOS
+              # framework conventions require top-level Python.framework/Python and
+              # Python.framework/Resources to be symlinks into Versions/Current/.
+              # Without this, codesign treats the framework root binary as a bundle
+              # entry point and fails with "bundle format is ambiguous".
+              FW_TOP_PYTHON="${FRAMEWORK_DIR}/Python"
+              if [ -f "${FW_TOP_PYTHON}" ] && [ ! -L "${FW_TOP_PYTHON}" ]; then
+                rm -f "${FW_TOP_PYTHON}"
+                ln -s "Versions/Current/Python" "${FW_TOP_PYTHON}"
+                echo "Fixed Python.framework/Python → symlink to Versions/Current/Python"
+              fi
+              FW_TOP_RESOURCES="${FRAMEWORK_DIR}/Resources"
+              if [ -d "${FW_TOP_RESOURCES}" ] && [ ! -L "${FW_TOP_RESOURCES}" ]; then
+                rm -rf "${FW_TOP_RESOURCES}"
+                ln -s "Versions/Current/Resources" "${FW_TOP_RESOURCES}"
+                echo "Fixed Python.framework/Resources → symlink to Versions/Current/Resources"
+              fi
+
               SIGNED_REALPATHS_FILE="$(mktemp)"
 
               # Apple code-signing requires strict inside-out order:
@@ -340,6 +358,8 @@ jobs:
 
               # 3) Sign framework version main binaries LAST.
               #    Their signatures seal Resources/ (including the signed Python.app).
+              #    Python.framework/Python is now a symlink (fixed above) and needs
+              #    no separate signing.
               for fwbin in \
                 "${FRAMEWORK_DIR}/Versions/3.11/Python" \
                 "${FRAMEWORK_DIR}/Versions/Current/Python"; do
@@ -363,10 +383,17 @@ jobs:
             codesign --verify --deep --strict --verbose=2 "${app}"
           done
 
+          # Install create-dmg for polished DMG installer layout
+          brew install create-dmg 2>/dev/null || true
+
           # Recreate DMG from the signed .app.
-          # Tauri creates the DMG during build (step 20) BEFORE our re-signing,
+          # Tauri creates the DMG during build BEFORE our re-signing,
           # so the DMG contains the original Tauri-signed app without runtime
           # hardening or timestamps.  We must rebuild it.
+          #
+          # The old DMG may still be held open by diskimages-helper (macOS
+          # auto-mounts DMGs for verification). Detach all volumes and retry
+          # to avoid "Resource busy" failures.
           DMG_DIR="${BUNDLE_DIR}/dmg"
           if [ -d "${DMG_DIR}" ]; then
             for dmg_file in "${DMG_DIR}"/*.dmg; do
@@ -375,13 +402,87 @@ jobs:
                 app="${APPS[0]}"
                 app_name="$(basename "${app}" .app)"
                 echo "Recreating DMG from signed app: ${dmg_file}"
+
+                # Detach any volumes mounted from the old DMG
+                for vol in /Volumes/"${app_name}"*; do
+                  [ -d "${vol}" ] && hdiutil detach "${vol}" -force 2>/dev/null || true
+                done
+                sleep 1
+
                 rm -f "${dmg_file}"
-                hdiutil create \
-                  -volname "${app_name}" \
-                  -srcfolder "${app}" \
-                  -ov -format UDZO \
-                  "${dmg_file}"
-                echo "DMG recreated: ${dmg_file}"
+
+                DMG_STAGE="$(mktemp -d)"
+                cp -a "${app}" "${DMG_STAGE}/"
+
+                # Use create-dmg for polished layout: App (left) → arrow → Applications (right)
+                if command -v create-dmg &>/dev/null; then
+                  # Generate background image with a directional arrow (ImageMagick is pre-installed)
+                  DMG_BG="/tmp/dmg_bg_$$.png"
+                  if command -v magick &>/dev/null; then
+                    magick -size 660x400 xc:'#EDEDED' \
+                      -fill '#A8A8AD' \
+                      -draw "rectangle 290,195 340,205" \
+                      -draw "polygon 335,178 368,200 335,222" \
+                      "${DMG_BG}" 2>/dev/null || true
+                  elif command -v convert &>/dev/null; then
+                    convert -size 660x400 xc:'#EDEDED' \
+                      -fill '#A8A8AD' \
+                      -draw "rectangle 290,195 340,205" \
+                      -draw "polygon 335,178 368,200 335,222" \
+                      "${DMG_BG}" 2>/dev/null || true
+                  fi
+
+                  CREATE_DMG_ARGS=(
+                    --volname "${app_name}"
+                    --window-pos 200 120
+                    --window-size 660 400
+                    --icon-size 100
+                    --icon "${app_name}.app" 180 200
+                    --hide-extension "${app_name}.app"
+                    --app-drop-link 480 200
+                    --no-internet-enable
+                  )
+                  [ -f "${DMG_BG:-}" ] && CREATE_DMG_ARGS+=(--background "${DMG_BG}")
+
+                  dmg_created=false
+                  for attempt in 1 2 3; do
+                    rm -f "${dmg_file}"
+                    create-dmg "${CREATE_DMG_ARGS[@]}" \
+                      "${dmg_file}" "${DMG_STAGE}/" || true
+                    if [ -f "${dmg_file}" ]; then
+                      echo "DMG created with custom layout: ${dmg_file}"
+                      dmg_created=true
+                      break
+                    fi
+                    echo "create-dmg attempt ${attempt} failed, retrying in 3s..."
+                    sleep 3
+                  done
+                  rm -f "${DMG_BG:-}" 2>/dev/null || true
+
+                  # Fallback to basic hdiutil if create-dmg failed
+                  if [ "${dmg_created}" != "true" ]; then
+                    echo "create-dmg failed; falling back to hdiutil"
+                    ln -s /Applications "${DMG_STAGE}/Applications"
+                    hdiutil create -volname "${app_name}" \
+                      -srcfolder "${DMG_STAGE}" -ov -format UDZO "${dmg_file}"
+                  fi
+                else
+                  # Fallback: create-dmg not available
+                  ln -s /Applications "${DMG_STAGE}/Applications"
+                  for attempt in 1 2 3; do
+                    if hdiutil create \
+                      -volname "${app_name}" \
+                      -srcfolder "${DMG_STAGE}" \
+                      -ov -format UDZO \
+                      "${dmg_file}"; then
+                      echo "DMG recreated: ${dmg_file}"
+                      break
+                    fi
+                    echo "hdiutil create attempt ${attempt} failed, retrying in 3s..."
+                    sleep 3
+                  done
+                fi
+                rm -rf "${DMG_STAGE}"
               fi
             done
           fi
@@ -529,8 +630,9 @@ jobs:
             local norm="${base// /.}"
             if [ -n "${SUFFIX}" ]; then
               local ext="${norm##*.}"
-              local name="${norm%.*}"
-              norm="${name}${SUFFIX}.${ext}"
+              local name_no_ext="${norm%.*}"
+              local base_name="${name_no_ext%_*}"
+              norm="${base_name}_${SUFFIX}.${ext}"
             fi
             cp -f "$f" "${OUT_DIR}/${norm}"
           }

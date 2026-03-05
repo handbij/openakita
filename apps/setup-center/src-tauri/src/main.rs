@@ -1726,7 +1726,7 @@ fn main() {
     // user-defined exclusions (e.g. *.corp.com) are preserved.
     // Both cases are set because different libraries check different variants.
     {
-        const LOCALS: &str = "localhost,127.0.0.1,[::1]";
+        const LOCALS: &str = "localhost,127.0.0.1";
         for key in ["NO_PROXY", "no_proxy"] {
             let cur = std::env::var(key).unwrap_or_default();
             if !cur.contains("127.0.0.1") {

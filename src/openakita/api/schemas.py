@@ -27,6 +27,10 @@ class ChatRequest(BaseModel):
         None,
         description="Agent profile to use for this message. Only effective when multi_agent_enabled is True.",
     )
+    client_id: str | None = Field(
+        None,
+        description="Unique client/tab identifier for multi-device busy-lock coordination.",
+    )
 
 
 class AttachmentInfo(BaseModel):

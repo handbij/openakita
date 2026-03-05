@@ -150,7 +150,11 @@
     "subAgentCancelled": "Cancelled",
     "subAgentIter": "Iter",
     "subAgentElapsed": "Elapsed",
-    "subAgentTools": "Tools"
+    "subAgentTools": "Tools",
+    "busyOnOtherDevice": "This conversation is active on another device",
+    "busyNewConversation": "New Conversation",
+    "busyHint": "You can start a new conversation to continue",
+    "conversationBusy": "Conversation Busy"
   },
   "skills": {
     "title": "Skill Manager",

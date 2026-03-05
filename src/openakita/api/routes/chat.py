@@ -7,18 +7,69 @@ Chat route: POST /api/chat (SSE streaming)
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
 
-from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from ..schemas import ChatAnswerRequest, ChatControlRequest, ChatRequest
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# ── Conversation busy-lock ────────────────────────────────────────────────
+BUSY_TIMEOUT_SECONDS = 600  # 10 min auto-release
+
+
+@dataclass
+class BusyInfo:
+    client_id: str
+    start_time: float = field(default_factory=time.time)
+
+
+_busy_conversations: dict[str, BusyInfo] = {}
+_busy_lock = asyncio.Lock()
+
+
+async def _mark_busy(conversation_id: str, client_id: str) -> BusyInfo | None:
+    """Mark a conversation as busy. Returns existing BusyInfo if already busy
+    from a *different* client, or None on success."""
+    async with _busy_lock:
+        _expire_stale_locks()
+        existing = _busy_conversations.get(conversation_id)
+        if existing and existing.client_id != client_id:
+            return existing
+        _busy_conversations[conversation_id] = BusyInfo(client_id=client_id)
+        return None
+
+
+async def _clear_busy(conversation_id: str) -> None:
+    async with _busy_lock:
+        _busy_conversations.pop(conversation_id, None)
+
+
+def _expire_stale_locks() -> None:
+    """Remove busy entries older than BUSY_TIMEOUT_SECONDS. Must be called under _busy_lock."""
+    now = time.time()
+    stale = [k for k, v in _busy_conversations.items() if now - v.start_time > BUSY_TIMEOUT_SECONDS]
+    for k in stale:
+        logger.info("[Chat API] Auto-releasing stale busy lock: conv=%s", k)
+        del _busy_conversations[k]
+
+
+async def _broadcast_chat_event(event: str, data: dict) -> None:
+    """Broadcast a chat event via WebSocket to all connected clients."""
+    try:
+        from .websocket import broadcast_event
+        await broadcast_event(event, data)
+    except Exception:
+        pass
 
 
 def _resolve_agent(agent: object):
@@ -456,6 +507,24 @@ async def _stream_chat(
         logger.error(f"Chat stream error: {e}", exc_info=True)
         yield _sse("error", {"message": str(e)[:500]})
         yield _sse("done")
+    finally:
+        # ── Release busy lock & broadcast idle/message_update ──
+        _conv_id = chat_request.conversation_id or ""
+        _client_id = chat_request.client_id or ""
+        if _client_id and _conv_id:
+            await _clear_busy(_conv_id)
+            try:
+                from .websocket import broadcast_event
+
+                await broadcast_event("chat:idle", {"conversation_id": _conv_id})
+                if _full_reply:
+                    await broadcast_event("chat:message_update", {
+                        "conversation_id": _conv_id,
+                        "last_message_preview": _full_reply[:100],
+                        "timestamp": time.time(),
+                    })
+            except Exception:
+                pass
 
 
 @router.post("/api/chat")
@@ -482,8 +551,30 @@ async def chat(request: Request, body: ChatRequest):
     """
     import uuid as _uuid
     conversation_id = body.conversation_id or f"api_{_uuid.uuid4().hex[:12]}"
-    agent = await _get_agent_for_session(request, conversation_id, body.agent_profile_id)
-    session_manager = getattr(request.app.state, "session_manager", None)
+    client_id = body.client_id or ""
+
+    # ── Busy-lock check ──
+    if client_id:
+        conflict = await _mark_busy(conversation_id, client_id)
+        if conflict is not None:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": "conversation_busy",
+                    "conversation_id": conversation_id,
+                    "busy_client_id": conflict.client_id,
+                    "busy_since": conflict.start_time,
+                    "message": "该会话正在其他终端进行中，请新建会话或稍后再试",
+                },
+            )
+
+    try:
+        agent = await _get_agent_for_session(request, conversation_id, body.agent_profile_id)
+        session_manager = getattr(request.app.state, "session_manager", None)
+    except Exception:
+        if client_id:
+            await _clear_busy(conversation_id)
+        raise
 
     msg_preview = (body.message or "")[:100]
     att_count = len(body.attachments) if body.attachments else 0
@@ -495,10 +586,18 @@ async def chat(request: Request, body: ChatRequest):
         + (f" | thinking={body.thinking_mode}" if body.thinking_mode else "")
         + (f" | depth={body.thinking_depth}" if body.thinking_depth else "")
         + (f" | conv={conversation_id}")
+        + (f" | client={client_id}" if client_id else "")
     )
 
     # Pass pre-resolved conversation_id so _stream_chat doesn't generate a new one
     body.conversation_id = conversation_id
+
+    # Broadcast busy event
+    if client_id:
+        await _broadcast_chat_event("chat:busy", {
+            "conversation_id": conversation_id,
+            "client_id": client_id,
+        })
 
     return StreamingResponse(
         _stream_chat(body, agent, session_manager, http_request=request),
@@ -509,6 +608,35 @@ async def chat(request: Request, body: ChatRequest):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/api/chat/busy")
+async def chat_busy(
+    conversation_id: str = Query("", description="Filter by conversation ID (empty = all)"),
+):
+    """Return currently busy conversations."""
+    async with _busy_lock:
+        _expire_stale_locks()
+        if conversation_id:
+            info = _busy_conversations.get(conversation_id)
+            if info:
+                return {
+                    "busy": True,
+                    "conversation_id": conversation_id,
+                    "client_id": info.client_id,
+                    "since": info.start_time,
+                }
+            return {"busy": False, "conversation_id": conversation_id}
+        return {
+            "busy_conversations": [
+                {
+                    "conversation_id": cid,
+                    "client_id": info.client_id,
+                    "since": info.start_time,
+                }
+                for cid, info in _busy_conversations.items()
+            ],
+        }
 
 
 @router.post("/api/chat/answer")

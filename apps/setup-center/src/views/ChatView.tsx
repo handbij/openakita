@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { setThemePref } from "../theme";
 import type { Theme } from "../theme";
-import { invoke, downloadFile, openFileWithDefault, showInFolder, readFileBase64, onDragDrop, IS_TAURI } from "../platform";
+import { invoke, downloadFile, openFileWithDefault, showInFolder, readFileBase64, onDragDrop, IS_TAURI, IS_WEB, onWsEvent } from "../platform";
 import { safeFetch } from "../providers";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -1768,6 +1768,25 @@ export function ChatView({
   const activeConvIdRef = useRef(activeConvId);
   const isCurrentConvStreaming = streamContexts.current.get(activeConvId ?? "")?.isStreaming ?? false;
 
+  // ── Multi-device busy lock ──
+  const clientIdRef = useRef(() => {
+    let id = sessionStorage.getItem("openakita_client_id");
+    if (!id) {
+      id = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : genId();
+      sessionStorage.setItem("openakita_client_id", id);
+    }
+    return id;
+  });
+  const getClientId = useCallback(() => clientIdRef.current(), []);
+  const [busyConversations, setBusyConversations] = useState<Map<string, string>>(new Map());
+  const busyConvRef = useRef(busyConversations);
+  busyConvRef.current = busyConversations;
+
+  const isConvBusyOnOtherDevice = useCallback((convId: string) => {
+    const busyClientId = busyConvRef.current.get(convId);
+    return !!busyClientId && busyClientId !== getClientId();
+  }, [getClientId]);
+
   const updateConvStatus = useCallback((convId: string, status: ConversationStatus) => {
     setConversations((prev) =>
       prev.map((c) => c.id === convId ? { ...c, status, timestamp: Date.now() } : c)
@@ -2129,6 +2148,56 @@ export function ChatView({
     return () => { cancelled = true; };
   }, [serviceRunning, apiBaseUrl, activeConvId]);
 
+  // ── Multi-device busy state: poll + WS events ──
+  useEffect(() => {
+    if (!serviceRunning) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await safeFetch(`${apiBaseUrl}/api/chat/busy`);
+        if (cancelled) return;
+        const data = await res.json();
+        const items: { conversation_id: string; client_id: string }[] = data.busy_conversations || [];
+        const myId = getClientId();
+        const m = new Map<string, string>();
+        for (const it of items) {
+          if (it.client_id !== myId) m.set(it.conversation_id, it.client_id);
+        }
+        setBusyConversations(m);
+      } catch { /* ignore */ }
+    };
+    poll();
+    const timer = setInterval(poll, 5000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [serviceRunning, apiBaseUrl, getClientId]);
+
+  useEffect(() => {
+    if (!IS_WEB) return;
+    const myId = getClientId();
+    return onWsEvent((event, data) => {
+      const d = data as Record<string, unknown> | null;
+      if (!d) return;
+      const convId = d.conversation_id as string | undefined;
+      if (!convId) return;
+      if (event === "chat:busy") {
+        const clientId = d.client_id as string;
+        if (clientId !== myId) {
+          setBusyConversations((prev) => { const m = new Map(prev); m.set(convId, clientId); return m; });
+        }
+      } else if (event === "chat:idle") {
+        setBusyConversations((prev) => { const m = new Map(prev); m.delete(convId); return m; });
+      } else if (event === "chat:message_update") {
+        if (convId === activeConvIdRef.current) {
+          safeFetch(`${apiBaseUrl}/api/sessions/${encodeURIComponent(convId)}/history`)
+            .then((r) => r.json())
+            .then((d2) => { if (d2?.messages?.length) setMessages((prev) => patchMessagesWithBackend(prev, d2.messages)); })
+            .catch(() => {});
+        }
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiBaseUrl, getClientId]);
+
   // ── 消息补全：用后端数据修复 localStorage 中不完整的消息（中断的流式传输等）──
   const patchedConvsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -2436,6 +2505,8 @@ export function ChatView({
     const targetIsStreaming = resolvedConvId ? !!streamContexts.current.get(resolvedConvId)?.isStreaming : false;
     if (targetIsStreaming) return;
 
+    if (resolvedConvId && isConvBusyOnOtherDevice(resolvedConvId)) return;
+
     // 斜杠命令处理
     if (text.startsWith("/")) {
       const parts = text.slice(1).split(/\s+/);
@@ -2566,6 +2637,7 @@ export function ChatView({
         thinking_mode: thinkingMode !== "auto" ? thinkingMode : null,
         thinking_depth: thinkingMode !== "off" ? thinkingDepth : null,
         agent_profile_id: multiAgentEnabled ? selectedAgent : undefined,
+        client_id: getClientId(),
       };
 
       // 附件信息
@@ -2588,11 +2660,31 @@ export function ChatView({
       });
 
       if (!response.ok) {
+        if (response.status === 409) {
+          try {
+            const busyData = await response.json();
+            if (busyData?.error === "conversation_busy") {
+              const busyCid = busyData.busy_client_id as string;
+              setBusyConversations((prev) => { const m = new Map(prev); m.set(thisConvId, busyCid); return m; });
+              updateMessages((prev) => prev.map((m) =>
+                m.id === assistantMsg.id
+                  ? { ...m, content: t("chat.busyOnOtherDevice"), streaming: false }
+                  : m
+              ));
+              if (thisConvId) updateConvStatus(thisConvId, "idle");
+              streamContexts.current.delete(thisConvId);
+              setStreamingTick(t2 => t2 + 1);
+              return;
+            }
+          } catch { /* fall through to generic error */ }
+        }
         const errText = await response.text().catch(() => "请求失败");
         updateMessages((prev) => prev.map((m) =>
           m.id === assistantMsg.id ? { ...m, content: `错误：${response.status} ${errText}`, streaming: false } : m
         ));
         if (thisConvId) updateConvStatus(thisConvId, "error");
+        streamContexts.current.delete(thisConvId);
+        setStreamingTick(t2 => t2 + 1);
         return;
       }
 
@@ -3685,7 +3777,9 @@ export function ChatView({
         </div>
         <div className="convItemRight">
           <span className="convItemTime">{timeAgo(conv.timestamp)}</span>
-          {statusIcon(conv.status)}
+          {isConvBusyOnOtherDevice(conv.id)
+            ? <span className="convStatusDot" style={{ color: "var(--warning, #eab308)", fontSize: 10, whiteSpace: "nowrap" }} title={t("chat.busyOnOtherDevice")}>⏳</span>
+            : statusIcon(conv.status)}
         </div>
       </div>
     );
@@ -3905,6 +3999,28 @@ export function ChatView({
                 onRemove={() => setPendingAttachments((prev) => prev.filter((_, i) => i !== idx))}
               />
             ))}
+          </div>
+        )}
+
+        {/* Busy-on-other-device banner */}
+        {activeConvId && isConvBusyOnOtherDevice(activeConvId) && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "8px 16px", margin: "0 16px 6px",
+            borderRadius: 10, fontSize: 13,
+            background: "rgba(234,179,8,0.12)", color: "var(--text)",
+            border: "1px solid rgba(234,179,8,0.25)",
+          }}>
+            <span style={{ fontSize: 16 }}>⏳</span>
+            <span style={{ flex: 1 }}>{t("chat.busyOnOtherDevice")}</span>
+            <button
+              onClick={newConversation}
+              style={{
+                padding: "4px 12px", borderRadius: 6, border: "none",
+                background: "var(--primary, #3b82f6)", color: "#fff",
+                cursor: "pointer", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
+              }}
+            >{t("chat.busyNewConversation")}</button>
           </div>
         )}
 

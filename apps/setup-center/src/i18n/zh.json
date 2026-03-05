@@ -150,7 +150,11 @@
     "subAgentCancelled": "已取消",
     "subAgentIter": "迭代",
     "subAgentElapsed": "耗时",
-    "subAgentTools": "工具"
+    "subAgentTools": "工具",
+    "busyOnOtherDevice": "该会话正在其他终端进行中",
+    "busyNewConversation": "新建会话",
+    "busyHint": "您可以新建会话继续对话",
+    "conversationBusy": "会话忙碌"
   },
   "skills": {
     "title": "技能管理",

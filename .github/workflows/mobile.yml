@@ -210,7 +210,7 @@ jobs:
           <plist version="1.0">
           <dict>
             <key>method</key>
-            <string>ad-hoc</string>
+            <string>app-store-connect</string>
             <key>teamID</key>
             <string>${IOS_TEAM_ID}</string>
             <key>signingStyle</key>

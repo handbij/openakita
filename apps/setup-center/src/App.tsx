@@ -6318,16 +6318,16 @@ export function App() {
         )}
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 20px", marginBottom: 12 }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13 }}>
-            <input type="checkbox" checked={cliRegOpenakita} onChange={() => setCliRegOpenakita(!cliRegOpenakita)} />
+          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, whiteSpace: "nowrap" }}>
+            <input type="checkbox" checked={cliRegOpenakita} onChange={() => setCliRegOpenakita(!cliRegOpenakita)} style={{ width: "auto", flexShrink: 0 }} />
             <span><strong>openakita</strong> — 完整命令</span>
           </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13 }}>
-            <input type="checkbox" checked={cliRegOa} onChange={() => setCliRegOa(!cliRegOa)} />
+          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, whiteSpace: "nowrap" }}>
+            <input type="checkbox" checked={cliRegOa} onChange={() => setCliRegOa(!cliRegOa)} style={{ width: "auto", flexShrink: 0 }} />
             <span><strong>oa</strong> — 简短别名</span>
           </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13 }}>
-            <input type="checkbox" checked={cliRegPath} onChange={() => setCliRegPath(!cliRegPath)} />
+          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, whiteSpace: "nowrap" }}>
+            <input type="checkbox" checked={cliRegPath} onChange={() => setCliRegPath(!cliRegPath)} style={{ width: "auto", flexShrink: 0 }} />
             <span>添加到系统 PATH</span>
           </label>
         </div>

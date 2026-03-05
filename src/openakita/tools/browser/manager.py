@@ -42,7 +42,14 @@ def _is_server_environment() -> bool:
     注意：PyInstaller 打包的桌面应用（IS_FROZEN=True）不等于服务器，
     不应因为是打包环境就强制 headless / --disable-gpu。
     """
-    if platform.system() != "Windows":
+    system = platform.system()
+
+    # macOS 使用 Quartz/Aqua 桌面系统，不依赖 DISPLAY/WAYLAND_DISPLAY
+    if system == "Darwin":
+        return False
+
+    if system != "Windows":
+        # Linux: 检查 X11/Wayland 显示服务器
         if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
             return True
         return False
@@ -77,9 +84,10 @@ def _find_bundled_browser_executable() -> str | None:
     """在 PyInstaller 打包目录中搜索内置的 Chromium/Chrome 可执行文件。
 
     搜索路径（按优先级）：
-    1. {base}/browser/chrome.exe                          — 直接打包位置
-    2. {base}/playwright-browsers/chromium-*/chrome-win/   — Playwright 标准结构
-    3. {base}/playwright-browsers/chromium-*/chrome-linux/
+    1. {base}/browser/...                                       — 直接打包位置
+    2. {base}/playwright-browsers/chromium-*/chrome-win/         — Playwright (Windows)
+    3. {base}/playwright-browsers/chromium-*/chrome-mac[-arm64]/ — Playwright (macOS)
+    4. {base}/playwright-browsers/chromium-*/chrome-linux/       — Playwright (Linux)
     """
     import sys
 
@@ -98,12 +106,23 @@ def _find_bundled_browser_executable() -> str | None:
     if internal_dir.is_dir() and internal_dir not in search_roots:
         search_roots.append(internal_dir)
 
-    is_win = platform.system() == "Windows"
-    exe_name = "chrome.exe" if is_win else "chrome"
-    headless_name = "headless_shell.exe" if is_win else "headless_shell"
+    system = platform.system()
+    is_win = system == "Windows"
+    is_mac = system == "Darwin"
+
+    if is_win:
+        exe_name = "chrome.exe"
+        headless_name = "headless_shell.exe"
+    else:
+        exe_name = "chrome"
+        headless_name = "headless_shell"
 
     candidates: list[Path] = []
     for root in search_roots:
+        if is_mac:
+            candidates.append(
+                root / "browser" / "Chromium.app" / "Contents" / "MacOS" / "Chromium"
+            )
         candidates.append(root / "browser" / exe_name)
 
         pw_dir = root / "playwright-browsers"
@@ -111,6 +130,13 @@ def _find_bundled_browser_executable() -> str | None:
             for chromium_dir in sorted(pw_dir.glob("chromium-*"), reverse=True):
                 if is_win:
                     candidates.append(chromium_dir / "chrome-win" / exe_name)
+                elif is_mac:
+                    for mac_dir in ("chrome-mac-arm64", "chrome-mac"):
+                        candidates.append(
+                            chromium_dir / mac_dir / "Chromium.app"
+                            / "Contents" / "MacOS" / "Chromium"
+                        )
+                        candidates.append(chromium_dir / mac_dir / headless_name)
                 else:
                     candidates.append(chromium_dir / "chrome-linux" / exe_name)
                     candidates.append(chromium_dir / "chrome-linux" / headless_name)
@@ -119,6 +145,15 @@ def _find_bundled_browser_executable() -> str | None:
 
     for path in candidates:
         if path.is_file():
+            if not is_win and not os.access(str(path), os.X_OK):
+                try:
+                    path.chmod(path.stat().st_mode | 0o755)
+                    logger.info(f"[Browser] Fixed execute permission: {path}")
+                except OSError as e:
+                    logger.warning(
+                        f"[Browser] Cannot set execute permission for {path}: {e}"
+                    )
+                    continue
             logger.info(f"[Browser] Found bundled browser executable: {path}")
             return str(path)
 
@@ -358,8 +393,8 @@ class BrowserManager:
     def _setup_browsers_path(self) -> None:
         """设置 PLAYWRIGHT_BROWSERS_PATH 环境变量。
 
-        如果发现了内置的 chrome.exe（_bundled_executable），则不需要设置此变量，
-        因为会通过 executable_path 参数直接指定。
+        如果已通过 _find_bundled_browser_executable() 找到内置二进制，则不需要
+        设置此变量，因为会通过 executable_path 参数直接指定。
         """
         if "PLAYWRIGHT_BROWSERS_PATH" in os.environ:
             return
@@ -531,7 +566,11 @@ class BrowserManager:
 
         if platform.system() != "Windows":
             if not os.access(exe, os.X_OK):
-                return f"Chromium 可执行文件无执行权限: {exe}"
+                try:
+                    exe_path.chmod(exe_path.stat().st_mode | 0o755)
+                    logger.info(f"[Browser] Fixed execute permission for Chromium: {exe}")
+                except OSError:
+                    return f"Chromium 可执行文件无执行权限: {exe}"
 
         file_size = exe_path.stat().st_size
         if file_size < 1_000_000:

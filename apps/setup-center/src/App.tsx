@@ -598,6 +598,18 @@ export function App() {
         const hData = await hRes.json();
         if (hData.version) setBackendVersion(hData.version);
       } catch { /* ignore */ }
+      // Explicitly fetch config that useCallback/useEffect chains may miss
+      // due to auth not being ready when the initial effects fired
+      try {
+        const modeRes = await safeFetch(`${capBase}/api/config/agent-mode`);
+        const modeData = await modeRes.json();
+        if (!cancelled) setMultiAgentEnabled(modeData.multi_agent_enabled ?? false);
+      } catch { /* ignore */ }
+      try {
+        const dvRes = await safeFetch(`${capBase}/api/config/disabled-views`);
+        const dvData = await dvRes.json();
+        if (!cancelled) setDisabledViews(dvData.disabled_views || []);
+      } catch { /* ignore */ }
       try { await refreshStatus("local", capBase, true); } catch { /* ignore */ }
       autoCheckEndpoints(capBase);
     })();

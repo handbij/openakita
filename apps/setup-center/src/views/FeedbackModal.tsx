@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { invoke } from "@tauri-apps/api/core";
 import { IconX, IconInfo } from "../icons";
 
 const TURNSTILE_SITE_KEY = "0x4AAAAAACgY6e8TLK4RVrQk";
@@ -49,6 +50,7 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug" }: F
   // State
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ ok: boolean; msg: string; downloadUrl?: string } | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
   const turnstileRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -448,18 +450,37 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug" }: F
             }}>
               <div style={{ whiteSpace: "pre-wrap" }}>{submitResult.msg}</div>
               {submitResult.downloadUrl && (
-                <a
-                  href={submitResult.downloadUrl}
-                  download
+                <button
+                  disabled={downloading}
+                  onClick={async () => {
+                    if (!submitResult.downloadUrl) return;
+                    setDownloading(true);
+                    try {
+                      const ts = Math.floor(Date.now() / 1000);
+                      const dest = await invoke<string>("download_file", {
+                        url: submitResult.downloadUrl,
+                        filename: `openakita-feedback-${ts}.zip`,
+                      });
+                      await invoke("show_item_in_folder", { path: dest });
+                    } catch (err: any) {
+                      setSubmitResult((prev) => prev ? {
+                        ...prev,
+                        msg: prev.msg + "\n" + t("feedback.downloadFailed", { error: err?.message || String(err) }),
+                      } : prev);
+                    } finally {
+                      setDownloading(false);
+                    }
+                  }}
                   style={{
                     display: "inline-flex", alignItems: "center", gap: 4,
                     marginTop: 8, padding: "6px 14px", borderRadius: 6,
-                    background: "var(--brand, #0ea5e9)", color: "#fff",
-                    textDecoration: "none", fontSize: 13, fontWeight: 500,
+                    background: downloading ? "var(--muted, #9ca3af)" : "var(--brand, #0ea5e9)",
+                    color: "#fff", border: "none", cursor: downloading ? "wait" : "pointer",
+                    fontSize: 13, fontWeight: 500,
                   }}
                 >
-                  {t("feedback.saveLocal")}
-                </a>
+                  {downloading ? t("feedback.downloading") : t("feedback.saveLocal")}
+                </button>
               )}
             </div>
           )}

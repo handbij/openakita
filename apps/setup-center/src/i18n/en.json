@@ -792,7 +792,9 @@
     "trigger": "Feedback",
     "uploadFailedSaved": "Upload failed ({{error}}). The report has been saved locally. You can download and send it to technical support manually.",
     "uploadFailedNetwork": "Network connection failed. Please check your network and try again.",
-    "saveLocal": "💾 Download Feedback Package"
+    "saveLocal": "💾 Download Feedback Package",
+    "downloading": "Downloading…",
+    "downloadFailed": "Download failed: {{error}}"
   },
   "bugReport": {
     "title": "Bug Report",

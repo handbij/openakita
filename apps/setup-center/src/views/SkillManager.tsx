@@ -588,23 +588,32 @@ export function SkillManager({
       let installed = false;
 
       if (serviceRunning && apiBaseUrl != null) {
-        const res = await safeFetch(`${apiBaseUrl}/api/skills/install`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: folderPath }),
-          signal: AbortSignal.timeout(60_000),
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        installed = true;
         try {
-          await safeFetch(`${apiBaseUrl}/api/skills/reload`, {
+          const res = await safeFetch(`${apiBaseUrl}/api/skills/install`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({}),
-            signal: AbortSignal.timeout(10_000),
+            body: JSON.stringify({ url: folderPath }),
+            signal: AbortSignal.timeout(60_000),
           });
-        } catch { /* reload 失败不阻塞 */ }
+          const data = await res.json();
+          if (data.error) throw new Error(data.error);
+          installed = true;
+          try {
+            await safeFetch(`${apiBaseUrl}/api/skills/reload`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({}),
+              signal: AbortSignal.timeout(10_000),
+            });
+          } catch { /* reload 失败不阻塞 */ }
+        } catch (apiErr) {
+          const m = String(apiErr).toLowerCase();
+          if (m.includes("request cancel") || m.includes("request_cancel")) {
+            installed = false; // fallback to Tauri invoke below
+          } else {
+            throw apiErr;
+          }
+        }
       }
 
       if (!installed && IS_TAURI && currentWorkspaceId) {

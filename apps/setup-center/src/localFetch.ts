@@ -9,6 +9,11 @@
  *
  * 仅拦截 localhost 请求，其他请求仍走浏览器原生 fetch。
  * 在非 Tauri 环境（如 `npm run dev` 的浏览器）下不做任何拦截。
+ *
+ * 注意：Tauri HTTP 插件（tauri-plugin-http）的 Rust 端在处理 AbortSignal 时
+ * 存在竞态条件——信号通过 IPC abort channel 传递，可能导致 fetch_send 返回
+ * "Request canceled" 错误。因此这里从 init 中剥离 signal，在 JS 侧自行处理
+ * abort/timeout 逻辑，避免触发 Rust 端的 Error::RequestCanceled。
  */
 const LOCAL_RE = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(?:\/|$)/;
 
@@ -45,6 +50,47 @@ export function installLocalFetchOverride(): void {
       const mod = await import("@tauri-apps/plugin-http");
       tauriFetchFn = mod.fetch as typeof fetch;
     }
+
+    const signal = init?.signal;
+
+    if (signal) {
+      // Strip signal from init — Tauri HTTP plugin's Rust-side abort channel
+      // has a race condition that causes spurious "Request canceled" errors.
+      // We handle abort externally via Promise.race instead.
+      const { signal: _stripped, ...rest } = init!;
+      const initWithoutSignal = rest as RequestInit;
+
+      if (signal.aborted) {
+        throw new DOMException(
+          signal.reason?.message || "The operation was aborted",
+          "AbortError",
+        );
+      }
+
+      return new Promise<Response>((resolve, reject) => {
+        const onAbort = () => {
+          reject(
+            new DOMException(
+              signal.reason?.message || "The operation was aborted",
+              "AbortError",
+            ),
+          );
+        };
+        signal.addEventListener("abort", onAbort, { once: true });
+
+        tauriFetchFn!(input, initWithoutSignal).then(
+          (res) => {
+            signal.removeEventListener("abort", onAbort);
+            resolve(res);
+          },
+          (err) => {
+            signal.removeEventListener("abort", onAbort);
+            reject(err);
+          },
+        );
+      });
+    }
+
     return tauriFetchFn(input, init);
   };
 }

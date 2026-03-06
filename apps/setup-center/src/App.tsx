@@ -1,6 +1,6 @@
 import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { invoke, listen, IS_TAURI, IS_WEB, IS_CAPACITOR, getAppVersion, onWsEvent } from "./platform";
+import { invoke, listen, IS_TAURI, IS_WEB, IS_CAPACITOR, getAppVersion, onWsEvent, logger } from "./platform";
 import { getActiveServer, getActiveServerId } from "./platform/servers";
 import { checkAuth, installFetchInterceptor, AUTH_EXPIRED_EVENT, isPasswordUserSet, logout, clearAccessToken } from "./platform/auth";
 import { LoginView } from "./views/LoginView";
@@ -340,7 +340,7 @@ export function App() {
       // 4. 跳过 onboarding，进入主界面
       setView("status");
     } catch (e) {
-      console.error("obConnectExistingService failed:", e);
+      logger.error("App", "obConnectExistingService failed", { error: String(e) });
     }
   }
 
@@ -374,7 +374,7 @@ export function App() {
     const devKeyHandler = (ev: KeyboardEvent) => {
       if (ev.ctrlKey && ev.shiftKey && ev.key === "O") {
         ev.preventDefault();
-        console.log("[DEV] Force entering onboarding mode");
+        logger.debug("App", "Force entering onboarding mode");
         setObStep("ob-welcome");
         setObDetectedService(null);
         obProbeRunningService();
@@ -1391,7 +1391,7 @@ export function App() {
         }
       }
     } catch (e) {
-      console.warn("doLoadProviders failed:", e);
+      logger.warn("App", "doLoadProviders failed", { error: String(e) });
       if (providers.length === 0) {
         setProviders(BUILTIN_PROVIDERS);
         const first = BUILTIN_PROVIDERS[0]?.slug ?? "";
@@ -1476,7 +1476,7 @@ export function App() {
     try {
       // 本地服务商自动使用 placeholder key
       const effectiveKey = apiKeyValue.trim() || (isLocalProvider(selectedProvider) ? localProviderPlaceholderKey(selectedProvider) : "");
-      console.log('[doFetchModels] apiType:', apiType, 'baseUrl:', baseUrl, 'slug:', selectedProvider?.slug, 'keyLen:', effectiveKey?.length, 'httpApi:', shouldUseHttpApi(), 'isLocal:', isLocalProvider(selectedProvider));
+      logger.debug("App", "doFetchModels", { apiType, baseUrl, slug: selectedProvider?.slug, keyLen: effectiveKey?.length, httpApi: shouldUseHttpApi(), isLocal: isLocalProvider(selectedProvider) });
       const parsed = await fetchModelListUnified({
         apiType,
         baseUrl,
@@ -1492,7 +1492,7 @@ export function App() {
       }
       setCapTouched(false);
     } catch (e: any) {
-      console.error('[doFetchModels] error:', e);
+      logger.error("App", "doFetchModels error", { error: String(e) });
       const raw = String(e?.message || e);
       setError(friendlyFetchError(raw, t, selectedProvider?.name));
     } finally {
@@ -1536,7 +1536,7 @@ export function App() {
         } catch (httpErr) {
           const msg = String(httpErr);
           if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("AbortError")) {
-            console.warn("[doTestConnection] HTTP API unreachable, falling back to direct:", httpErr);
+            logger.warn("App", "doTestConnection: HTTP API unreachable, falling back to direct", { error: String(httpErr) });
             httpApiFailed = true;
           } else {
             throw httpErr;
@@ -1580,9 +1580,9 @@ export function App() {
     apiType: string; baseUrl: string; providerSlug: string | null; apiKey: string;
   }): Promise<ListedModel[]> {
     // ── 后端运行中 → HTTP API ──
-    console.log('[fetchModelListUnified] shouldUseHttpApi:', shouldUseHttpApi(), 'httpApiBase:', httpApiBase());
+    logger.debug("App", "fetchModelListUnified", { shouldUseHttpApi: shouldUseHttpApi(), httpApiBase: httpApiBase() });
     if (shouldUseHttpApi()) {
-      console.log('[fetchModelListUnified] using HTTP API');
+      logger.debug("App", "fetchModelListUnified: using HTTP API");
       try {
         const res = await safeFetch(`${httpApiBase()}/api/config/list-models`, {
           method: "POST",
@@ -1602,7 +1602,7 @@ export function App() {
         // 后端 API 不可达（端口冲突、未完全启动等），回退到 Tauri/直连
         const msg = String(httpErr);
         if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("AbortError")) {
-          console.warn("[fetchModelListUnified] HTTP API unreachable, falling back to Tauri/direct:", httpErr);
+          logger.warn("App", "fetchModelListUnified: HTTP API unreachable, falling back", { error: String(httpErr) });
         } else {
           // 非网络错误（如后端返回业务错误），直接抛出
           throw httpErr;
@@ -1621,7 +1621,7 @@ export function App() {
       });
       return JSON.parse(raw) as ListedModel[];
     } catch (e) {
-      console.warn("openakita_list_models via Python bridge failed, using direct fetch:", e);
+      logger.warn("App", "openakita_list_models via Python bridge failed, using direct fetch", { error: String(e) });
     }
     // 回退 2：前端直连服务商 API（打包模式，无 venv，onboarding 阶段）
     return fetchModelsDirectly(params);
@@ -1781,7 +1781,7 @@ export function App() {
       const data = await res.json();
       setMultiAgentEnabled(data.multi_agent_enabled ?? false);
     } catch (e) {
-      console.warn("Failed to fetch agent mode:", e);
+      logger.warn("App", "Failed to fetch agent mode", { error: String(e) });
     }
   }, [serviceStatus?.running, dataMode, apiBaseUrl]);
 
@@ -1797,7 +1797,7 @@ export function App() {
       });
       setMultiAgentEnabled(next);
     } catch (e) {
-      console.error("Failed to toggle agent mode:", e);
+      logger.error("App", "Failed to toggle agent mode", { error: String(e) });
     }
   }, [multiAgentEnabled]);
 
@@ -1839,7 +1839,7 @@ export function App() {
         }
       } catch {
         // HTTP 暂时不可用 — 回退到本地读取（比如后端正在重启、状态延迟）
-        console.warn(`readWorkspaceFile: HTTP failed for ${relativePath}, falling back to Tauri`);
+        logger.warn("App", `readWorkspaceFile: HTTP failed for ${relativePath}, falling back to Tauri`);
       }
     }
     // ── 后端未运行 / HTTP 回退 → Tauri 本地读取（Web 模式无此能力） ──
@@ -1880,7 +1880,7 @@ export function App() {
         }
       } catch {
         // HTTP 暂时不可用 — 回退到本地写入（比如后端正在重启）
-        console.warn(`writeWorkspaceFile: HTTP failed for ${relativePath}, falling back to Tauri`);
+        logger.warn("App", `writeWorkspaceFile: HTTP failed for ${relativePath}, falling back to Tauri`);
       }
     }
     // ── 后端未运行 / HTTP 回退 → Tauri 本地写入（Web 模式无此能力） ──
@@ -2753,7 +2753,7 @@ export function App() {
         return; // HTTP 成功，无需本地写入
       } catch {
         // HTTP 暂时不可用，回退到本地写入
-        console.warn("saveEnvKeys: HTTP failed, falling back to Tauri");
+        logger.warn("App", "saveEnvKeys: HTTP failed, falling back to Tauri");
       }
     }
     if (IS_TAURI && currentWorkspaceId) {
@@ -3593,7 +3593,7 @@ export function App() {
           skillsList = Array.isArray(skillsParsed.skills) ? skillsParsed.skills : [];
         } catch (e) {
           // 打包模式下无 venv，Tauri invoke 会失败，降级为空列表（服务启动后可通过 HTTP API 获取）
-          console.warn("openakita_list_skills via Tauri failed:", e);
+          logger.warn("App", "openakita_list_skills via Tauri failed", { error: String(e) });
         }
       }
       const systemCount = skillsList.filter((s: any) => !!s.system).length;
@@ -3811,7 +3811,7 @@ export function App() {
                   title={t("status.openFolder")}
                   onClick={async () => {
                     const { openFileWithDefault } = await import("./platform");
-                    try { await openFileWithDefault(ws.path); } catch (e) { console.error(e); }
+                    try { await openFileWithDefault(ws.path); } catch (e) { logger.error("App", "openFileWithDefault failed", { error: String(e) }); }
                   }}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -6308,7 +6308,7 @@ export function App() {
         });
         return;
       } catch {
-        console.warn("saveEnvKeysExternal: HTTP failed, falling back to Tauri");
+        logger.warn("App", "saveEnvKeysExternal: HTTP failed, falling back to Tauri");
       }
     }
     if (IS_TAURI && currentWorkspaceId) {
@@ -6325,7 +6325,7 @@ export function App() {
       setObModules(modules);
       
     } catch (e) {
-      console.warn("detect_modules failed:", e);
+      logger.warn("App", "detect_modules failed", { error: String(e) });
     }
   }
 
@@ -6335,7 +6335,7 @@ export function App() {
       const check = await invoke<typeof obEnvCheck>("check_environment");
       setObEnvCheck(check);
     } catch (e) {
-      console.warn("check_environment failed:", e);
+      logger.warn("App", "check_environment failed", { error: String(e) });
     }
   }
 
@@ -6814,7 +6814,7 @@ export function App() {
                       }
                     }
                   } catch (e) {
-                    console.warn("ob: create default workspace failed:", e);
+                    logger.warn("App", "ob: create default workspace failed", { error: String(e) });
                   }
                   setObStep("ob-agreement");
                 }}

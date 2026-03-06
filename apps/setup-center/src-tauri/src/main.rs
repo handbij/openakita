@@ -246,6 +246,78 @@ fn append_onboarding_log_lines(log_path: String, lines: Vec<String>) -> Result<(
     Ok(())
 }
 
+// ── 前端日志持久化 ──
+
+const FRONTEND_LOG_MAX_BYTES: u64 = 5 * 1024 * 1024; // 5 MB
+const FRONTEND_LOG_TRUNCATE_TO: u64 = 2 * 1024 * 1024; // 截断后保留最后 2 MB
+
+fn frontend_log_path() -> PathBuf {
+    setup_logs_dir().join("frontend.log")
+}
+
+/// 自动轮转：当文件超过 FRONTEND_LOG_MAX_BYTES 时，只保留尾部 FRONTEND_LOG_TRUNCATE_TO 字节。
+fn maybe_rotate_frontend_log(path: &Path) {
+    let meta = match fs::metadata(path) {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+    if meta.len() <= FRONTEND_LOG_MAX_BYTES {
+        return;
+    }
+    // Read tail
+    let mut f = match fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+    let start = meta.len().saturating_sub(FRONTEND_LOG_TRUNCATE_TO);
+    if f.seek(SeekFrom::Start(start)).is_err() {
+        return;
+    }
+    let mut tail = Vec::new();
+    if f.read_to_end(&mut tail).is_err() {
+        return;
+    }
+    drop(f);
+    // Skip to next newline to avoid partial line
+    let offset = tail.iter().position(|&b| b == b'\n').map(|i| i + 1).unwrap_or(0);
+    let _ = fs::write(path, &tail[offset..]);
+}
+
+/// 前端 JS 日志批量追加到 ~/.openakita/logs/frontend.log。
+#[tauri::command]
+fn append_frontend_log(lines: Vec<String>) -> Result<(), String> {
+    if lines.is_empty() {
+        return Ok(());
+    }
+    let log_dir = setup_logs_dir();
+    fs::create_dir_all(&log_dir).map_err(|e| format!("create logs dir failed: {e}"))?;
+    let path = frontend_log_path();
+    maybe_rotate_frontend_log(&path);
+    let mut f = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| format!("open frontend log failed: {e}"))?;
+    for line in &lines {
+        writeln!(f, "{}", line).map_err(|e| format!("write line failed: {e}"))?;
+    }
+    f.flush().map_err(|e| format!("flush failed: {e}"))?;
+    Ok(())
+}
+
+/// 导出日志到用户下载目录，返回保存路径。
+#[tauri::command]
+fn save_log_export(filename: String, content: String) -> Result<String, String> {
+    let downloads = dirs_next::download_dir()
+        .or_else(dirs_next::desktop_dir)
+        .unwrap_or_else(|| openakita_root_dir().join("logs"));
+    fs::create_dir_all(&downloads).ok();
+    let path = downloads.join(&filename);
+    fs::write(&path, content.as_bytes())
+        .map_err(|e| format!("save log export failed: {e}"))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
 fn modules_dir() -> PathBuf {
     openakita_root_dir().join("modules")
 }
@@ -2176,6 +2248,8 @@ fn main() {
             start_onboarding_log,
             append_onboarding_log,
             append_onboarding_log_lines,
+            append_frontend_log,
+            save_log_export,
             register_cli,
             unregister_cli,
             get_cli_status

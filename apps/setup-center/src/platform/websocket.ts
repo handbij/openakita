@@ -5,6 +5,7 @@
 import { IS_TAURI, IS_CAPACITOR } from "./detect";
 import { getAccessToken, isTokenExpiringSoon, refreshAccessToken } from "./auth";
 import { getActiveServer } from "./servers";
+import { logger } from "./logger";
 
 export type WsEventHandler = (event: string, data: unknown) => void;
 
@@ -68,7 +69,7 @@ function _connect(): void {
         try {
           handler(event, data);
         } catch (e) {
-          console.error("[WS] handler error:", e);
+          logger.error("WS", "Event handler error", { error: String(e) });
         }
       }
     } catch { /* ignore non-JSON */ }
@@ -91,7 +92,7 @@ function _scheduleReconnect(): void {
   if (_reconnectTimer || _intentionallyClosed) return;
   _reconnectAttempts++;
   if (_reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
-    console.warn(`[WS] Gave up reconnecting after ${MAX_RECONNECT_ATTEMPTS} attempts`);
+    logger.warn("WS", `Gave up reconnecting after ${MAX_RECONNECT_ATTEMPTS} attempts`);
     return;
   }
   _reconnectTimer = setTimeout(async () => {

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { IconBot, IconRefresh, IconPlus, IconEdit, IconTrash, IconDownload, IconUpload } from "../icons";
 import { safeFetch } from "../providers";
+import { logger } from "../platform";
 
 type AgentProfile = {
   id: string;
@@ -203,7 +204,7 @@ export function AgentManagerView({
       const data = await res.json();
       setCategories(data.categories || []);
     } catch (e) {
-      console.warn("Failed to fetch categories:", e);
+      logger.warn("AgentManager", "Failed to fetch categories", { error: String(e) });
     }
   }, [apiBaseUrl]);
 
@@ -215,7 +216,7 @@ export function AgentManagerView({
       const data = await res.json();
       setProfiles(data.profiles || []);
     } catch (e) {
-      console.warn("Failed to fetch profiles:", e);
+      logger.warn("AgentManager", "Failed to fetch profiles", { error: String(e) });
     }
     setLoading(false);
   }, [apiBaseUrl, multiAgentEnabled]);

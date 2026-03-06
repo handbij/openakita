@@ -8,6 +8,7 @@ import {
   DotGreen, DotGray,
 } from "../icons";
 import { safeFetch } from "../providers";
+import { logger } from "../platform";
 import { IS_WEB, onWsEvent } from "../platform";
 
 // ─── Types ──────────────────────────────────────────────────────────────
@@ -483,7 +484,7 @@ function BotConfigTab({ apiBase, multiAgentEnabled }: { apiBase: string; multiAg
       const res = await safeFetch(`${apiBase}/api/agents/bots`);
       const data = await res.json();
       setBots(data.bots || []);
-    } catch (e) { console.warn("Failed to fetch bots:", e); }
+    } catch (e) { logger.warn("IM", "Failed to fetch bots", { error: String(e) }); }
     setLoading(false);
   }, [apiBase]);
 

@@ -288,3 +288,4 @@ export {
   addServer, updateServer, removeServer, setActiveServer, testConnection,
 } from "./servers";
 export type { ServerEntry } from "./servers";
+export { logger } from "./logger";

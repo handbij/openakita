@@ -20,9 +20,34 @@ import "./i18n";
 import "./styles.css";
 import { App } from "./App";
 import { initTheme } from "./theme";
+import { logger } from "./platform/logger";
 
 // Initialize theme before rendering to catch OS changes
 initTheme();
+
+// ── Global error capture ──
+// Catches JS errors and unhandled promise rejections that React ErrorBoundary cannot.
+window.addEventListener("error", (event) => {
+  logger.error("Global", `Uncaught error: ${event.message}`, {
+    filename: event.filename,
+    lineno: event.lineno,
+    colno: event.colno,
+    stack: event.error?.stack?.slice(0, 500),
+  });
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason;
+  const message = reason instanceof Error ? reason.message : String(reason);
+  logger.error("Global", `Unhandled promise rejection: ${message}`, {
+    stack: reason instanceof Error ? reason.stack?.slice(0, 500) : undefined,
+  });
+});
+
+logger.info("Boot", "Application starting", {
+  platform: __BUILD_TARGET__,
+  userAgent: navigator.userAgent.slice(0, 120),
+});
 
 // ── Global Error Boundary ──
 // Catches unhandled React rendering errors to prevent white-screen crashes.
@@ -41,7 +66,10 @@ class GlobalErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error("[ErrorBoundary] Uncaught error:", error, errorInfo);
+    logger.error("ErrorBoundary", `React render error: ${error.message}`, {
+      stack: error.stack?.slice(0, 500),
+      componentStack: errorInfo.componentStack?.slice(0, 500),
+    });
   }
 
   render() {

@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { setThemePref } from "../theme";
 import type { Theme } from "../theme";
-import { invoke, downloadFile, openFileWithDefault, showInFolder, readFileBase64, onDragDrop, IS_TAURI, IS_WEB, onWsEvent } from "../platform";
+import { invoke, downloadFile, openFileWithDefault, showInFolder, readFileBase64, onDragDrop, IS_TAURI, IS_WEB, onWsEvent, logger } from "../platform";
 import { getAccessToken } from "../platform/auth";
 import { safeFetch } from "../providers";
 import ReactMarkdown from "react-markdown";
@@ -1173,7 +1173,7 @@ function MessageBubble({
                             const savedPath = await downloadFile(fullUrl, art.name || `image-${Date.now()}.png`);
                             await openFileWithDefault(savedPath);
                           } catch (err) {
-                            console.error("图片打开失败:", err);
+                            logger.error("Chat", "图片打开失败", { error: String(err) });
                           }
                         })();
                       }}
@@ -1195,7 +1195,7 @@ function MessageBubble({
                           const savedPath = await downloadFile(fullUrl, art.name || `image-${Date.now()}.png`);
                           await showInFolder(savedPath);
                         } catch (err) {
-                          console.error("图片下载失败:", err);
+                          logger.error("Chat", "图片下载失败", { error: String(err) });
                         }
                       }}
                     >
@@ -1237,7 +1237,7 @@ function MessageBubble({
                           const savedPath = await downloadFile(fullUrl, art.name || "file");
                           await showInFolder(savedPath);
                         } catch (err) {
-                          console.error("文件下载失败:", err);
+                          logger.error("Chat", "文件下载失败", { error: String(err) });
                         }
                       }, 250);
                     }}
@@ -1248,7 +1248,7 @@ function MessageBubble({
                           const savedPath = await downloadFile(fullUrl, art.name || "file");
                           await openFileWithDefault(savedPath);
                         } catch (err) {
-                          console.error("文件打开失败:", err);
+                          logger.error("Chat", "文件打开失败", { error: String(err) });
                         }
                       })();
                     }}
@@ -1403,7 +1403,7 @@ function FlatMessageItem({
                               const savedPath = await downloadFile(fullUrl, art.name || `image-${Date.now()}.png`);
                               await openFileWithDefault(savedPath);
                             } catch (err) {
-                              console.error("图片打开失败:", err);
+                              logger.error("Chat", "图片打开失败", { error: String(err) });
                             }
                           })();
                         }}
@@ -1425,7 +1425,7 @@ function FlatMessageItem({
                             const savedPath = await downloadFile(fullUrl, art.name || `image-${Date.now()}.png`);
                             await showInFolder(savedPath);
                           } catch (err) {
-                            console.error("图片下载失败:", err);
+                            logger.error("Chat", "图片下载失败", { error: String(err) });
                           }
                         }}
                       >
@@ -1464,7 +1464,7 @@ function FlatMessageItem({
                             const savedPath = await downloadFile(fullUrl, art.name || "file");
                             await showInFolder(savedPath);
                           } catch (err) {
-                            console.error("文件下载失败:", err);
+                            logger.error("Chat", "文件下载失败", { error: String(err) });
                           }
                         }, 250);
                       }}
@@ -1475,7 +1475,7 @@ function FlatMessageItem({
                             const savedPath = await downloadFile(fullUrl, art.name || "file");
                             await openFileWithDefault(savedPath);
                           } catch (err) {
-                            console.error("文件打开失败:", err);
+                            logger.error("Chat", "文件打开失败", { error: String(err) });
                           }
                         })();
                       }}
@@ -2047,7 +2047,7 @@ export function ChatView({
         const data = await res.json();
         setAgentProfiles(data.profiles || []);
       } catch (e) {
-        console.warn("Failed to fetch agent profiles:", e);
+        logger.warn("Chat", "Failed to fetch agent profiles", { error: String(e) });
       }
     };
     fetchProfiles();
@@ -3079,7 +3079,7 @@ export function ChatView({
                 if (event.language) i18n.changeLanguage(event.language);
                 break;
               case "artifact":
-                console.log("[Artifact SSE] Received:", event.name, event.file_url, event.artifact_type);
+                logger.debug("Chat", "Artifact SSE received", { name: event.name, file_url: event.file_url, artifact_type: event.artifact_type });
                 currentArtifacts = [...currentArtifacts, {
                   artifact_type: event.artifact_type,
                   file_url: event.file_url,
@@ -3553,7 +3553,7 @@ export function ChatView({
               mimeType,
             }]);
           })
-          .catch((err) => console.error("[DragDrop] read_file_base64 failed:", name, err));
+          .catch((err) => logger.error("Chat", "DragDrop read_file_base64 failed", { name, error: String(err) }));
       }
     };
 
@@ -4467,7 +4467,7 @@ export function ChatView({
                   const savedPath = await downloadFile(lightbox.url, lightbox.name || `image-${Date.now()}.png`);
                   await showInFolder(savedPath);
                 } catch (err) {
-                  console.error("图片下载失败:", err);
+                  logger.error("Chat", "图片下载失败", { error: String(err) });
                 }
               }}
             >

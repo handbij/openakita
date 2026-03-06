@@ -23,12 +23,18 @@ console = Console()
 _TOTAL_STEPS = 9
 
 
-def _ask_secret(prompt_text: str) -> str:
+def _ask_secret(prompt_text: str, *, allow_empty: bool = False) -> str:
     """Prompt for a secret value, then echo a masked confirmation so the user
     knows something was captured.  Returns the raw input string."""
-    value = Prompt.ask(prompt_text, password=True)
+    kwargs: dict = {"password": True}
+    if allow_empty:
+        kwargs["default"] = ""
+    value = Prompt.ask(prompt_text, **kwargs)
     if value:
-        masked = value[:3] + "*" * max(len(value) - 3, 0) if len(value) > 4 else "*" * len(value)
+        if len(value) > 8:
+            masked = value[:3] + "*" * (len(value) - 3)
+        else:
+            masked = "*" * len(value)
         console.print(f"  [dim]Received: {masked}[/dim]")
     return value
 
@@ -929,7 +935,7 @@ OpenAkita 按「现状」(AS IS) 提供，不附带任何形式的明示或暗�
             default="ws://127.0.0.1:8080",
         )
 
-        access_token = _ask_secret("Enter Access Token (leave empty if not set)")
+        access_token = _ask_secret("Enter Access Token (leave empty if not set)", allow_empty=True)
 
         self.config["ONEBOT_ENABLED"] = "true"
         self.config["ONEBOT_WS_URL"] = onebot_url
@@ -1171,7 +1177,7 @@ OpenAkita 按「现状」(AS IS) 提供，不附带任何形式的明示或暗�
         # GitHub token
         console.print("\n[bold]GitHub Token (optional):[/bold]")
         console.print("Used for downloading skills and GitHub API access\n")
-        github_token = _ask_secret("Enter GitHub Token (leave empty to skip)")
+        github_token = _ask_secret("Enter GitHub Token (leave empty to skip)", allow_empty=True)
         if github_token:
             self.config["GITHUB_TOKEN"] = github_token
 

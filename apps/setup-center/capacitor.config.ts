@@ -8,14 +8,12 @@ const config: CapacitorConfig = {
     androidScheme: "http",
     iosScheme: "http",
     allowNavigation: ["*"],
+    cleartext: true,
   },
   android: {
     allowMixedContent: true,
   },
   plugins: {
-    CapacitorHttp: {
-      enabled: true,
-    },
     CapacitorCookies: {
       enabled: true,
     },

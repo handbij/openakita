@@ -175,12 +175,14 @@ export async function login(
   try {
     const fetchOpts: RequestInit = {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
       signal: AbortSignal.timeout(10_000),
     };
-    // Web mode: use credentials for httpOnly refresh cookie
-    if (!IS_CAPACITOR) {
+    if (IS_CAPACITOR) {
+      fetchOpts.headers = { "Content-Type": "application/x-www-form-urlencoded" };
+      fetchOpts.body = new URLSearchParams({ password }).toString();
+    } else {
+      fetchOpts.headers = { "Content-Type": "application/json" };
+      fetchOpts.body = JSON.stringify({ password });
       fetchOpts.credentials = "include";
     }
     const res = await fetch(`${apiBase}/api/auth/login`, fetchOpts);

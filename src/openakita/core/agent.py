@@ -6100,13 +6100,24 @@ NEXT: 建议的下一步（如有）"""
 
         if session_id and has_state:
             task = self.agent_state.get_task_for_session(session_id)
+            _effective_sid = session_id
+            # session_id 可能是前端 UUID，但 task key 是 conversation_id（如 "desktop:uuid:user"）
+            # 找不到时再尝试 _current_conversation_id / _current_session_id
+            if not task:
+                for _alt_key in (self._current_conversation_id, self._current_session_id):
+                    if _alt_key and _alt_key != session_id:
+                        task = self.agent_state.get_task_for_session(_alt_key)
+                        if task:
+                            _effective_sid = _alt_key
+                            break
             task_status = task.status.value if task else "N/A"
             logger.info(
                 f"[StopTask] cancel_current_task 被调用: reason={reason!r}, "
-                f"session_id={session_id}, task_status={task_status}"
+                f"session_id={session_id}, effective_sid={_effective_sid!r}, "
+                f"task_status={task_status}"
             )
             if task:
-                self.agent_state.cancel_task(reason, session_id=session_id)
+                self.agent_state.cancel_task(reason, session_id=_effective_sid)
             else:
                 logger.warning(
                     f"[StopTask] No task found for session {session_id}, "

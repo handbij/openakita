@@ -4,7 +4,7 @@ import {
   IconChevronDown, IconChevronRight, IconInfo,
   DotGreen, DotGray, DotYellow,
 } from "../icons";
-import { askConfirm } from "../utils";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 
 type MCPTool = {
   name: string;
@@ -58,6 +58,7 @@ export function MCPView({ serviceRunning }: { serviceRunning: boolean }) {
   const [form, setForm] = useState<AddServerForm>({ ...emptyForm });
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
   const fetchServers = useCallback(async () => {
     if (!serviceRunning) return;
@@ -117,8 +118,7 @@ export function MCPView({ serviceRunning }: { serviceRunning: boolean }) {
     setBusy(null);
   };
 
-  const removeServer = async (name: string) => {
-    if (!(await askConfirm(`确定删除 MCP 服务器 "${name}"？`))) return;
+  const doRemoveServer = useCallback(async (name: string) => {
     setBusy(name);
     try {
       const res = await fetch(`${API_BASE}/api/mcp/servers/${encodeURIComponent(name)}`, { method: "DELETE" });
@@ -133,6 +133,13 @@ export function MCPView({ serviceRunning }: { serviceRunning: boolean }) {
       showMsg(`删除失败: ${e}`, false);
     }
     setBusy(null);
+  }, [API_BASE, fetchServers]);
+
+  const removeServer = (name: string) => {
+    setConfirmDialog({
+      message: `确定删除 MCP 服务器 "${name}"？`,
+      onConfirm: () => doRemoveServer(name),
+    });
   };
 
   const addServer = async () => {
@@ -466,6 +473,7 @@ export function MCPView({ serviceRunning }: { serviceRunning: boolean }) {
         <br />
         内置配置位于 <code>mcps/</code> 目录，用户/AI 添加的配置保存在 <code>data/mcp/servers/</code> 目录，每个服务器一个子目录。
       </div>
+      <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
     </div>
   );
 }

@@ -3,7 +3,7 @@ import {
   IconRefresh, IconTrash, IconEdit, IconCheck, IconX,
   IconSearch, IconBrain, IconLoader,
 } from "../icons";
-import { askConfirm } from "../utils";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 
 type MemoryItem = {
   id: string;
@@ -88,6 +88,7 @@ export function MemoryView({ serviceRunning }: Props) {
   const [reviewing, setReviewing] = useState(false);
   const [reviewResult, setReviewResult] = useState<ReviewResult | null>(null);
   const [error, setError] = useState("");
+  const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
   const loadMemories = useCallback(async () => {
     if (!serviceRunning) return;
@@ -133,24 +134,30 @@ export function MemoryView({ serviceRunning }: Props) {
     }
   };
 
-  const handleBatchDelete = async () => {
-    if (selected.size === 0) return;
-    if (!(await askConfirm(`确定删除选中的 ${selected.size} 条记忆？`))) return;
+  const doBatchDelete = useCallback(async (ids: string[]) => {
     try {
       const res = await fetch(`${API_BASE}/api/memories/batch-delete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: Array.from(selected) }),
+        body: JSON.stringify({ ids }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setMemories(prev => prev.filter(m => !selected.has(m.id)));
+      setMemories(prev => prev.filter(m => !new Set(ids).has(m.id)));
       setSelected(new Set());
       loadStats();
       setError("");
     } catch (e: any) {
       setError(e.message);
     }
+  }, [API_BASE, loadStats]);
+
+  const handleBatchDelete = () => {
+    if (selected.size === 0) return;
+    const ids = Array.from(selected);
+    setConfirmDialog({
+      message: `确定删除选中的 ${ids.length} 条记忆？`,
+      onConfirm: () => doBatchDelete(ids),
+    });
   };
 
   const handleUpdate = async (id: string) => {
@@ -176,8 +183,7 @@ export function MemoryView({ serviceRunning }: Props) {
     setEditScore(m.importance_score);
   };
 
-  const handleReview = async () => {
-    if (!(await askConfirm("启动 LLM 智能审查？将由大模型逐条审查所有记忆，删除垃圾、合并重复。"))) return;
+  const doReview = useCallback(async () => {
     setReviewing(true);
     setReviewResult(null);
     setError("");
@@ -198,6 +204,13 @@ export function MemoryView({ serviceRunning }: Props) {
     } finally {
       setReviewing(false);
     }
+  }, [API_BASE, loadMemories, loadStats]);
+
+  const handleReview = () => {
+    setConfirmDialog({
+      message: "启动 LLM 智能审查？将由大模型逐条审查所有记忆，删除垃圾、合并重复。",
+      onConfirm: doReview,
+    });
   };
 
   const toggleSelect = (id: string) => {
@@ -506,6 +519,7 @@ export function MemoryView({ serviceRunning }: Props) {
           </tbody>
         </table>
       </div>
+      <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
     </div>
   );
 }

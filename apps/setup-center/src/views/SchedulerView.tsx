@@ -5,7 +5,7 @@ import {
   IconPlay, IconClock, IconCalendar, IconSearch,
   DotGreen, DotGray, DotYellow, DotRed,
 } from "../icons";
-import { askConfirm } from "../utils";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 
 type ScheduledTask = {
   id: string;
@@ -263,6 +263,7 @@ export function SchedulerView({ serviceRunning }: { serviceRunning: boolean }) {
   const [channels, setChannels] = useState<IMChannel[]>([]);
   const [activeTab, setActiveTab] = useState<TaskTab>("active");
   const [searchQuery, setSearchQuery] = useState("");
+  const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
   const fetchTasks = useCallback(async (showLoading = true) => {
     if (!serviceRunning) return;
@@ -380,11 +381,10 @@ export function SchedulerView({ serviceRunning }: { serviceRunning: boolean }) {
     setBusy(false);
   };
 
-  const deleteTask = async (task: ScheduledTask) => {
-    if (!(await askConfirm(t("scheduler.confirmDelete", { name: task.name })))) return;
+  const doDeleteTask = useCallback(async (taskId: string) => {
     setBusy(true);
     try {
-      const res = await fetch(`${API_BASE}/api/scheduler/tasks/${task.id}`, { method: "DELETE" });
+      const res = await fetch(`${API_BASE}/api/scheduler/tasks/${taskId}`, { method: "DELETE" });
       const data = await res.json();
       if (data.error) {
         showMsg(data.error, false);
@@ -394,6 +394,13 @@ export function SchedulerView({ serviceRunning }: { serviceRunning: boolean }) {
       }
     } catch (e) { showMsg(String(e), false); }
     setBusy(false);
+  }, [API_BASE, t, fetchTasks]);
+
+  const deleteTask = (task: ScheduledTask) => {
+    setConfirmDialog({
+      message: t("scheduler.confirmDelete", { name: task.name }),
+      onConfirm: () => doDeleteTask(task.id),
+    });
   };
 
   const toggleTask = async (task: ScheduledTask) => {
@@ -990,6 +997,7 @@ export function SchedulerView({ serviceRunning }: { serviceRunning: boolean }) {
           ))}
         </div>
       )}
+      <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
     </div>
   );
 }

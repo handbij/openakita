@@ -20,8 +20,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+_lan_ip_cache: tuple[str, float] | None = None
+_LAN_IP_TTL = 60
+
+
 def _get_lan_ip() -> str:
-    """Best-effort LAN IP detection via UDP connect (no traffic sent)."""
+    """Best-effort LAN IP detection via UDP connect (no traffic sent).
+
+    Result is cached for 60s to avoid creating a socket on every health check
+    (heartbeat polls every 5s).
+    """
+    global _lan_ip_cache
+    now = time.time()
+    if _lan_ip_cache and (now - _lan_ip_cache[1]) < _LAN_IP_TTL:
+        return _lan_ip_cache[0]
+
     import socket
 
     try:
@@ -29,9 +42,10 @@ def _get_lan_ip() -> str:
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
-        return ip
     except Exception:
-        return "127.0.0.1"
+        ip = "127.0.0.1"
+    _lan_ip_cache = (ip, now)
+    return ip
 
 
 @router.get("/api/health")

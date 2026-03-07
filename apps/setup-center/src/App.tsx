@@ -77,6 +77,11 @@ import { useVersionCheck, compareSemver } from "./hooks/useVersionCheck";
 
 const THEME_I18N_KEYS: Record<Theme, string> = { system: "topbar.themeSystem", dark: "topbar.themeDark", light: "topbar.themeLight" };
 
+/** Health-check timeout for recurring monitoring (heartbeat + refreshStatus).
+ *  Startup/one-shot probes keep their own shorter timeouts.
+ *  5s accommodates slow devices where the event loop may be busy. */
+const HEALTH_POLL_TIMEOUT_MS = 5_000;
+
 interface EnvFieldCtx {
   envDraft: EnvMap;
   setEnvDraft: React.Dispatch<React.SetStateAction<EnvMap>>;
@@ -534,6 +539,9 @@ export function App() {
   const [heartbeatState, setHeartbeatState] = useState<"alive" | "suspect" | "degraded" | "dead">("dead");
   const heartbeatStateRef = useRef<"alive" | "suspect" | "degraded" | "dead">("dead");
   const heartbeatFailCount = useRef(0);
+  /** 连续成功次数，从 degraded/suspect 回到 alive 需至少 2 次，避免偶发超时导致绿黄反复横跳 */
+  const heartbeatAliveSuccessCountRef = useRef(0);
+  const wsRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pageVisible, setPageVisible] = useState(true);
   const visibilityGraceRef = useRef(false); // 休眠恢复宽限期
   const [detectedProcesses, setDetectedProcesses] = useState<Array<{ pid: number; cmd: string }>>([]);
@@ -781,10 +789,15 @@ export function App() {
 
       const effectiveBase = httpApiBase();
       try {
-        const res = await fetch(`${effectiveBase}/api/health`, { signal: AbortSignal.timeout(3000) });
+        const res = await fetch(`${effectiveBase}/api/health`, { signal: AbortSignal.timeout(HEALTH_POLL_TIMEOUT_MS) });
         if (res.ok) {
           heartbeatFailCount.current = 0;
-          if (heartbeatStateRef.current !== "alive") {
+          const wasUnhealthy = heartbeatStateRef.current === "degraded" || heartbeatStateRef.current === "suspect";
+          heartbeatAliveSuccessCountRef.current = wasUnhealthy
+            ? heartbeatAliveSuccessCountRef.current + 1
+            : 1;
+          const needTwoToRecover = wasUnhealthy && heartbeatAliveSuccessCountRef.current < 2;
+          if (heartbeatStateRef.current !== "alive" && !needTwoToRecover) {
             heartbeatStateRef.current = "alive";
             setHeartbeatState("alive");
             if (IS_TAURI) try { await invoke("set_tray_backend_status", { status: "alive" }); } catch { /* ignore */ }
@@ -802,8 +815,14 @@ export function App() {
         // 宽限期内不计入
         if (visibilityGraceRef.current) return;
 
+        heartbeatAliveSuccessCountRef.current = 0;
         heartbeatFailCount.current += 1;
-        if (heartbeatFailCount.current < 3) {
+        const suspectThreshold = 2;  // 连续失败 ≥2 才进入 suspect，单次孤立超时不变黄
+        const degradeThreshold = 5;  // 连续失败 ≥5 才检查 PID 升级为 degraded/dead
+        if (heartbeatFailCount.current < suspectThreshold) {
+          return;
+        }
+        if (heartbeatFailCount.current < degradeThreshold) {
           if (heartbeatStateRef.current !== "suspect") {
             heartbeatStateRef.current = "suspect";
             setHeartbeatState("suspect");
@@ -959,12 +978,15 @@ export function App() {
           const prefix = status === "retrying" ? "🔄" : status === "error" ? "❌" : status === "done" ? "✅" : status === "warning" ? "⚠️" : status === "restart-hint" ? "🔁" : "📦";
           setObDetailLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${prefix} [${moduleId}] ${msg}`]);
         }
-      } else if (event === "service_status_changed") {
-        refreshStatus().catch(() => {});
-      } else if (event === "skills:changed") {
-        refreshStatus().catch(() => {});
-      } else if (event === "im:channel_status" || event === "im:new_message") {
-        refreshStatus().catch(() => {});
+      } else if (
+        event === "service_status_changed" || event === "skills:changed" ||
+        event === "im:channel_status" || event === "im:new_message"
+      ) {
+        if (wsRefreshDebounceRef.current) clearTimeout(wsRefreshDebounceRef.current);
+        wsRefreshDebounceRef.current = setTimeout(() => {
+          wsRefreshDebounceRef.current = null;
+          refreshStatus().catch(() => {});
+        }, 2_000);
       }
     });
     return unsub;
@@ -3023,23 +3045,18 @@ export function App() {
       let serviceAlive = false;
       if (forceAliveCheck || serviceStatus?.running || effectiveDataMode === "remote") {
         try {
-          const ping = await fetch(`${effectiveApiBaseUrl}/api/health`, { signal: AbortSignal.timeout(3000) });
+          const ping = await fetch(`${effectiveApiBaseUrl}/api/health`, { signal: AbortSignal.timeout(HEALTH_POLL_TIMEOUT_MS) });
           serviceAlive = ping.ok;
           if (serviceAlive) {
-            // Extract backend version from health response
             try {
               const healthData = await ping.json();
               if (healthData.version) setBackendVersion(healthData.version);
             } catch { /* ignore parse error */ }
-            // Ensure running state is set whenever health check succeeds
-            // (fixes stale-closure issues where setServiceStatus({running:true})
-            //  from the caller may not have been applied yet)
             setServiceStatus((prev) =>
               prev ? { ...prev, running: true } : { running: true, pid: null, pidFile: "" }
             );
           }
         } catch {
-          // Service is not reachable
           serviceAlive = false;
           setBackendVersion(null);
           if (effectiveDataMode !== "remote") {

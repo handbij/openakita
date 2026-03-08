@@ -450,45 +450,46 @@ export function AgentManagerView({
   return (
     <div style={{ padding: 20, position: "relative", overflow: "auto", height: "100%" }}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-        <IconBot size={24} />
-        <h2 style={{ margin: 0, fontSize: 18 }}>{t("agentManager.title")}</h2>
-        <div style={{ flex: 1 }} />
-        <button
-          onClick={fetchProfiles}
-          disabled={loading}
-          style={{
-            display: "flex", alignItems: "center", gap: 6,
-            padding: "6px 12px", borderRadius: 8, border: "1px solid var(--line)",
-            background: "var(--panel)", cursor: "pointer", fontSize: 13,
-          }}
-        >
-          <IconRefresh size={14} />
-          {loading ? t("dashboard.loading") : t("dashboard.refresh")}
-        </button>
-        <button
-          onClick={() => importInputRef.current?.click()}
-          style={{
-            display: "flex", alignItems: "center", gap: 6,
-            padding: "6px 14px", borderRadius: 8, border: "1px solid var(--line)",
-            background: "var(--panel)", cursor: "pointer", fontSize: 13,
-          }}
-        >
-          <IconUpload size={14} />
-          {t("agentManager.import")}
-        </button>
-        <button
-          onClick={openCreateEditor}
-          style={{
-            display: "flex", alignItems: "center", gap: 6,
-            padding: "6px 14px", borderRadius: 8, border: "none",
-            background: "var(--primary, #3b82f6)", color: "#fff",
-            cursor: "pointer", fontSize: 13, fontWeight: 600,
-          }}
-        >
-          <IconPlus size={14} />
-          {t("agentManager.create")}
-        </button>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px 12px", marginBottom: 16 }}>
+        <h2 style={{ margin: 0, fontSize: 18, whiteSpace: "nowrap" }}>{t("agentManager.title")}</h2>
+        <div style={{ flex: 1, minWidth: 24 }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <button
+            onClick={fetchProfiles}
+            disabled={loading}
+            style={{
+              display: "flex", alignItems: "center", gap: 4,
+              padding: "5px 10px", borderRadius: 8, border: "1px solid var(--line)",
+              background: "var(--panel)", cursor: "pointer", fontSize: 12,
+            }}
+          >
+            <IconRefresh size={14} />
+            {loading ? t("dashboard.loading") : t("dashboard.refresh")}
+          </button>
+          <button
+            onClick={() => importInputRef.current?.click()}
+            style={{
+              display: "flex", alignItems: "center", gap: 4,
+              padding: "5px 10px", borderRadius: 8, border: "1px solid var(--line)",
+              background: "var(--panel)", cursor: "pointer", fontSize: 12,
+            }}
+          >
+            <IconUpload size={14} />
+            {t("agentManager.import")}
+          </button>
+          <button
+            onClick={openCreateEditor}
+            style={{
+              display: "flex", alignItems: "center", gap: 4,
+              padding: "5px 12px", borderRadius: 8, border: "none",
+              background: "var(--primary, #3b82f6)", color: "#fff",
+              cursor: "pointer", fontSize: 12, fontWeight: 600,
+            }}
+          >
+            <IconPlus size={14} />
+            {t("agentManager.create")}
+          </button>
+        </div>
         <input
           ref={importInputRef}
           type="file"

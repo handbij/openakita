@@ -711,8 +711,8 @@ export function SchedulerView({ serviceRunning, apiBaseUrl = "" }: { serviceRunn
       </div>
 
       {/* Tabs + Search */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--line, #e5e7eb)", marginBottom: 12 }}>
-        <div style={{ display: "flex", gap: 0 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 0", borderBottom: "1px solid var(--line, #e5e7eb)", marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 0, flex: "1 1 auto", minWidth: 0 }}>
           <button style={tabStyle("active")} onClick={() => setActiveTab("active")}>
             {t("scheduler.tabActive")}{countBadge(tabCounts.active)}
           </button>
@@ -723,7 +723,7 @@ export function SchedulerView({ serviceRunning, apiBaseUrl = "" }: { serviceRunn
             {t("scheduler.tabAll")}{countBadge(tabCounts.all)}
           </button>
         </div>
-        <div style={{ position: "relative", marginBottom: -1 }}>
+        <div style={{ position: "relative", marginBottom: -1, flexShrink: 0 }}>
           <IconSearch size={14} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", opacity: 0.4, pointerEvents: "none" }} />
           <input
             type="text"
@@ -731,7 +731,7 @@ export function SchedulerView({ serviceRunning, apiBaseUrl = "" }: { serviceRunn
             placeholder={t("scheduler.searchPlaceholder")}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            style={{ paddingLeft: 28, fontSize: 12, height: 30, width: 180, borderRadius: 6 }}
+            style={{ paddingLeft: 28, fontSize: 12, height: 30, width: 140, maxWidth: "40vw", borderRadius: 6 }}
           />
         </div>
       </div>

@@ -396,19 +396,23 @@ export function MCPView({ serviceRunning, apiBaseUrl = "http://127.0.0.1:18900" 
             <div key={s.name} className="card" style={{ padding: 0 }}>
               {/* Server header */}
               <div
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "12px 16px", cursor: "pointer",
-                }}
+                style={{ padding: "10px 14px", cursor: "pointer" }}
                 onClick={() => toggleExpand(s.name)}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                   {expandedServer === s.name ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
                   {s.connected ? <DotGreen /> : <DotGray />}
                   <span style={{ fontWeight: 600, fontSize: 14 }}>{s.name}</span>
-                  <span style={{ fontSize: 12, color: "var(--muted)", background: "var(--bg-subtle, #f1f5f9)", padding: "1px 6px", borderRadius: 3 }}>
+                  <span style={{ fontSize: 11, color: "var(--muted)", background: "var(--bg-subtle, #f1f5f9)", padding: "1px 6px", borderRadius: 3 }}>
                     {s.transport === "streamable_http" ? "HTTP" : s.transport === "sse" ? "SSE" : "stdio"}
                   </span>
+                </div>
+                {s.description && (
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6, marginLeft: 22 }}>
+                    {s.description}
+                  </div>
+                )}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginLeft: 22 }} onClick={e => e.stopPropagation()}>
                   <span style={{
                     fontSize: 11, padding: "1px 6px", borderRadius: 3,
                     background: s.source === "workspace" ? "var(--ok-bg, #dcfce7)" : "var(--bg-subtle, #f1f5f9)",
@@ -416,20 +420,16 @@ export function MCPView({ serviceRunning, apiBaseUrl = "http://127.0.0.1:18900" 
                   }}>
                     {s.source === "workspace" ? t("mcp.sourceWorkspace") : t("mcp.sourceBuiltin")}
                   </span>
-                  {s.description && (
-                    <span style={{ fontSize: 12, color: "var(--muted)" }}>— {s.description}</span>
-                  )}
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }} onClick={e => e.stopPropagation()}>
-                  <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                  <span style={{ fontSize: 11, color: "var(--muted)" }}>
                     {s.connected ? t("mcp.toolCount", { count: s.tool_count }) : t("mcp.toolCountCatalog", { count: s.catalog_tool_count })}
                   </span>
+                  <div style={{ flex: 1 }} />
                   {s.connected ? (
                     <button
                       className="btnSecondary"
                       onClick={() => disconnectServer(s.name)}
                       disabled={busy === s.name}
-                      style={{ fontSize: 12, padding: "3px 10px", color: "var(--warn, #d97706)" }}
+                      style={{ fontSize: 11, padding: "2px 8px", color: "var(--warn, #d97706)" }}
                     >
                       {t("mcp.disconnect")}
                     </button>
@@ -438,7 +438,7 @@ export function MCPView({ serviceRunning, apiBaseUrl = "http://127.0.0.1:18900" 
                       className="btnPrimary"
                       onClick={() => connectServer(s.name)}
                       disabled={busy === s.name}
-                      style={{ fontSize: 12, padding: "3px 10px" }}
+                      style={{ fontSize: 11, padding: "2px 8px" }}
                     >
                       {busy === s.name ? t("mcp.connecting") : t("mcp.connect")}
                     </button>
@@ -448,7 +448,7 @@ export function MCPView({ serviceRunning, apiBaseUrl = "http://127.0.0.1:18900" 
                       className="btnSecondary"
                       onClick={() => removeServer(s.name)}
                       disabled={busy === s.name}
-                      style={{ fontSize: 12, padding: "3px 8px", color: "var(--err, #dc2626)" }}
+                      style={{ fontSize: 11, padding: "2px 6px", color: "var(--err, #dc2626)" }}
                       title={t("mcp.deleteServer")}
                     >
                       <IconTrash size={13} />

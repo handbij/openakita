@@ -319,7 +319,7 @@ function OrgNodeComponent({ data, selected }: { data: OrgNodeData; selected: boo
   return (
     <div
       style={{
-        background: "var(--bg-card, #fff)",
+        background: "var(--card-bg, #fff)",
         border: `2px solid ${selected ? "var(--primary)" : isError ? "var(--danger)" : isBusy ? statusColor : "var(--line)"}`,
         borderRadius: "var(--radius)",
         padding: 0,
@@ -1022,7 +1022,7 @@ export function OrgEditorView({
                 <div
                   style={{
                     position: "absolute", right: 0, top: "100%", zIndex: 10,
-                    background: "var(--bg-card, #fff)", border: "1px solid var(--line)",
+                    background: "var(--card-bg, #fff)", border: "1px solid var(--line)",
                     borderRadius: 8, padding: "8px 10px", boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
                     display: "flex", gap: 6, alignItems: "center", fontSize: 11,
                   }}
@@ -1286,12 +1286,12 @@ export function OrgEditorView({
                 nodeStrokeWidth={2}
                 pannable
                 zoomable
-                style={{ background: "var(--bg-card, #fff)" }}
+                style={{ background: "var(--card-bg, #fff)" }}
               />
               )}
               {!isMobile && (
               <Panel position="bottom-right">
-                <div style={{ background: "var(--bg-card, #fff)", padding: "6px 10px", borderRadius: "var(--radius-sm)", fontSize: 10, border: "1px solid var(--line)" }}>
+                <div style={{ background: "var(--card-bg, #fff)", padding: "6px 10px", borderRadius: "var(--radius-sm)", fontSize: 10, border: "1px solid var(--line)" }}>
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     {Object.entries(EDGE_COLORS).map(([type, color]) => (
                       <span key={type} style={{ display: "flex", alignItems: "center", gap: 3 }}>
@@ -1591,7 +1591,7 @@ export function OrgEditorView({
                 {/* Section 1: Field relationship */}
                 <div style={{
                   border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px",
-                  background: "var(--bg-card, #fff)",
+                  background: "var(--card-bg, #fff)",
                 }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", marginBottom: 6 }}>
                     提示词构成说明
@@ -1612,7 +1612,7 @@ export function OrgEditorView({
                 {/* Section 2: Custom prompt */}
                 <div style={{
                   border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px",
-                  background: "var(--bg-card, #fff)",
+                  background: "var(--card-bg, #fff)",
                 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>
@@ -1648,7 +1648,7 @@ export function OrgEditorView({
                 {/* Section 3: Prompt preview */}
                 <div style={{
                   border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px",
-                  background: "var(--bg-card, #fff)",
+                  background: "var(--card-bg, #fff)",
                 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>
@@ -1716,7 +1716,7 @@ export function OrgEditorView({
                 {/* Section 4: Identity files info */}
                 <div style={{
                   border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px",
-                  background: "var(--bg-card, #fff)",
+                  background: "var(--card-bg, #fff)",
                 }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", marginBottom: 4 }}>
                     高级：身份文件
@@ -1739,7 +1739,7 @@ export function OrgEditorView({
                 {/* ── Section 1: 执行工具类目 ── */}
                 <div style={{
                   border: "1px solid var(--line)", borderRadius: 8,
-                  background: "var(--bg-card, #fff)", overflow: "hidden",
+                  background: "var(--card-bg, #fff)", overflow: "hidden",
                 }}>
                   <div style={{
                     padding: "8px 10px", borderBottom: "1px solid var(--line)",
@@ -1817,7 +1817,7 @@ export function OrgEditorView({
                 {/* ── Section 2: MCP 服务器 ── */}
                 <div style={{
                   border: "1px solid var(--line)", borderRadius: 8,
-                  background: "var(--bg-card, #fff)", overflow: "hidden",
+                  background: "var(--card-bg, #fff)", overflow: "hidden",
                 }}>
                   <div style={{
                     padding: "8px 10px", borderBottom: "1px solid var(--line)",
@@ -1895,7 +1895,7 @@ export function OrgEditorView({
                 {/* ── Section 3: 技能 ── */}
                 <div style={{
                   border: "1px solid var(--line)", borderRadius: 8,
-                  background: "var(--bg-card, #fff)", overflow: "hidden",
+                  background: "var(--card-bg, #fff)", overflow: "hidden",
                 }}>
                   <div style={{
                     padding: "8px 10px", borderBottom: "1px solid var(--line)",
@@ -2007,7 +2007,7 @@ export function OrgEditorView({
                 {/* Performance section */}
                 <div style={{
                   border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px",
-                  background: "var(--bg-card, #fff)",
+                  background: "var(--card-bg, #fff)",
                 }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", marginBottom: 8 }}>
                     性能限制
@@ -2041,7 +2041,7 @@ export function OrgEditorView({
                 {/* Auto-clone section */}
                 <div style={{
                   border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px",
-                  background: "var(--bg-card, #fff)",
+                  background: "var(--card-bg, #fff)",
                 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>
@@ -2091,7 +2091,7 @@ export function OrgEditorView({
                 {/* Permissions section */}
                 <div style={{
                   border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px",
-                  background: "var(--bg-card, #fff)",
+                  background: "var(--card-bg, #fff)",
                 }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", marginBottom: 8 }}>
                     权限控制
@@ -2127,7 +2127,7 @@ export function OrgEditorView({
                 {/* LLM endpoint */}
                 <div style={{
                   border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px",
-                  background: "var(--bg-card, #fff)",
+                  background: "var(--card-bg, #fff)",
                 }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", marginBottom: 6 }}>
                     LLM 端点偏好
@@ -2372,7 +2372,7 @@ export function OrgEditorView({
                       key={entry.id}
                       style={{
                         border: "1px solid var(--line)", borderRadius: 6,
-                        padding: "6px 8px", background: "var(--bg-card, #fff)",
+                        padding: "6px 8px", background: "var(--card-bg, #fff)",
                         fontSize: 11,
                       }}
                     >

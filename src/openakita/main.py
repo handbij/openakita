@@ -480,9 +480,17 @@ def _create_bot_adapter(bot_type: str, creds: dict, *, channel_name: str, bot_id
         )
     elif bot_type == "telegram":
         from .channels.adapters import TelegramAdapter
+        require_pairing_raw = creds.get("require_pairing", "true")
+        if isinstance(require_pairing_raw, bool):
+            require_pairing = require_pairing_raw
+        else:
+            require_pairing = str(require_pairing_raw).lower() not in ("false", "0", "no")
         return TelegramAdapter(
             bot_token=creds.get("bot_token", ""),
             webhook_url=creds.get("webhook_url") or None,
+            proxy=creds.get("proxy") or None,
+            pairing_code=creds.get("pairing_code") or None,
+            require_pairing=require_pairing,
             channel_name=channel_name, bot_id=bot_id, agent_profile_id=agent_profile_id,
         )
     elif bot_type == "dingtalk":
@@ -511,16 +519,129 @@ def _create_bot_adapter(bot_type: str, creds: dict, *, channel_name: str, bot_id
         )
     elif bot_type == "qqbot":
         from .channels.adapters import QQBotAdapter
+        sandbox_raw = creds.get("sandbox", False)
+        if isinstance(sandbox_raw, bool):
+            sandbox = sandbox_raw
+        else:
+            sandbox = str(sandbox_raw).lower() in ("true", "1", "yes")
         return QQBotAdapter(
             app_id=creds.get("app_id", ""),
             app_secret=creds.get("app_secret", ""),
-            sandbox=bool(creds.get("sandbox", False)),
+            sandbox=sandbox,
             mode=creds.get("mode", "websocket"),
+            webhook_port=int(creds.get("webhook_port", 9890)),
+            webhook_path=creds.get("webhook_path", "/qqbot/callback"),
             channel_name=channel_name, bot_id=bot_id, agent_profile_id=agent_profile_id,
         )
     else:
         logger.warning(f"Unknown bot type: {bot_type}")
         return None
+
+
+def _auto_migrate_env_bots(settings) -> None:
+    """On startup, auto-promote .env channel configs into im_bots for unified management.
+
+    Only migrates channels that are enabled in .env AND have no existing im_bots
+    entry of the same type. This ensures backward compatibility for users upgrading
+    from the old single-channel .env configuration.
+    """
+    from .config import runtime_state
+
+    existing_types = {
+        b.get("type") for b in settings.im_bots if isinstance(b, dict)
+    }
+
+    env_channels = []
+
+    if settings.telegram_enabled and settings.telegram_bot_token and "telegram" not in existing_types:
+        env_channels.append({
+            "id": "telegram-env", "type": "telegram", "name": "Telegram",
+            "agent_profile_id": "default", "enabled": True,
+            "credentials": {
+                "bot_token": settings.telegram_bot_token,
+                "webhook_url": settings.telegram_webhook_url or "",
+                "proxy": settings.telegram_proxy or "",
+                "pairing_code": settings.telegram_pairing_code or "",
+                "require_pairing": str(settings.telegram_require_pairing).lower(),
+            },
+        })
+
+    if settings.feishu_enabled and settings.feishu_app_id and "feishu" not in existing_types:
+        env_channels.append({
+            "id": "feishu-env", "type": "feishu", "name": "飞书",
+            "agent_profile_id": "default", "enabled": True,
+            "credentials": {
+                "app_id": settings.feishu_app_id,
+                "app_secret": settings.feishu_app_secret,
+            },
+        })
+
+    if settings.wework_enabled and settings.wework_corp_id and "wework" not in existing_types:
+        env_channels.append({
+            "id": "wework-env", "type": "wework", "name": "企业微信",
+            "agent_profile_id": "default", "enabled": True,
+            "credentials": {
+                "corp_id": settings.wework_corp_id,
+                "token": settings.wework_token,
+                "encoding_aes_key": settings.wework_encoding_aes_key,
+                "callback_port": str(settings.wework_callback_port),
+                "callback_host": settings.wework_callback_host,
+            },
+        })
+
+    if settings.dingtalk_enabled and settings.dingtalk_client_id and "dingtalk" not in existing_types:
+        env_channels.append({
+            "id": "dingtalk-env", "type": "dingtalk", "name": "钉钉",
+            "agent_profile_id": "default", "enabled": True,
+            "credentials": {
+                "client_id": settings.dingtalk_client_id,
+                "client_secret": settings.dingtalk_client_secret,
+            },
+        })
+
+    if settings.onebot_enabled and settings.onebot_ws_url and "onebot" not in existing_types:
+        env_channels.append({
+            "id": "onebot-env", "type": "onebot", "name": "OneBot",
+            "agent_profile_id": "default", "enabled": True,
+            "credentials": {
+                "ws_url": settings.onebot_ws_url,
+                "access_token": settings.onebot_access_token or "",
+            },
+        })
+
+    if settings.qqbot_enabled and settings.qqbot_app_id and "qqbot" not in existing_types:
+        env_channels.append({
+            "id": "qqbot-env", "type": "qqbot", "name": "QQ Bot",
+            "agent_profile_id": "default", "enabled": True,
+            "credentials": {
+                "app_id": settings.qqbot_app_id,
+                "app_secret": settings.qqbot_app_secret,
+                "sandbox": str(settings.qqbot_sandbox).lower(),
+                "mode": settings.qqbot_mode,
+                "webhook_port": str(settings.qqbot_webhook_port),
+                "webhook_path": settings.qqbot_webhook_path,
+            },
+        })
+
+    if not env_channels:
+        return
+
+    # Deduplicate ids against existing im_bots
+    existing_ids = {b.get("id") for b in settings.im_bots if isinstance(b, dict)}
+    for bot in env_channels:
+        base_id = bot["id"]
+        suffix = 0
+        while bot["id"] in existing_ids:
+            suffix += 1
+            bot["id"] = f"{base_id}-{suffix}"
+        existing_ids.add(bot["id"])
+
+    settings.im_bots = list(settings.im_bots) + env_channels
+    runtime_state.save()
+    logger.info(
+        f"[AutoMigrate] Promoted {len(env_channels)} .env channel(s) to im_bots: "
+        f"{[b['id'] for b in env_channels]}"
+    )
 
 
 async def ensure_session_manager():
@@ -565,7 +686,7 @@ async def start_im_channels(agent_or_master):
     # SessionManager 必须在 IM 和 Desktop 模式下都可用
     await ensure_session_manager()
 
-    # 检查是否有任何通道启用
+    # 检查是否有任何通道启用（.env 或 im_bots）
     any_enabled = (
         settings.telegram_enabled
         or settings.feishu_enabled
@@ -573,6 +694,7 @@ async def start_im_channels(agent_or_master):
         or settings.dingtalk_enabled
         or settings.onebot_enabled
         or settings.qqbot_enabled
+        or bool(settings.im_bots)
     )
 
     if not any_enabled:
@@ -617,109 +739,136 @@ async def start_im_channels(agent_or_master):
     if settings.multi_agent_enabled:
         await _init_orchestrator()
 
+    # Auto-migrate: promote .env channel configs to im_bots on first startup
+    _auto_migrate_env_bots(settings)
+
     # 注册启用的适配器
     adapters_started = []
 
+    # Dedup: collect bot types already managed via im_bots to avoid double-registering
+    _im_bot_types = {
+        b.get("type") for b in settings.im_bots
+        if isinstance(b, dict) and b.get("enabled", True)
+    }
+
     # Telegram
     if settings.telegram_enabled and settings.telegram_bot_token:
-        try:
-            from .channels.adapters import TelegramAdapter
+        if "telegram" in _im_bot_types:
+            logger.info("[Dedup] Skipping .env Telegram — managed via im_bots")
+        else:
+            try:
+                from .channels.adapters import TelegramAdapter
 
-            telegram = TelegramAdapter(
-                bot_token=settings.telegram_bot_token,
-                webhook_url=settings.telegram_webhook_url or None,
-                media_dir=settings.project_root / "data" / "media" / "telegram",
-                pairing_code=settings.telegram_pairing_code or None,
-                require_pairing=settings.telegram_require_pairing,
-                proxy=settings.telegram_proxy or None,
-            )
-            await _message_gateway.register_adapter(telegram)
-            adapters_started.append("telegram")
-            logger.info("Telegram adapter registered")
-        except Exception as e:
-            logger.error(f"Failed to start Telegram adapter: {e}")
+                telegram = TelegramAdapter(
+                    bot_token=settings.telegram_bot_token,
+                    webhook_url=settings.telegram_webhook_url or None,
+                    media_dir=settings.project_root / "data" / "media" / "telegram",
+                    pairing_code=settings.telegram_pairing_code or None,
+                    require_pairing=settings.telegram_require_pairing,
+                    proxy=settings.telegram_proxy or None,
+                )
+                await _message_gateway.register_adapter(telegram)
+                adapters_started.append("telegram")
+                logger.info("Telegram adapter registered")
+            except Exception as e:
+                logger.error(f"Failed to start Telegram adapter: {e}")
 
     # 飞书
     if settings.feishu_enabled and settings.feishu_app_id:
-        try:
-            from .channels.adapters import FeishuAdapter
+        if "feishu" in _im_bot_types:
+            logger.info("[Dedup] Skipping .env Feishu — managed via im_bots")
+        else:
+            try:
+                from .channels.adapters import FeishuAdapter
 
-            feishu = FeishuAdapter(
-                app_id=settings.feishu_app_id,
-                app_secret=settings.feishu_app_secret,
-            )
-            await _message_gateway.register_adapter(feishu)
-            adapters_started.append("feishu")
-            logger.info("Feishu adapter registered")
-        except Exception as e:
-            logger.error(f"Failed to start Feishu adapter: {e}")
+                feishu = FeishuAdapter(
+                    app_id=settings.feishu_app_id,
+                    app_secret=settings.feishu_app_secret,
+                )
+                await _message_gateway.register_adapter(feishu)
+                adapters_started.append("feishu")
+                logger.info("Feishu adapter registered")
+            except Exception as e:
+                logger.error(f"Failed to start Feishu adapter: {e}")
 
     # 企业微信（智能机器人模式）
     if settings.wework_enabled and settings.wework_corp_id:
-        try:
-            from .channels.adapters import WeWorkBotAdapter
+        if "wework" in _im_bot_types:
+            logger.info("[Dedup] Skipping .env WeWork — managed via im_bots")
+        else:
+            try:
+                from .channels.adapters import WeWorkBotAdapter
 
-            wework = WeWorkBotAdapter(
-                corp_id=settings.wework_corp_id,
-                token=settings.wework_token,
-                encoding_aes_key=settings.wework_encoding_aes_key,
-                callback_port=settings.wework_callback_port,
-                callback_host=settings.wework_callback_host,
-            )
-            await _message_gateway.register_adapter(wework)
-            adapters_started.append("wework")
-            logger.info("WeWork Smart Robot adapter registered")
-        except Exception as e:
-            logger.error(f"Failed to start WeWork adapter: {e}")
+                wework = WeWorkBotAdapter(
+                    corp_id=settings.wework_corp_id,
+                    token=settings.wework_token,
+                    encoding_aes_key=settings.wework_encoding_aes_key,
+                    callback_port=settings.wework_callback_port,
+                    callback_host=settings.wework_callback_host,
+                )
+                await _message_gateway.register_adapter(wework)
+                adapters_started.append("wework")
+                logger.info("WeWork Smart Robot adapter registered")
+            except Exception as e:
+                logger.error(f"Failed to start WeWork adapter: {e}")
 
     # 钉钉
     if settings.dingtalk_enabled and settings.dingtalk_client_id:
-        try:
-            from .channels.adapters import DingTalkAdapter
+        if "dingtalk" in _im_bot_types:
+            logger.info("[Dedup] Skipping .env DingTalk — managed via im_bots")
+        else:
+            try:
+                from .channels.adapters import DingTalkAdapter
 
-            dingtalk = DingTalkAdapter(
-                app_key=settings.dingtalk_client_id,
-                app_secret=settings.dingtalk_client_secret,
-            )
-            await _message_gateway.register_adapter(dingtalk)
-            adapters_started.append("dingtalk")
-            logger.info("DingTalk adapter registered")
-        except Exception as e:
-            logger.error(f"Failed to start DingTalk adapter: {e}")
+                dingtalk = DingTalkAdapter(
+                    app_key=settings.dingtalk_client_id,
+                    app_secret=settings.dingtalk_client_secret,
+                )
+                await _message_gateway.register_adapter(dingtalk)
+                adapters_started.append("dingtalk")
+                logger.info("DingTalk adapter registered")
+            except Exception as e:
+                logger.error(f"Failed to start DingTalk adapter: {e}")
 
     # OneBot (通用协议)
     if settings.onebot_enabled and settings.onebot_ws_url:
-        try:
-            from .channels.adapters import OneBotAdapter
+        if "onebot" in _im_bot_types:
+            logger.info("[Dedup] Skipping .env OneBot — managed via im_bots")
+        else:
+            try:
+                from .channels.adapters import OneBotAdapter
 
-            onebot = OneBotAdapter(
-                ws_url=settings.onebot_ws_url,
-                access_token=settings.onebot_access_token or None,
-            )
-            await _message_gateway.register_adapter(onebot)
-            adapters_started.append("onebot")
-            logger.info("OneBot adapter registered")
-        except Exception as e:
-            logger.error(f"Failed to start OneBot adapter: {e}")
+                onebot = OneBotAdapter(
+                    ws_url=settings.onebot_ws_url,
+                    access_token=settings.onebot_access_token or None,
+                )
+                await _message_gateway.register_adapter(onebot)
+                adapters_started.append("onebot")
+                logger.info("OneBot adapter registered")
+            except Exception as e:
+                logger.error(f"Failed to start OneBot adapter: {e}")
 
     # QQ 官方机器人
     if settings.qqbot_enabled and settings.qqbot_app_id:
-        try:
-            from .channels.adapters import QQBotAdapter
+        if "qqbot" in _im_bot_types:
+            logger.info("[Dedup] Skipping .env QQBot — managed via im_bots")
+        else:
+            try:
+                from .channels.adapters import QQBotAdapter
 
-            qqbot = QQBotAdapter(
-                app_id=settings.qqbot_app_id,
-                app_secret=settings.qqbot_app_secret,
-                sandbox=settings.qqbot_sandbox,
-                mode=settings.qqbot_mode,
-                webhook_port=settings.qqbot_webhook_port,
-                webhook_path=settings.qqbot_webhook_path,
-            )
-            await _message_gateway.register_adapter(qqbot)
-            adapters_started.append("qqbot")
-            logger.info("QQ Official Bot adapter registered")
-        except Exception as e:
-            logger.error(f"Failed to start QQ Official Bot adapter: {e}")
+                qqbot = QQBotAdapter(
+                    app_id=settings.qqbot_app_id,
+                    app_secret=settings.qqbot_app_secret,
+                    sandbox=settings.qqbot_sandbox,
+                    mode=settings.qqbot_mode,
+                    webhook_port=settings.qqbot_webhook_port,
+                    webhook_path=settings.qqbot_webhook_path,
+                )
+                await _message_gateway.register_adapter(qqbot)
+                adapters_started.append("qqbot")
+                logger.info("QQ Official Bot adapter registered")
+            except Exception as e:
+                logger.error(f"Failed to start QQ Official Bot adapter: {e}")
 
     # Multi-bot: create additional adapters from im_bots config
     if settings.im_bots:

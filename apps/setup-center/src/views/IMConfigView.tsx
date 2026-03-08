@@ -1,33 +1,38 @@
+import { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { FieldText, FieldBool, TelegramPairingCodeHint } from "../components/EnvFields";
-import { IconBook, IconClipboard, LogoTelegram, LogoFeishu, LogoWework, LogoDingtalk, LogoQQ } from "../icons";
+import { FieldBool } from "../components/EnvFields";
+import { IconBook, IconClipboard, IconBot, IconPlus, LogoTelegram, LogoFeishu, LogoWework, LogoDingtalk, LogoQQ } from "../icons";
+import { safeFetch } from "../providers";
 import type { EnvMap } from "../types";
 import { envGet, envSet } from "../utils";
 import { copyToClipboard } from "../utils/clipboard";
 
-const FEISHU_SCOPE_TEMPLATE = JSON.stringify({
-  scopes: {
-    tenant: [
-      "im:message:send_as_bot",
-      "im:message:send_sys_msg",
-      "aily:file:read",
-      "aily:file:write",
-      "cardkit:card:read",
-      "cardkit:card:write",
-      "cardkit:template:read",
-      "corehr:file:download",
-      "im:app_feed_card:write",
-      "im:message",
-      "im:message.group_at_msg:readonly",
-      "im:resource",
-    ],
-    user: [
-      "cardkit:card:read",
-      "cardkit:card:write",
-      "cardkit:template:read",
-    ],
-  },
-}, null, 2);
+type IMBot = {
+  id: string;
+  type: string;
+  name: string;
+  agent_profile_id: string;
+  enabled: boolean;
+  credentials: Record<string, unknown>;
+};
+
+const BOT_TYPE_LABELS: Record<string, string> = {
+  feishu: "飞书",
+  telegram: "Telegram",
+  dingtalk: "钉钉",
+  wework: "企业微信",
+  onebot: "OneBot (QQ)",
+  qqbot: "QQ 官方机器人",
+};
+
+const ENABLED_KEY_TO_TYPE: Record<string, string> = {
+  TELEGRAM_ENABLED: "telegram",
+  FEISHU_ENABLED: "feishu",
+  WEWORK_ENABLED: "wework",
+  DINGTALK_ENABLED: "dingtalk",
+  QQBOT_ENABLED: "qqbot",
+  ONEBOT_ENABLED: "onebot",
+};
 
 type IMConfigViewProps = {
   envDraft: EnvMap;
@@ -37,16 +42,30 @@ type IMConfigViewProps = {
   secretShown: Record<string, boolean>;
   onToggleSecret: (k: string) => void;
   currentWorkspaceId: string | null;
+  onNavigateToBotConfig?: (presetType?: string) => void;
+  apiBaseUrl?: string;
 };
 
 export function IMConfigView(props: IMConfigViewProps) {
-  const { envDraft, setEnvDraft, setNotice, busy, secretShown, onToggleSecret, currentWorkspaceId } = props;
+  const {
+    envDraft, setEnvDraft, setNotice, busy,
+    onNavigateToBotConfig, apiBaseUrl,
+  } = props;
   const { t } = useTranslation();
+  const [bots, setBots] = useState<IMBot[]>([]);
+
+  const fetchBots = useCallback(async () => {
+    if (!apiBaseUrl) return;
+    try {
+      const res = await safeFetch(`${apiBaseUrl}/api/agents/bots`);
+      const data = await res.json();
+      setBots(data.bots || []);
+    } catch { /* ignore */ }
+  }, [apiBaseUrl]);
+
+  useEffect(() => { fetchBots(); }, [fetchBots]);
 
   const _envBase = { envDraft, onEnvChange: setEnvDraft, busy };
-  const _secretCtx = { secretShown, onToggleSecret };
-  const FT = (p: { k: string; label: string; placeholder?: string; help?: string; type?: "text" | "password" }) =>
-    <FieldText {...p} {..._envBase} {..._secretCtx} />;
   const FB = (p: { k: string; label: string; help?: string; defaultValue?: boolean }) =>
     <FieldBool {...p} {..._envBase} />;
 
@@ -58,16 +77,6 @@ export function IMConfigView(props: IMConfigViewProps) {
       enabledKey: "TELEGRAM_ENABLED",
       docUrl: "https://t.me/BotFather",
       needPublicIp: false,
-      body: (
-        <>
-          <FT k="TELEGRAM_BOT_TOKEN" label={t("config.imBotToken")} placeholder="BotFather token" type="password" />
-          <FT k="TELEGRAM_PROXY" label={t("config.imProxy")} placeholder="http://127.0.0.1:7890" />
-          <FB k="TELEGRAM_REQUIRE_PAIRING" label={t("config.imPairing")} />
-          <FT k="TELEGRAM_PAIRING_CODE" label={t("config.imPairingCode")} placeholder={t("config.imPairingCodeHint")} />
-          <TelegramPairingCodeHint currentWorkspaceId={currentWorkspaceId} />
-          <FT k="TELEGRAM_WEBHOOK_URL" label="Webhook URL" placeholder="https://..." />
-        </>
-      ),
     },
     {
       title: t("config.imFeishu"),
@@ -76,27 +85,6 @@ export function IMConfigView(props: IMConfigViewProps) {
       enabledKey: "FEISHU_ENABLED",
       docUrl: "https://open.feishu.cn/",
       needPublicIp: false,
-      body: (
-        <>
-          <FT k="FEISHU_APP_ID" label="App ID" />
-          <FT k="FEISHU_APP_SECRET" label="App Secret" type="password" />
-          <div style={{ marginTop: 6, padding: "10px 12px", background: "var(--bg2)", borderRadius: 8, fontSize: 12, lineHeight: 1.7 }}>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>{t("config.imFeishuPermTitle")}</div>
-            <div style={{ color: "var(--text3)" }}>{t("config.imFeishuPermHint")}</div>
-            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-              <button className="btnSmall" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11 }}
-                onClick={() => {
-                  navigator.clipboard.writeText(FEISHU_SCOPE_TEMPLATE);
-                  setNotice(t("config.imFeishuPermCopied"));
-                }}
-              ><IconClipboard size={12} />{t("config.imFeishuPermCopyBtn")}</button>
-              <button className="btnSmall" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11 }}
-                onClick={() => { navigator.clipboard.writeText("https://open.feishu.cn/app"); setNotice(t("config.imDocCopied")); }}
-              ><IconBook size={12} />{t("config.imFeishuPermConsole")}</button>
-            </div>
-          </div>
-        </>
-      ),
     },
     {
       title: t("config.imWework"),
@@ -105,17 +93,6 @@ export function IMConfigView(props: IMConfigViewProps) {
       enabledKey: "WEWORK_ENABLED",
       docUrl: "https://work.weixin.qq.com/",
       needPublicIp: true,
-      body: (
-        <>
-          <FT k="WEWORK_CORP_ID" label="Corp ID" help={t("config.imWeworkCorpIdHelp")} />
-          <FT k="WEWORK_TOKEN" label="Callback Token" help={t("config.imWeworkTokenHelp")} />
-          <FT k="WEWORK_ENCODING_AES_KEY" label="EncodingAESKey" type="password" help={t("config.imWeworkAesKeyHelp")} />
-          <FT k="WEWORK_CALLBACK_PORT" label={t("config.imCallbackPort")} placeholder="9880" />
-          <div className="fieldHint" style={{ fontSize: 12, color: "var(--text3)", margin: "4px 0 0 0", lineHeight: 1.6 }}>
-            {t("config.imWeworkCallbackUrlHint")}<code style={{ background: "var(--bg2)", padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>http://your-domain:9880/callback</code>
-          </div>
-        </>
-      ),
     },
     {
       title: t("config.imDingtalk"),
@@ -124,47 +101,14 @@ export function IMConfigView(props: IMConfigViewProps) {
       enabledKey: "DINGTALK_ENABLED",
       docUrl: "https://open.dingtalk.com/",
       needPublicIp: false,
-      body: (
-        <>
-          <FT k="DINGTALK_CLIENT_ID" label="Client ID" />
-          <FT k="DINGTALK_CLIENT_SECRET" label="Client Secret" type="password" />
-        </>
-      ),
     },
     {
       title: "QQ 机器人",
-      appType: `${t("config.imTypeQQBot")} (${(envDraft["QQBOT_MODE"] || "websocket") === "webhook" ? "Webhook" : "WebSocket"})`,
+      appType: t("config.imTypeQQBot"),
       logo: <LogoQQ size={22} />,
       enabledKey: "QQBOT_ENABLED",
       docUrl: "https://bot.q.qq.com/wiki/develop/api-v2/",
       needPublicIp: false,
-      body: (
-        <>
-          <FT k="QQBOT_APP_ID" label="AppID" placeholder="q.qq.com 开发设置" />
-          <FT k="QQBOT_APP_SECRET" label="AppSecret" type="password" placeholder="q.qq.com 开发设置" />
-          <FB k="QQBOT_SANDBOX" label={t("config.imQQBotSandbox")} />
-          <div style={{ marginTop: 8 }}>
-            <div className="label">{t("config.imQQBotMode")}</div>
-            <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-              {["websocket", "webhook"].map((m) => (
-                <button key={m} className={(envDraft["QQBOT_MODE"] || "websocket") === m ? "capChipActive" : "capChip"}
-                  onClick={() => setEnvDraft((d) => ({ ...d, QQBOT_MODE: m }))}>{m === "websocket" ? "WebSocket" : "Webhook"}</button>
-              ))}
-            </div>
-            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
-              {(envDraft["QQBOT_MODE"] || "websocket") === "websocket"
-                ? t("config.imQQBotModeWsHint")
-                : t("config.imQQBotModeWhHint")}
-            </div>
-          </div>
-          {(envDraft["QQBOT_MODE"] === "webhook") && (
-            <>
-              <FT k="QQBOT_WEBHOOK_PORT" label={t("config.imQQBotWebhookPort")} placeholder="9890" />
-              <FT k="QQBOT_WEBHOOK_PATH" label={t("config.imQQBotWebhookPath")} placeholder="/qqbot/callback" />
-            </>
-          )}
-        </>
-      ),
     },
     {
       title: "OneBot",
@@ -173,12 +117,6 @@ export function IMConfigView(props: IMConfigViewProps) {
       enabledKey: "ONEBOT_ENABLED",
       docUrl: "https://github.com/botuniverse/onebot-11",
       needPublicIp: false,
-      body: (
-        <>
-          <FT k="ONEBOT_WS_URL" label="WebSocket URL" placeholder="ws://127.0.0.1:8080" />
-          <FT k="ONEBOT_ACCESS_TOKEN" label="Access Token" type="password" placeholder={t("config.imOneBotTokenHint")} />
-        </>
-      ),
     },
   ];
 
@@ -187,10 +125,25 @@ export function IMConfigView(props: IMConfigViewProps) {
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div className="cardTitle">{t("config.imTitle")}</div>
-          <button className="btnSmall" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12 }}
-            onClick={async () => { const ok = await copyToClipboard("https://github.com/anthropic-lab/openakita/blob/main/docs/im-channels.md"); if (ok) setNotice(t("config.imGuideDocCopied")); }}
-            title={t("config.imGuideDoc")}
-          ><IconBook size={13} />{t("config.imGuideDoc")}</button>
+          <div style={{ display: "flex", gap: 6 }}>
+            {onNavigateToBotConfig && (
+              <button
+                className="btnSmall"
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12,
+                  background: "var(--primary, #3b82f6)", color: "#fff", border: "none",
+                  padding: "4px 12px", borderRadius: 6, cursor: "pointer", fontWeight: 600,
+                }}
+                onClick={() => onNavigateToBotConfig()}
+              >
+                <IconBot size={13} />{t("config.imGoToBotConfig")}
+              </button>
+            )}
+            <button className="btnSmall" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12 }}
+              onClick={() => { navigator.clipboard.writeText("https://github.com/anthropic-lab/openakita/blob/main/docs/im-channels.md"); setNotice(t("config.imGuideDocCopied")); }}
+              title={t("config.imGuideDoc")}
+            ><IconBook size={13} />{t("config.imGuideDoc")}</button>
+          </div>
         </div>
         <div className="cardHint">{t("config.imHint")}</div>
         <div className="divider" />
@@ -200,6 +153,9 @@ export function IMConfigView(props: IMConfigViewProps) {
 
         {channels.map((c) => {
           const enabled = envGet(envDraft, c.enabledKey, "false").toLowerCase() === "true";
+          const botType = ENABLED_KEY_TO_TYPE[c.enabledKey] || "";
+          const channelBots = bots.filter((b) => b.type === botType);
+
           return (
             <div key={c.enabledKey} className="card" style={{ marginTop: 10 }}>
               <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -223,12 +179,53 @@ export function IMConfigView(props: IMConfigViewProps) {
                 ><IconClipboard size={12} />{t("config.imDoc")}</button>
                 <span className="help" style={{ fontSize: 11, userSelect: "all", opacity: 0.6 }}>{c.docUrl}</span>
               </div>
-              {enabled && (
-                <>
-                  <div className="divider" />
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{c.body}</div>
-                </>
-              )}
+
+              {/* Bot list for this channel */}
+              <div style={{ marginTop: 8 }}>
+                {channelBots.length > 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, opacity: 0.5, marginBottom: 2 }}>
+                      {t("config.imConfiguredBots")} ({channelBots.length})
+                    </div>
+                    {channelBots.map((bot) => (
+                      <div key={bot.id} style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "6px 10px", borderRadius: 6,
+                        background: "var(--bg2, #f8fafc)", fontSize: 12,
+                      }}>
+                        <span style={{
+                          width: 6, height: 6, borderRadius: 3, flexShrink: 0,
+                          background: bot.enabled ? "#10b981" : "#94a3b8",
+                        }} />
+                        <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {bot.name || bot.id}
+                        </span>
+                        <span style={{ opacity: 0.4, fontFamily: "monospace", fontSize: 10 }}>{bot.id}</span>
+                        <span style={{ marginLeft: "auto", opacity: 0.5, fontSize: 11, whiteSpace: "nowrap" }}>
+                          Agent: {bot.agent_profile_id}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, opacity: 0.4, fontStyle: "italic" }}>
+                    {t("config.imNoBots")}
+                  </div>
+                )}
+                {onNavigateToBotConfig && (
+                  <button
+                    onClick={() => onNavigateToBotConfig(botType)}
+                    style={{
+                      marginTop: 6, display: "inline-flex", alignItems: "center", gap: 4,
+                      padding: "3px 10px", borderRadius: 6, border: "1px dashed var(--line)",
+                      background: "transparent", cursor: "pointer", fontSize: 11,
+                      color: "var(--primary, #3b82f6)", fontWeight: 500,
+                    }}
+                  >
+                    <IconPlus size={10} />{t("config.imAddBot")}
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}

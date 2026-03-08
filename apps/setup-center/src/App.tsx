@@ -5018,7 +5018,13 @@ export function App() {
   };
 
   function renderIM() {
-    return <IMConfigView {..._configViewProps} />;
+    return <IMConfigView
+      {..._configViewProps}
+      apiBaseUrl={httpApiBase()}
+      onNavigateToBotConfig={(presetType) => {
+        setView("im");
+      }}
+    />;
   }
 
   function renderTools() {

@@ -389,7 +389,7 @@
     "installLocal": "本地源码",
     "installVersion": "指定版本",
     "imTitle": "IM 通道",
-    "imHint": "启用后展开填写配置信息",
+    "imHint": "启用通道开关，然后在「消息通道 → Bot 配置」中添加和管理 Bot",
     "imChainPush": "思维链进度推送",
     "imChainPushHelp": "开启后 IM 通道会实时推送思考过程、工具调用等中间状态。关闭不影响内部推理和数据保存，仅减少消息推送",
     "imSave": "保存 IM 配置",
@@ -601,6 +601,10 @@
     "imNeedPublicIp": "需要公网 IP",
     "imGuideDoc": "配置指南",
     "imGuideDocCopied": "配置指南文档链接已复制",
+    "imGoToBotConfig": "前往 Bot 管理",
+    "imConfiguredBots": "已配置的 Bot",
+    "imNoBots": "暂无 Bot，前往消息通道添加",
+    "imAddBot": "添加 Bot",
     "skipIm": "跳过，直接完成",
     "multiAgentMode": "多Agent模式",
     "multiAgentBeta": "Beta",
@@ -724,7 +728,12 @@
     "botDeleteFailed": "Bot 删除失败",
     "botConfirmDelete": "确定删除此 Bot？",
     "botToggleSuccess": "Bot 状态已更新",
-    "needMultiAgent": "需要开启多Agent模式"
+    "needMultiAgent": "需要开启多Agent模式",
+    "envLegacyTitle": "检测到 .env 遗留配置",
+    "envLegacyDesc": "有 {{count}} 个通道（{{types}}）仍通过 .env 配置，建议迁移到统一 Bot 管理以支持绑定 Agent",
+    "migrateNow": "一键迁移",
+    "migrationSuccess": "迁移成功，Bot 已统一管理",
+    "migrationFailed": "迁移失败"
   },
   "llm": {
     "title": "LLM 端点",

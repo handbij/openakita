@@ -68,7 +68,7 @@ ORG_NODE_TOOLS: list[dict] = [
     },
     {
         "name": "org_broadcast",
-        "description": "在部门或全组织广播消息。level=0 可全组织广播，其他仅部门广播。",
+        "description": "广播单向通知消息（不需要回复的公告）。level=0 可全组织广播，其他仅部门广播。注意：如果需要开会讨论，请使用 org_request_meeting。",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -261,7 +261,7 @@ ORG_NODE_TOOLS: list[dict] = [
     # ── 会议 ──
     {
         "name": "org_request_meeting",
-        "description": "发起多方会议讨论。参与者轮流发言，会议结论写入记忆。",
+        "description": "发起并召开多方实时会议。参与者轮流发言讨论，自动生成会议结论并写入组织黑板。当需要「开会」「讨论」「汇报」时，必须使用此工具而非 org_broadcast。",
         "input_schema": {
             "type": "object",
             "properties": {

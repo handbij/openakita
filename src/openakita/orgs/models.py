@@ -423,13 +423,34 @@ class Organization:
         return org
 
     def get_node(self, node_id: str) -> OrgNode | None:
+        if not node_id:
+            return None
         for n in self.nodes:
             if n.id == node_id:
                 return n
-        node_id_lower = node_id.lower()
+        node_id_lower = node_id.lower().replace(" ", "").replace("-", "")
         for n in self.nodes:
-            if n.id.lower() == node_id_lower:
+            if n.id.lower().replace("-", "") == node_id_lower:
                 return n
+        query = node_id.strip()
+        query_norm = query.replace(" ", "").replace("　", "").lower()
+        for n in self.nodes:
+            title = n.role_title or ""
+            title_norm = title.replace(" ", "").replace("　", "").lower()
+            if query == title or query in title or title in query:
+                return n
+            if query_norm and (query_norm == title_norm or query_norm in title_norm
+                              or title_norm in query_norm):
+                return n
+        if len(query_norm) >= 3:
+            for n in self.nodes:
+                nid = n.id.lower().replace("-", "")
+                title = (n.role_title or "").lower().replace(" ", "")
+                goal = (getattr(n, "role_goal", "") or "").lower()
+                haystack = f"{nid} {title} {goal}"
+                parts = [p for p in query_norm.replace("_", "-").split("-") if len(p) >= 2]
+                if parts and all(p in haystack for p in parts):
+                    return n
         return None
 
     def get_root_nodes(self) -> list[OrgNode]:

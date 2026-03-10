@@ -150,10 +150,20 @@ class OrgToolHandler:
             msg_type = MsgType.QUESTION
             logger.warning(f"[OrgToolHandler] Invalid msg_type '{raw_type}', falling back to 'question'")
 
+        to_node = args["to_node"]
+        org = self._runtime.get_org(org_id)
+        if org:
+            resolved = org.get_node(to_node)
+            if resolved:
+                to_node = resolved.id
+            else:
+                avail = ", ".join(f"{n.id}({n.role_title})" for n in org.nodes)
+                return f"节点 '{to_node}' 不存在。可用节点: {avail}"
+
         msg = OrgMessage(
             org_id=org_id,
             from_node=node_id,
-            to_node=args["to_node"],
+            to_node=to_node,
             msg_type=msg_type,
             content=args["content"],
             priority=args.get("priority", 0),
@@ -162,11 +172,11 @@ class OrgToolHandler:
         ok = await messenger.send(msg)
         if ok:
             await self._runtime._broadcast_ws("org:message", {
-                "org_id": org_id, "from_node": node_id, "to_node": args["to_node"],
+                "org_id": org_id, "from_node": node_id, "to_node": to_node,
                 "msg_type": args.get("msg_type", "question"),
                 "content": args["content"][:120],
             })
-        return f"消息已发送给 {args['to_node']}" if ok else "发送失败"
+        return f"消息已发送给 {to_node}" if ok else "发送失败"
 
     async def _handle_org_reply_message(
         self, args: dict, org_id: str, node_id: str
@@ -206,16 +216,24 @@ class OrgToolHandler:
         metadata["task_chain_id"] = chain_id
 
         to_node = args["to_node"]
+        org = self._runtime.get_org(org_id)
 
         existing_affinity = messenger.get_task_affinity(chain_id)
         if existing_affinity:
-            org = self._runtime.get_org(org_id)
             if org:
                 affinity_node = org.get_node(existing_affinity)
                 if affinity_node and affinity_node.status not in (NodeStatus.FROZEN, NodeStatus.OFFLINE):
                     to_node = existing_affinity
 
-        msg = await messenger.send_task(
+        if org:
+            resolved = org.get_node(to_node)
+            if resolved:
+                to_node = resolved.id
+            else:
+                avail = ", ".join(f"{n.id}({n.role_title})" for n in org.nodes)
+                return f"节点 '{to_node}' 不存在。可用节点: {avail}"
+
+        await messenger.send_task(
             from_node=node_id,
             to_node=to_node,
             task_content=args["task"],
@@ -280,7 +298,16 @@ class OrgToolHandler:
             metadata={"_cascade_depth": parent_depth + 1},
         )
         await messenger.send(msg)
-        return f"已{'部门' if scope == 'department' else '全组织'}广播"
+        scope_label = "部门" if scope == "department" else "全组织"
+        await self._runtime._broadcast_ws("org:broadcast", {
+            "org_id": org_id, "from_node": node_id, "scope": scope,
+            "content": args["content"][:120],
+        })
+        self._runtime.get_event_store(org_id).emit(
+            "broadcast", node_id,
+            {"scope": scope, "content": args["content"][:200]},
+        )
+        return f"已{scope_label}广播"
 
     # ------------------------------------------------------------------
     # Organization awareness tools

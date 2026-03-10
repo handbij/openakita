@@ -224,7 +224,11 @@ class OrgMessenger:
 
         target = self._org.get_node(msg.to_node)
         if target is None:
-            logger.warning(f"[Messenger] Target node not found: {msg.to_node}")
+            avail = ", ".join(f"{n.id}({n.role_title})" for n in self._org.nodes[:20])
+            logger.warning(
+                f"[Messenger] Target node not found: {msg.to_node}. "
+                f"Available: {avail}"
+            )
             return False
 
         if target.status == NodeStatus.FROZEN:
@@ -246,7 +250,8 @@ class OrgMessenger:
             await mailbox.put(msg)
             msg.status = "delivered"
 
-        self._wait_graph[msg.from_node].add(msg.to_node)
+        if msg.from_node != msg.to_node:
+            self._wait_graph[msg.from_node].add(msg.to_node)
 
         if msg.to_node in self._message_handlers:
             try:

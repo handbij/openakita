@@ -763,6 +763,51 @@ export function OrgEditorView({
     }
   }, [currentOrg?.id, selectedNodeId, bbScope, fetchBlackboard]);
 
+  // ── Load historical events on org switch ──
+  const loadHistoricalEvents = useCallback(async (orgId: string) => {
+    try {
+      const res = await safeFetch(`${apiBaseUrl}/api/orgs/${orgId}/events?limit=50`);
+      const events: any[] = await res.json();
+      if (!Array.isArray(events) || events.length === 0) return;
+      const evtTypeMap: Record<string, string> = {
+        node_activated: "org:node_status",
+        task_completed: "org:task_complete",
+        task_assigned: "org:task_delegated",
+        task_timeout: "org:task_timeout",
+        broadcast: "org:broadcast",
+        meeting_completed: "org:meeting_completed",
+        conflict_detected: "org:deadlock",
+        task_failed: "org:node_status",
+      };
+      const mapped: ActivityEvent[] = events
+        .filter(e => e.event_type && evtTypeMap[e.event_type])
+        .map(e => {
+          const evName = evtTypeMap[e.event_type] || `org:${e.event_type}`;
+          const data = { ...(e.data || {}), org_id: orgId, node_id: e.actor };
+          if (e.event_type === "node_activated") data.status = "busy";
+          if (e.event_type === "task_completed") data.status = "idle";
+          if (e.event_type === "task_failed") data.status = "error";
+          return {
+            id: `hist_${e.timestamp || ""}${Math.random().toString(36).slice(2, 6)}`,
+            time: e.timestamp ? new Date(e.timestamp).getTime() : Date.now(),
+            event: evName,
+            data,
+          };
+        })
+        .sort((a, b) => b.time - a.time)
+        .slice(0, 50);
+      if (mapped.length > 0) {
+        setActivityFeed(mapped);
+      }
+    } catch { /* ignore */ }
+  }, [apiBaseUrl]);
+
+  useEffect(() => {
+    if (currentOrg && liveMode) {
+      loadHistoricalEvents(currentOrg.id);
+    }
+  }, [currentOrg?.id, liveMode, loadHistoricalEvents]);
+
   // ── WebSocket for live mode ──
 
   const pushActivity = useCallback((event: string, data: any) => {
@@ -809,7 +854,9 @@ export function OrgEditorView({
                   : n,
               ),
             );
-            if (status === "busy") pushActivity(ev, d);
+            if (status === "busy" || status === "error") pushActivity(ev, d);
+          } else if (ev === "org:task_timeout") {
+            pushActivity(ev, d);
           } else if (ev === "org:task_delegated") {
             pushActivity(ev, d);
             triggerEdgeAnimation(d.from_node, d.to_node, "var(--primary)");
@@ -828,6 +875,8 @@ export function OrgEditorView({
           } else if (ev === "org:message") {
             pushActivity(ev, d);
             triggerEdgeAnimation(d.from_node, d.to_node, "#a78bfa");
+          } else if (ev === "org:broadcast") {
+            pushActivity(ev, d);
           } else if (ev === "org:blackboard_update") {
             pushActivity(ev, d);
             if (currentOrg && !selectedNodeId) fetchBlackboard(currentOrg.id, bbScope);
@@ -872,6 +921,7 @@ export function OrgEditorView({
       setCurrentOrg(data);
       setLiveMode(false);
       setActivityFeed([]);
+      setBbEntries([]);
       setNodeEvents([]);
       setNodeThinking([]);
       setNodeSchedules([]);
@@ -1738,6 +1788,9 @@ export function OrgEditorView({
                   } else if (ev.event === "org:message") {
                     icon = "💬"; color = "#a78bfa";
                     text = `${nodeLabel(ev.data.from_node)} → ${nodeLabel(ev.data.to_node)}：${ev.data.content?.slice(0, 40) || ""}`;
+                  } else if (ev.event === "org:broadcast") {
+                    icon = "📢"; color = "#8b5cf6";
+                    text = `${nodeLabel(ev.data.from_node)} ${ev.data.scope === "department" ? "部门" : "全组织"}广播：${ev.data.content?.slice(0, 40) || ""}`;
                   } else if (ev.event === "org:blackboard_update") {
                     icon = "📋"; color = "#f59e0b";
                     text = `${nodeLabel(ev.data.node_id)} 写入${ev.data.scope === "department" ? "部门" : "组织"}黑板`;
@@ -1762,9 +1815,15 @@ export function OrgEditorView({
                   } else if (ev.event === "org:meeting_completed") {
                     icon = "✅"; color = "#22c55e";
                     text = `会议结束：${ev.data.topic?.slice(0, 40) || ""}`;
+                  } else if (ev.event === "org:task_timeout") {
+                    icon = "⏰"; color = "#f97316";
+                    text = `${nodeLabel(ev.data.node_id)} 任务超时 (${ev.data.timeout_s || ""}s)`;
                   } else if (ev.event === "org:node_status" && ev.data.status === "busy") {
                     icon = "⚡"; color = "var(--primary)";
                     text = `${nodeLabel(ev.data.node_id)} 开始执行`;
+                  } else if (ev.event === "org:node_status" && ev.data.status === "error") {
+                    icon = "❌"; color = "var(--danger)";
+                    text = `${nodeLabel(ev.data.node_id)} 执行出错`;
                   }
 
                   return (
@@ -2965,38 +3024,49 @@ export function OrgEditorView({
 
                 {/* Permissions section */}
                 <div style={{
-                  border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px",
-                  background: "var(--card-bg, #fff)",
+                  border: "1px solid var(--line)", borderRadius: 8,
+                  background: "var(--card-bg, #fff)", overflow: "hidden",
                 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", marginBottom: 8 }}>
-                    权限控制
+                  <div style={{
+                    padding: "8px 10px", borderBottom: "1px solid var(--line)",
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600 }}>权限控制</div>
+                      <div style={{ fontSize: 9, color: "var(--muted)", marginTop: 2 }}>
+                        控制节点在组织内的行为权限
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <div style={{ padding: 4, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 }}>
                     {([
-                      { key: "can_delegate", label: "委派任务", desc: "可向下级分配工作" },
-                      { key: "can_escalate", label: "上报问题", desc: "可向上级反馈异常" },
-                      { key: "can_request_scaling", label: "申请扩编", desc: "可请求增加人手" },
-                      { key: "ephemeral", label: "临时节点", desc: "空闲时自动回收" },
-                    ] as const).map(({ key, label, desc }) => (
-                      <label
-                        key={key}
-                        style={{
-                          display: "flex", alignItems: "center", gap: 8,
-                          fontSize: 12, padding: "5px 6px", borderRadius: 6,
-                          cursor: "pointer",
-                          background: selectedNode[key] ? "rgba(14,165,233,0.06)" : "transparent",
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={!!selectedNode[key]}
-                          onChange={(e) => updateNodeData(key, e.target.checked)}
-                          style={{ accentColor: "var(--primary)", flexShrink: 0 }}
-                        />
-                        <span>{label}</span>
-                        <span style={{ color: "var(--muted)", fontSize: 10, marginLeft: "auto" }}>{desc}</span>
-                      </label>
-                    ))}
+                      { key: "can_delegate", label: "委派任务", icon: "📤" },
+                      { key: "can_escalate", label: "上报问题", icon: "⬆️" },
+                      { key: "can_request_scaling", label: "申请扩编", icon: "👥" },
+                      { key: "ephemeral", label: "临时节点", icon: "⏳" },
+                    ] as const).map(({ key, label, icon }) => {
+                      const checked = !!selectedNode[key];
+                      return (
+                        <label
+                          key={key}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 6,
+                            padding: "5px 8px", borderRadius: 6, cursor: "pointer",
+                            fontSize: 11,
+                            background: checked ? "rgba(14,165,233,0.1)" : "transparent",
+                            transition: "background 0.15s",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => updateNodeData(key, e.target.checked)}
+                            style={{ accentColor: "var(--primary)", flexShrink: 0, width: 14, height: 14 }}
+                          />
+                          <span>{icon} {label}</span>
+                        </label>
+                      );
+                    })}
                   </div>
                 </div>
 

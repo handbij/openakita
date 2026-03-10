@@ -1,5 +1,15 @@
 [
   {
+    "name": "自定义服务商 (Custom)",
+    "slug": "custom",
+    "api_type": "openai",
+    "default_base_url": "",
+    "api_key_env_suggestion": "CUSTOM_API_KEY",
+    "supports_model_list": true,
+    "supports_capability_api": false,
+    "registry_class": "OpenAIRegistry"
+  },
+  {
     "name": "Ollama (本地)",
     "slug": "ollama",
     "api_type": "openai",

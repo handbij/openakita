@@ -66,7 +66,7 @@ jobs:
           python -c "
           import json
           idx = json.load(open('backfill-out/api/versions.json'))
-          for ch in ['release','pre_release','dev']:
+          for ch in ['stable','pre_release','dev']:
               entries = idx.get(ch, [])
               print(f'  {ch}: {len(entries)} versions')
               for e in entries[:3]:
@@ -140,7 +140,7 @@ jobs:
             for file in /tmp/release-assets/*; do
               [ -f "$file" ] || continue
               FILENAME="$(basename "$file")"
-              ossutil cp "$file" "oss://${OSS_BUCKET}/${TAG}/${FILENAME}" -f
+              ossutil cp "$file" "oss://${OSS_BUCKET}/${TAG}/${FILENAME}" -f --quiet
             done
             echo "  ✅ Uploaded ${ASSET_COUNT} asset(s) for ${TAG}"
             TOTAL_UPLOADED=$((TOTAL_UPLOADED + ASSET_COUNT))
@@ -163,13 +163,13 @@ jobs:
           for f in "${MD}"/releases/*.json; do
             [ -f "$f" ] || continue
             FNAME="$(basename "$f")"
-            ossutil cp "$f" "oss://${OSS_BUCKET}/api/releases/${FNAME}" -f --meta "${CC}"
+            ossutil cp "$f" "oss://${OSS_BUCKET}/api/releases/${FNAME}" -f --meta "${CC}" --quiet
             MANIFEST_COUNT=$((MANIFEST_COUNT + 1))
           done
           echo "✅ Uploaded ${MANIFEST_COUNT} per-version manifests"
 
           # Channel manifests
-          for f in "${MD}"/release.json "${MD}"/pre-release.json "${MD}"/dev.json; do
+          for f in "${MD}"/stable.json "${MD}"/pre-release.json "${MD}"/dev.json; do
             if [ -f "$f" ]; then
               FNAME="$(basename "$f")"
               ossutil cp "$f" "oss://${OSS_BUCKET}/api/${FNAME}" -f --meta "${CC}"
@@ -177,10 +177,10 @@ jobs:
             fi
           done
 
-          # latest.json (Tauri updater compat)
-          if [ -f "${MD}/latest.json" ]; then
-            ossutil cp "${MD}/latest.json" "oss://${OSS_BUCKET}/api/latest.json" -f --meta "${CC}"
-            echo "✅ Uploaded api/latest.json (Tauri updater compat)"
+          # release.json (Tauri updater compat)
+          if [ -f "${MD}/release.json" ]; then
+            ossutil cp "${MD}/release.json" "oss://${OSS_BUCKET}/api/release.json" -f --meta "${CC}"
+            echo "✅ Uploaded api/release.json"
           fi
 
           # versions.json (index)

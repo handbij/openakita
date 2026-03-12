@@ -1146,7 +1146,7 @@ def install_skill(workspace_dir: str, url: str) -> None:
         target = skills_dir / skill_name
 
         if target.exists():
-            raise ValueError(f"技能目录已存在: {target}")
+            raise ValueError(f"该技能已安装: {target}")
 
         if _has_git():
             git_url = f"https://github.com/{owner}/{repo}.git"
@@ -1158,7 +1158,7 @@ def install_skill(workspace_dir: str, url: str) -> None:
         skill_name = url.rstrip("/").split("/")[-1].replace(".git", "")
         target = skills_dir / skill_name
         if target.exists():
-            raise ValueError(f"技能目录已存在: {target}")
+            raise ValueError(f"该技能已安装: {target}")
 
         gh = _parse_github_url(url)
         ge = _parse_gitee_url(url)
@@ -1191,7 +1191,29 @@ def install_skill(workspace_dir: str, url: str) -> None:
         target = skills_dir / skill_name
 
         if target.exists():
-            raise ValueError(f"技能目录已存在: {target}")
+            # 检查是否是同一来源的重复安装
+            existing_source = ""
+            try:
+                existing_source = (target / ".openakita-source").read_text(
+                    encoding="utf-8"
+                ).strip()
+            except Exception:
+                pass
+            if existing_source == url:
+                raise ValueError(f"该技能已安装: {target}")
+            # 不同来源的同名技能，用 owner 前缀消歧
+            skill_name = _sanitize_skill_dir_name(f"{owner}-{requested_skill}")
+            target = skills_dir / skill_name
+            if target.exists():
+                try:
+                    es = (target / ".openakita-source").read_text(
+                        encoding="utf-8"
+                    ).strip()
+                except Exception:
+                    es = ""
+                if es == url:
+                    raise ValueError(f"该技能已安装: {target}")
+                raise ValueError(f"技能目录名称冲突: {target}")
 
         # Strategy 1: Try platform cache first
         platform_skill_id = f"{owner}-{repo}-{skill_name}".lower().replace("/", "-")
@@ -1257,7 +1279,7 @@ def install_skill(workspace_dir: str, url: str) -> None:
         import shutil
         target = skills_dir / src.name
         if target.exists():
-            raise ValueError(f"技能目录已存在: {target}")
+            raise ValueError(f"该技能已安装: {target}")
         shutil.copytree(str(src), str(target))
 
     # Record install origin for marketplace matching (Issue #15)

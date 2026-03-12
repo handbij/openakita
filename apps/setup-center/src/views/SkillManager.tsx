@@ -841,7 +841,7 @@ export function SkillManager({
       onNotice?.(t("skills.importLocalSuccess"));
     } catch (e) {
       const msg = String(e);
-      if (msg.includes("已存在") || msg.toLowerCase().includes("already exist")) {
+      if (msg.includes("该技能已安装") || msg.toLowerCase().includes("already installed")) {
         await loadSkills();
         onNotice?.(t("skills.alreadyInstalled"));
       } else {
@@ -1084,7 +1084,7 @@ export function SkillManager({
       setExpandedSkill(skill.skillId || skill.name);
     } catch (e) {
       const msg = String(e);
-      if (msg.includes("已存在") || msg.toLowerCase().includes("already exist")) {
+      if (msg.includes("该技能已安装") || msg.toLowerCase().includes("already installed")) {
         setMarketplace((prev) => prev.map((s) =>
           s.url === skill.url ? { ...s, installed: true } : s
         ));
@@ -1145,7 +1145,7 @@ export function SkillManager({
       setTab("installed");
     } catch (e) {
       const msg = String(e);
-      if (msg.includes("已存在") || msg.toLowerCase().includes("already exist")) {
+      if (msg.includes("该技能已安装") || msg.toLowerCase().includes("already installed")) {
         setManualUrl("");
         await loadSkills();
         onNotice?.(t("skills.alreadyInstalled"));

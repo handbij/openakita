@@ -944,12 +944,13 @@ export function SkillManager({
         installs: typeof s.installs === "number" ? s.installs : undefined,
         tags: [],
         installed: skills.some((local) => {
-          const nameMatch = local.name === skillId;
+          // 有来源追踪的技能，要求来源精确匹配（避免同名不同仓库误判）
+          if (local.sourceUrl) return local.sourceUrl === installUrl;
+          // 无来源信息的旧技能，回退到名称/目录匹配
+          if (local.name === skillId) return true;
           const pathParts = local.path ? local.path.replace(/\\/g, "/").split("/") : [];
           const dirName = pathParts.length >= 2 ? pathParts[pathParts.length - 2] : "";
-          const dirMatch = dirName === skillId;
-          const sourceMatch = local.sourceUrl ? local.sourceUrl === installUrl : false;
-          return nameMatch || dirMatch || sourceMatch;
+          return dirName === skillId;
         }),
       };
     });

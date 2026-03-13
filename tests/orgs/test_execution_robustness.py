@@ -401,15 +401,15 @@ class TestErrorAutoRecovery:
 
 
 class TestTimeoutDifferentiation:
-    """Timeout should be tracked separately from normal completion."""
+    """Agent task execution (timeout removed in favor of watchdog)."""
 
-    def test_run_agent_task_returns_tuple(self):
-        """_run_agent_task should return (text, timed_out) tuple."""
+    def test_run_agent_task_returns_str(self):
+        """_run_agent_task should return str (no timeout wrapper)."""
         from openakita.orgs.runtime import OrgRuntime
         sig = OrgRuntime._run_agent_task.__annotations__
         assert "return" in sig
         ret_type = sig["return"]
-        assert "tuple" in str(ret_type).lower()
+        assert "str" in str(ret_type).lower()
 
 
 class TestInvalidMemoryTypeFallback:

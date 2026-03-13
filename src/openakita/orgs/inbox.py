@@ -230,6 +230,9 @@ class OrgInbox:
         msg.acted_result = decision
         msg.acted_at = _now_iso()
 
+        if decision == "approve":
+            self._execute_approval_side_effects(org_id, msg)
+
         self._runtime.get_event_store(org_id).emit(
             "approval_resolved", by,
             {"msg_id": msg.id, "approval_id": msg.approval_id, "decision": decision},
@@ -237,6 +240,41 @@ class OrgInbox:
 
         self._notify_listeners(org_id, msg)
         return msg
+
+    def _execute_approval_side_effects(self, org_id: str, msg: InboxMessage) -> None:
+        meta = msg.metadata
+        if meta.get("policy_filename") and meta.get("policy_content"):
+            try:
+                org_dir = self._runtime._manager._org_dir(org_id)
+                policies_dir = org_dir / "policies"
+                policies_dir.mkdir(parents=True, exist_ok=True)
+                policy_path = policies_dir / meta["policy_filename"]
+                policy_path.write_text(meta["policy_content"], encoding="utf-8")
+                logger.info(f"[OrgInbox] Wrote approved policy: {meta['policy_filename']}")
+            except Exception as e:
+                logger.error(f"[OrgInbox] Failed to write approved policy: {e}")
+
+        if meta.get("action_type") == "create_schedule":
+            try:
+                from .models import NodeSchedule, ScheduleType
+                params = meta.get("schedule_params", {})
+                target_node = meta.get("node_id", "")
+                if params and target_node:
+                    sched = NodeSchedule(
+                        name=params.get("name", ""),
+                        schedule_type=ScheduleType(params.get("schedule_type", "interval")),
+                        cron=params.get("cron"),
+                        interval_s=params.get("interval_s"),
+                        run_at=params.get("run_at"),
+                        prompt=params.get("prompt", ""),
+                        report_to=params.get("report_to"),
+                        report_condition=params.get("report_condition", "on_issue"),
+                        enabled=True,
+                    )
+                    self._runtime._manager.add_node_schedule(org_id, target_node, sched)
+                    logger.info(f"[OrgInbox] Created approved schedule: {sched.name}")
+            except Exception as e:
+                logger.error(f"[OrgInbox] Failed to create approved schedule: {e}")
 
     def resolve_by_approval_id(
         self, org_id: str, approval_id: str, decision: str, by: str = "user"

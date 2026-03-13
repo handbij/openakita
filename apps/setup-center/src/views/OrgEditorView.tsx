@@ -89,6 +89,190 @@ function fmtShortDate(v: string | number | undefined | null): string {
   return d.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
+const TASK_STATUS_LABELS: Record<string, string> = {
+  todo: "待办",
+  in_progress: "进行中",
+  delivered: "已交付",
+  rejected: "已打回",
+  accepted: "已验收",
+  blocked: "已阻塞",
+};
+
+function NodeTasksTabContent({
+  nodeTasks,
+  nodeActivePlan,
+  loading,
+  nodes,
+  apiBaseUrl,
+  orgId,
+  fmtDateTime,
+}: {
+  nodeTasks: { assigned: any[]; delegated: any[] } | null;
+  nodeActivePlan: any;
+  loading: boolean;
+  nodes: Node[];
+  apiBaseUrl: string;
+  orgId: string;
+  fmtDateTime: (v: string | number | undefined | null) => string;
+}) {
+  const nodeMap = new Map(nodes.map((n) => [n.id, (n.data as any)?.role_title || n.id]));
+  const getNodeLabel = (id: string | null) => (id ? nodeMap.get(id) || id : "-");
+
+  if (loading) {
+    return (
+      <div style={{ fontSize: 12, color: "var(--muted)", padding: 12 }}>加载中...</div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 12 }}>
+      {/* Current Task + Plan */}
+      {nodeActivePlan && (
+        <div className="card" style={{ padding: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, color: "#b45309" }}>
+            当前任务
+          </div>
+          <div style={{ fontWeight: 500, marginBottom: 6 }}>{nodeActivePlan.title}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 10, color: "var(--muted)" }}>进度</span>
+            <div style={{
+              flex: 1,
+              height: 4,
+              borderRadius: 2,
+              background: "var(--line)",
+              overflow: "hidden",
+            }}>
+              <div style={{
+                height: "100%",
+                borderRadius: 2,
+                background: "var(--accent)",
+                width: `${nodeActivePlan.progress_pct ?? 0}%`,
+              }} />
+            </div>
+            <span style={{ fontSize: 10, color: "var(--muted)" }}>{nodeActivePlan.progress_pct ?? 0}%</span>
+          </div>
+          {(nodeActivePlan.plan_steps?.length ?? 0) > 0 && (
+            <div style={{ fontSize: 11 }}>
+              {(nodeActivePlan.plan_steps || []).map((s: any, i: number) => {
+                const st = s.status || "pending";
+                const icon = st === "completed" ? "✓" : st === "in_progress" ? "→" : "○";
+                const color = st === "completed" ? "#22c55e" : st === "in_progress" ? "#3b82f6" : "var(--muted)";
+                return (
+                  <div key={s.id || i} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 4 }}>
+                    <span style={{ color, fontWeight: 600, flexShrink: 0 }}>{icon}</span>
+                    <span style={{ color: "var(--text)" }}>{s.description || s.title || `步骤 ${i + 1}`}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Assigned Tasks */}
+      <div className="card" style={{ padding: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>分配给我的任务</div>
+        {(nodeTasks?.assigned?.length ?? 0) === 0 ? (
+          <div style={{ fontSize: 11, color: "var(--muted)" }}>暂无</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {(nodeTasks?.assigned || []).map((t: any) => (
+              <div
+                key={t.id}
+                style={{
+                  padding: 8,
+                  borderRadius: 6,
+                  border: "1px solid var(--line)",
+                  background: "var(--bg-subtle, var(--bg-card))",
+                }}
+              >
+                <div style={{ fontWeight: 500, marginBottom: 4 }}>{t.title}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10 }}>
+                  <span style={{
+                    padding: "1px 5px",
+                    borderRadius: 3,
+                    background: "var(--bg-app)",
+                    color: "var(--muted)",
+                  }}>
+                    {TASK_STATUS_LABELS[t.status] || t.status}
+                  </span>
+                  <span style={{ color: "var(--muted)" }}>{(t.progress_pct ?? 0)}%</span>
+                </div>
+                <div style={{
+                  marginTop: 4,
+                  height: 3,
+                  borderRadius: 2,
+                  background: "var(--line)",
+                  overflow: "hidden",
+                }}>
+                  <div style={{
+                    height: "100%",
+                    borderRadius: 2,
+                    background: "var(--accent)",
+                    width: `${Math.min(100, t.progress_pct ?? 0)}%`,
+                  }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Delegated Tasks */}
+      <div className="card" style={{ padding: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>我委派的任务</div>
+        {(nodeTasks?.delegated?.length ?? 0) === 0 ? (
+          <div style={{ fontSize: 11, color: "var(--muted)" }}>暂无</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {(nodeTasks?.delegated || []).map((t: any) => (
+              <div
+                key={t.id}
+                style={{
+                  padding: 8,
+                  borderRadius: 6,
+                  border: "1px solid var(--line)",
+                  background: "var(--bg-subtle, var(--bg-card))",
+                }}
+              >
+                <div style={{ fontWeight: 500, marginBottom: 4 }}>{t.title}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10 }}>
+                  <span style={{
+                    padding: "1px 5px",
+                    borderRadius: 3,
+                    background: "var(--bg-app)",
+                    color: "var(--muted)",
+                  }}>
+                    {TASK_STATUS_LABELS[t.status] || t.status}
+                  </span>
+                  <span style={{ color: "var(--muted)" }}>{(t.progress_pct ?? 0)}%</span>
+                  <span style={{ color: "var(--muted)", marginLeft: "auto" }}>
+                    执行人: {getNodeLabel(t.assignee_node_id)}
+                  </span>
+                </div>
+                <div style={{
+                  marginTop: 4,
+                  height: 3,
+                  borderRadius: 2,
+                  background: "var(--line)",
+                  overflow: "hidden",
+                }}>
+                  <div style={{
+                    height: "100%",
+                    borderRadius: 2,
+                    background: "var(--accent)",
+                    width: `${Math.min(100, t.progress_pct ?? 0)}%`,
+                  }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Types ──
 
 interface OrgNodeData {
@@ -536,6 +720,13 @@ function OrgNodeComponent({ data, selected }: { data: OrgNodeData; selected: boo
       {hovered && rt && nodeRef.current && createPortal(
         (() => {
           const rect = nodeRef.current!.getBoundingClientRect();
+          const pp = rt.plan_progress as { completed?: number; total?: number } | undefined;
+          const ds = rt.delegated_summary as { in_progress?: number; completed?: number; total?: number } | undefined;
+          const extTools = (rt.external_tools as string[] | undefined) || [];
+          const runningSince = rt.running_since as string | number | undefined;
+          const recentTs = rt.recent_activity_ts as string | number | undefined;
+          const watchdog = rt.last_watchdog_action as string | undefined;
+          const Sep = () => <div style={{ height: 1, background: "var(--line)", margin: "6px 0" }} />;
           return (
             <div style={{
               position: "fixed",
@@ -543,15 +734,36 @@ function OrgNodeComponent({ data, selected }: { data: OrgNodeData; selected: boo
               top: rect.top,
               zIndex: 99999,
               background: "var(--card-bg, #fff)", border: "1px solid var(--line)",
-              borderRadius: 6, padding: "8px 10px", minWidth: 140,
+              borderRadius: 6, padding: "10px 12px", minWidth: 240,
               pointerEvents: "none",
               boxShadow: "0 4px 12px rgba(0,0,0,0.15)", fontSize: 10,
             }}>
-              <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 11 }}>{data.role_title}</div>
+              <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 11 }}>{data.role_title}</div>
               <div style={{ color: "#6b7280", lineHeight: 1.6 }}>
+                <div>部门: {data.department || "—"} · 层级 L{data.level ?? "?"}</div>
                 <div>状态: <span style={{ color: statusColor, fontWeight: 500 }}>{STATUS_LABELS[data.status] || data.status}</span></div>
                 {idleSecs != null && <div>空闲: {idleSecs >= 3600 ? `${Math.floor(idleSecs / 3600)}h${Math.floor((idleSecs % 3600) / 60)}m` : idleSecs >= 60 ? `${Math.floor(idleSecs / 60)}m` : `${idleSecs}s`}</div>}
-                {pendingMsgs != null && <div>待处理: {pendingMsgs} 条消息</div>}
+                {pendingMsgs != null && pendingMsgs > 0 && <div>待处理: {pendingMsgs} 条消息</div>}
+                <Sep />
+                {pp && pp.total != null && pp.total > 0 && (
+                  <div>
+                    计划进度: {pp.completed ?? 0}/{pp.total}
+                    <div style={{ marginTop: 2, height: 4, borderRadius: 2, background: "var(--line)", overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${Math.min(100, ((pp.completed ?? 0) / pp.total) * 100)}%`, background: "var(--primary)", borderRadius: 2 }} />
+                    </div>
+                  </div>
+                )}
+                {ds && (ds.total ?? 0) > 0 && (
+                  <div>委派: 进行中 {ds.in_progress ?? 0} · 已完成 {ds.completed ?? 0} / {ds.total}</div>
+                )}
+                <Sep />
+                {runningSince != null && (
+                  <div>运行中: {typeof runningSince === "number" ? fmtTime(runningSince) : fmtShortDate(runningSince)}</div>
+                )}
+                {extTools.length > 0 && <div>外部工具: {extTools.slice(0, 3).join(", ")}{extTools.length > 3 ? ` +${extTools.length - 3}` : ""}</div>}
+                {recentTs != null && <div>最近活动: {fmtShortDate(recentTs)}</div>}
+                {watchdog && <div>看门狗: {watchdog}</div>}
+                <Sep />
                 {data.current_task && <div style={{ marginTop: 2, color: "#b45309" }}>任务: {data.current_task.slice(0, 50)}</div>}
                 {isAnomaly && <div style={{ marginTop: 2, color: "#f59e0b", fontWeight: 500 }}>{typeof isAnomaly === "string" ? isAnomaly : "异常"}</div>}
               </div>
@@ -594,7 +806,7 @@ export function OrgEditorView({
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showNewNodeForm, setShowNewNodeForm] = useState(false);
-  const [propsTab, setPropsTab] = useState<"basic" | "identity" | "capabilities" | "advanced" | "live" | "chat">("basic");
+  const [propsTab, setPropsTab] = useState<"basic" | "identity" | "capabilities" | "advanced" | "live" | "chat" | "tasks">("basic");
   const [fullPromptPreview, setFullPromptPreview] = useState<string | null>(null);
   const [promptPreviewLoading, setPromptPreviewLoading] = useState(false);
   const [liveMode, setLiveMode] = useState(true);
@@ -606,6 +818,9 @@ export function OrgEditorView({
   const [nodeThinking, setNodeThinking] = useState<any[]>([]);
   const [orgStats, setOrgStats] = useState<any>(null);
   const [expandedThinkingIdx, setExpandedThinkingIdx] = useState<number | null>(null);
+  const [nodeTasks, setNodeTasks] = useState<{ assigned: any[]; delegated: any[] } | null>(null);
+  const [nodeActivePlan, setNodeActivePlan] = useState<any>(null);
+  const [nodeTasksLoading, setNodeTasksLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "ok" | "error" } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -934,8 +1149,15 @@ export function OrgEditorView({
       await safeFetch(`${apiBaseUrl}/api/orgs/${currentOrg.id}/start`, { method: "POST" });
       setCurrentOrg({ ...currentOrg, status: "active" });
       setLiveMode(true);
+      const mode = (currentOrg as any).operation_mode || "command";
+      showToast(
+        mode === "autonomous"
+          ? "组织已启动（自主模式）——顶层负责人将根据核心业务自动运营"
+          : "组织已启动（命令模式）——可通过聊天或命令面板下达任务",
+        "ok",
+      );
     } catch (e) { console.error("Failed to start org:", e); }
-  }, [currentOrg, apiBaseUrl]);
+  }, [currentOrg, apiBaseUrl, showToast]);
 
   const handleStopOrg = useCallback(async () => {
     if (!currentOrg) return;
@@ -1045,6 +1267,7 @@ export function OrgEditorView({
       name: currentOrg.name,
       description: currentOrg.description,
       user_persona: currentOrg.user_persona || { title: "负责人", display_name: "", description: "" },
+      operation_mode: (currentOrg as any).operation_mode || "command",
       core_business: currentOrg.core_business || "",
       heartbeat_enabled: currentOrg.heartbeat_enabled,
       heartbeat_interval_s: currentOrg.heartbeat_interval_s,
@@ -1299,6 +1522,42 @@ export function OrgEditorView({
     return () => clearInterval(interval);
   }, [currentOrg, liveMode, apiBaseUrl]);
 
+  // ── Fetch node tasks when tasks tab is active ──
+  useEffect(() => {
+    if (!selectedNodeId || !currentOrg || propsTab !== "tasks") {
+      setNodeTasks(null);
+      setNodeActivePlan(null);
+      return;
+    }
+    setNodeTasksLoading(true);
+    const fetchNodeTasks = async () => {
+      try {
+        const [tasksRes, planRes] = await Promise.all([
+          safeFetch(`${apiBaseUrl}/api/orgs/${currentOrg.id}/nodes/${selectedNodeId}/tasks`),
+          safeFetch(`${apiBaseUrl}/api/orgs/${currentOrg.id}/nodes/${selectedNodeId}/active-plan`),
+        ]);
+        if (tasksRes.ok) {
+          const data = await tasksRes.json();
+          setNodeTasks({ assigned: data.assigned || [], delegated: data.delegated || [] });
+        } else {
+          setNodeTasks({ assigned: [], delegated: [] });
+        }
+        if (planRes.ok) {
+          const planData = await planRes.json();
+          setNodeActivePlan(planData.task_id ? planData : null);
+        } else {
+          setNodeActivePlan(null);
+        }
+      } catch (e) {
+        setNodeTasks({ assigned: [], delegated: [] });
+        setNodeActivePlan(null);
+      } finally {
+        setNodeTasksLoading(false);
+      }
+    };
+    fetchNodeTasks();
+  }, [selectedNodeId, currentOrg, propsTab, apiBaseUrl]);
+
   // ── Inject runtime metrics into nodes from orgStats ──
   useEffect(() => {
     if (!orgStats?.per_node || !orgStats?.anomalies) return;
@@ -1318,6 +1577,12 @@ export function OrgEditorView({
               idle_seconds: rt.idle_seconds,
               pending_messages: rt.pending_messages,
               anomaly: anomalyMap.get(n.id) || null,
+              plan_progress: rt.plan_progress,
+              delegated_summary: rt.delegated_summary,
+              external_tools: rt.external_tools,
+              running_since: rt.running_since,
+              recent_activity_ts: rt.recent_activity_ts,
+              last_watchdog_action: rt.last_watchdog_action,
             },
           },
         };
@@ -2346,16 +2611,17 @@ export function OrgEditorView({
           </div>
 
           {/* Tabs */}
-          <div style={{ display: "flex", borderBottom: "1px solid var(--line)" }}>
+          <div style={{ display: "flex", borderBottom: "1px solid var(--line)", flexWrap: "wrap" }}>
             {(liveMode
-              ? (["live", "chat", "basic", "identity", "capabilities", "advanced"] as const)
-              : (["basic", "identity", "capabilities", "advanced"] as const)
+              ? (["live", "chat", "tasks", "basic", "identity", "capabilities", "advanced"] as const)
+              : (["basic", "identity", "capabilities", "advanced", "tasks"] as const)
             ).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setPropsTab(tab)}
                 style={{
                   flex: 1,
+                  minWidth: 44,
                   padding: "8px 4px",
                   fontSize: 11,
                   fontWeight: propsTab === tab ? 600 : 400,
@@ -2368,7 +2634,7 @@ export function OrgEditorView({
                   cursor: "pointer",
                 }}
               >
-                {tab === "live" ? "实况" : tab === "chat" ? "对话" : tab === "basic" ? "基本" : tab === "identity" ? "身份" : tab === "capabilities" ? "能力" : "高级"}
+                {tab === "live" ? "实况" : tab === "chat" ? "对话" : tab === "tasks" ? "任务" : tab === "basic" ? "基本" : tab === "identity" ? "身份" : tab === "capabilities" ? "能力" : "高级"}
               </button>
             ))}
           </div>
@@ -3636,6 +3902,18 @@ export function OrgEditorView({
                 />
               </div>
             )}
+
+            {propsTab === "tasks" && selectedNodeId && currentOrg && (
+              <NodeTasksTabContent
+                nodeTasks={nodeTasks}
+                nodeActivePlan={nodeActivePlan}
+                loading={nodeTasksLoading}
+                nodes={nodes}
+                apiBaseUrl={apiBaseUrl}
+                orgId={currentOrg.id}
+                fmtDateTime={fmtDateTime}
+              />
+            )}
           </div>
         </div>
       )}
@@ -3784,7 +4062,46 @@ export function OrgEditorView({
         >
           <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>组织设置</div>
 
-          {/* ── 核心业务 ── */}
+          {/* ── 运行模式 ── */}
+          <div className="card" style={{ padding: 10, marginBottom: 10 }}>
+            <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6 }}>运行模式</div>
+            <div style={{ display: "flex", gap: 4 }}>
+              <button
+                className="btnSmall"
+                style={{
+                  flex: 1, fontSize: 11, padding: "6px 10px",
+                  background: ((currentOrg as any).operation_mode || "command") === "command" ? "var(--primary)" : "var(--bg-subtle, var(--bg-card))",
+                  color: ((currentOrg as any).operation_mode || "command") === "command" ? "#fff" : "var(--text)",
+                  border: "1px solid var(--line)",
+                  borderRadius: 4,
+                }}
+                onClick={() => setCurrentOrg({ ...currentOrg, operation_mode: "command" } as any)}
+              >
+                命令模式
+              </button>
+              <button
+                className="btnSmall"
+                style={{
+                  flex: 1, fontSize: 11, padding: "6px 10px",
+                  background: ((currentOrg as any).operation_mode || "command") === "autonomous" ? "var(--primary)" : "var(--bg-subtle, var(--bg-card))",
+                  color: ((currentOrg as any).operation_mode || "command") === "autonomous" ? "#fff" : "var(--text)",
+                  border: "1px solid var(--line)",
+                  borderRadius: 4,
+                }}
+                onClick={() => setCurrentOrg({ ...currentOrg, operation_mode: "autonomous" } as any)}
+              >
+                自主模式
+              </button>
+            </div>
+            <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4, lineHeight: 1.5 }}>
+              {((currentOrg as any).operation_mode || "command") === "command"
+                ? "通过聊天或命令面板下达任务，按需执行"
+                : "组织根据核心业务自动运转，顶层负责人持续运营"}
+            </div>
+          </div>
+
+          {/* ── 核心业务 (仅自主模式) ── */}
+          {((currentOrg as any).operation_mode || "command") === "autonomous" && (
           <div className="card" style={{ padding: 10, marginBottom: 10 }}>
             <div
               style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
@@ -3839,6 +4156,7 @@ export function OrgEditorView({
               </div>
             )}
           </div>
+          )}
 
           {/* ── 用户身份 ── */}
           <div className="card" style={{ padding: 10, marginBottom: 10 }}>

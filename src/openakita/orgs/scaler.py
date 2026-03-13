@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .runtime import OrgRuntime
@@ -61,7 +61,7 @@ class OrgScaler:
     # Auto-clone — triggered when a node's mailbox exceeds threshold
     # ------------------------------------------------------------------
 
-    def maybe_auto_clone(self, org_id: str, node_id: str, pending_count: int) -> OrgNode | None:
+    async def maybe_auto_clone(self, org_id: str, node_id: str, pending_count: int) -> OrgNode | None:
         """Check if auto-clone should trigger, and if so, create a clone immediately."""
         org = self._runtime.get_org(org_id)
         if not org or not org.scaling_enabled:
@@ -127,7 +127,7 @@ class OrgScaler:
             label="clone-of",
         ))
 
-        self._runtime._save_org(org)
+        await self._runtime._save_org(org)
 
         self._runtime.get_event_store(org_id).emit(
             "auto_clone_created", node_id,
@@ -146,7 +146,7 @@ class OrgScaler:
     # Clone — add manpower to existing role
     # ------------------------------------------------------------------
 
-    def request_clone(
+    async def request_clone(
         self, org_id: str, requester: str, source_node_id: str,
         reason: str, ephemeral: bool = True,
     ) -> ScalingRequest:
@@ -172,7 +172,7 @@ class OrgScaler:
         )
 
         if org.scaling_approval == "auto" and org.auto_scale_enabled:
-            return self.approve_request(org_id, req.id, "auto")
+            return await self.approve_request(org_id, req.id, "auto")
 
         return req
 
@@ -212,7 +212,7 @@ class OrgScaler:
     # Approve / Reject
     # ------------------------------------------------------------------
 
-    def approve_request(
+    async def approve_request(
         self, org_id: str, request_id: str, approved_by: str = "user"
     ) -> ScalingRequest:
         req = self._find_request(org_id, request_id)
@@ -232,12 +232,19 @@ class OrgScaler:
         else:
             raise ValueError(f"Unknown request type: {req.request_type}")
 
+        messenger = self._runtime.get_messenger(org_id)
+        if messenger:
+            messenger.register_node(
+                new_node.id,
+                self._runtime._make_message_handler(org_id, new_node.id),
+            )
+
         req.status = "approved"
         req.resolved_at = _now_iso()
         req.resolved_by = approved_by
         req.result_node_id = new_node.id
 
-        self._runtime._save_org(org)
+        await self._runtime._save_org(org)
 
         self._runtime.get_event_store(org_id).emit(
             "scaling_approved", approved_by,
@@ -269,7 +276,7 @@ class OrgScaler:
     # Dismiss — remove ephemeral nodes
     # ------------------------------------------------------------------
 
-    def try_reclaim_idle_clones(self, org_id: str) -> list[str]:
+    async def try_reclaim_idle_clones(self, org_id: str) -> list[str]:
         """Dismiss idle ephemeral clones that have no pending messages."""
         org = self._runtime.get_org(org_id)
         if not org:
@@ -284,11 +291,11 @@ class OrgScaler:
             pending = messenger.get_pending_count(node.id) if messenger else 0
             if pending > 0:
                 continue
-            if self.dismiss_node(org_id, node.id, by="auto_reclaim"):
+            if await self.dismiss_node(org_id, node.id, by="auto_reclaim"):
                 dismissed.append(node.id)
         return dismissed
 
-    def dismiss_node(self, org_id: str, node_id: str, by: str = "user") -> bool:
+    async def dismiss_node(self, org_id: str, node_id: str, by: str = "user") -> bool:
         org = self._runtime.get_org(org_id)
         if not org:
             return False
@@ -311,7 +318,12 @@ class OrgScaler:
 
         org.nodes = [n for n in org.nodes if n.id != node_id]
         org.edges = [e for e in org.edges if e.source != node_id and e.target != node_id]
-        self._runtime._save_org(org)
+
+        messenger = self._runtime.get_messenger(org_id)
+        if messenger:
+            messenger.unregister_node(node_id)
+
+        await self._runtime._save_org(org)
 
         self._runtime.get_event_store(org_id).emit(
             "node_dismissed", by, {"node_id": node_id, "role": node.role_title},

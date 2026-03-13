@@ -11,7 +11,6 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -332,9 +331,9 @@ class Organization:
     standup_agenda: str = "各节点汇报进展、阻塞和计划。"
 
     # Policies
-    allow_cross_level: bool = False
+    allow_cross_level: bool = False  # TODO: not yet enforced
     max_delegation_depth: int = 5
-    conflict_resolution: str = "manager"
+    conflict_resolution: str = "manager"  # TODO: not yet enforced
 
     # Scaling
     scaling_enabled: bool = True
@@ -375,8 +374,17 @@ class Organization:
     core_business: str = ""
 
     # Token budget (reserved, not enforced initially)
-    token_budget: int | None = None
-    token_budget_period: str | None = None
+    token_budget: int | None = None  # TODO: not yet enforced
+    token_budget_period: str | None = None  # TODO: not yet enforced
+
+    # Operation mode
+    operation_mode: str = "command"
+
+    # Watchdog
+    watchdog_enabled: bool = True
+    watchdog_interval_s: int = 30
+    watchdog_stuck_threshold_s: int = 1800
+    watchdog_silence_threshold_s: int = 1800
 
     def to_dict(self) -> dict:
         return {
@@ -423,6 +431,11 @@ class Organization:
             "core_business": self.core_business,
             "token_budget": self.token_budget,
             "token_budget_period": self.token_budget_period,
+            "operation_mode": self.operation_mode,
+            "watchdog_enabled": self.watchdog_enabled,
+            "watchdog_interval_s": self.watchdog_interval_s,
+            "watchdog_stuck_threshold_s": self.watchdog_stuck_threshold_s,
+            "watchdog_silence_threshold_s": self.watchdog_silence_threshold_s,
         }
 
     @classmethod
@@ -663,6 +676,10 @@ class ProjectTask:
     assignee_node_id: str | None = None
     delegated_by: str | None = None
     chain_id: str | None = None
+    parent_task_id: str | None = None
+    depth: int = 0
+    plan_steps: list = field(default_factory=list)
+    execution_log: list = field(default_factory=list)
     priority: int = 0
     progress_pct: int = 0
     created_at: str = field(default_factory=_now_iso)
@@ -671,15 +688,25 @@ class ProjectTask:
     completed_at: str | None = None
 
     def to_dict(self) -> dict:
+        if hasattr(self.status, "value"):
+            st = self.status.value
+        elif isinstance(self.status, str) and "." in self.status:
+            st = self.status.rsplit(".", 1)[-1].lower()
+        else:
+            st = str(self.status)
         return {
             "id": self.id,
             "project_id": self.project_id,
             "title": self.title,
             "description": self.description,
-            "status": self.status.value,
+            "status": st,
             "assignee_node_id": self.assignee_node_id,
             "delegated_by": self.delegated_by,
             "chain_id": self.chain_id,
+            "parent_task_id": self.parent_task_id,
+            "depth": self.depth,
+            "plan_steps": list(self.plan_steps) if self.plan_steps else [],
+            "execution_log": list(self.execution_log) if self.execution_log else [],
             "priority": self.priority,
             "progress_pct": self.progress_pct,
             "created_at": self.created_at,
@@ -692,8 +719,11 @@ class ProjectTask:
     def from_dict(cls, d: dict) -> ProjectTask:
         d = dict(d)
         if "status" in d and isinstance(d["status"], str):
+            raw = d["status"]
+            if "." in raw:
+                raw = raw.rsplit(".", 1)[-1].lower()
             try:
-                d["status"] = TaskStatus(d["status"])
+                d["status"] = TaskStatus(raw)
             except ValueError:
                 d["status"] = TaskStatus.TODO
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
@@ -714,13 +744,20 @@ class OrgProject:
     completed_at: str | None = None
 
     def to_dict(self) -> dict:
+        def _enum_val(v):
+            if hasattr(v, "value"):
+                return v.value
+            if isinstance(v, str) and "." in v:
+                return v.rsplit(".", 1)[-1].lower()
+            return str(v)
+
         return {
             "id": self.id,
             "org_id": self.org_id,
             "name": self.name,
             "description": self.description,
-            "project_type": self.project_type.value,
-            "status": self.status.value,
+            "project_type": _enum_val(self.project_type),
+            "status": _enum_val(self.status),
             "owner_node_id": self.owner_node_id,
             "tasks": [t.to_dict() for t in self.tasks],
             "created_at": self.created_at,
@@ -732,13 +769,19 @@ class OrgProject:
     def from_dict(cls, d: dict) -> OrgProject:
         d = dict(d)
         if "project_type" in d and isinstance(d["project_type"], str):
+            raw_pt = d["project_type"]
+            if "." in raw_pt:
+                raw_pt = raw_pt.rsplit(".", 1)[-1].lower()
             try:
-                d["project_type"] = ProjectType(d["project_type"])
+                d["project_type"] = ProjectType(raw_pt)
             except ValueError:
                 d["project_type"] = ProjectType.TEMPORARY
         if "status" in d and isinstance(d["status"], str):
+            raw_st = d["status"]
+            if "." in raw_st:
+                raw_st = raw_st.rsplit(".", 1)[-1].lower()
             try:
-                d["status"] = ProjectStatus(d["status"])
+                d["status"] = ProjectStatus(raw_st)
             except ValueError:
                 d["status"] = ProjectStatus.PLANNING
         raw_tasks = d.pop("tasks", [])

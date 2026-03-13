@@ -423,4 +423,96 @@ ORG_NODE_TOOLS: list[dict] = [
             "required": ["node_id", "tools"],
         },
     },
+    # ── 项目任务进度与查询 ──
+    {
+        "name": "org_report_progress",
+        "description": "汇报当前任务进度（进度百分比、步骤摘要、执行日志）",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task_chain_id": {"type": "string", "description": "任务链 ID"},
+                "progress_pct": {"type": "integer", "description": "进度百分比 0-100", "default": 0},
+                "summary": {"type": "string", "description": "进度摘要"},
+                "log_entry": {"type": "string", "description": "追加到执行日志的条目"},
+            },
+            "required": ["task_chain_id"],
+        },
+    },
+    {
+        "name": "org_get_task_progress",
+        "description": "获取指定任务的进度详情（计划步骤、执行日志、进度百分比）",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task_chain_id": {"type": "string", "description": "任务链 ID"},
+                "task_id": {"type": "string", "description": "项目任务 ID（二选一）"},
+            },
+        },
+    },
+    {
+        "name": "org_list_my_tasks",
+        "description": "列出分配给自己的项目任务",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "enum": ["todo", "in_progress", "delivered", "accepted", "rejected", "blocked"], "description": "按状态过滤"},
+                "limit": {"type": "integer", "default": 10, "description": "返回条数"},
+            },
+        },
+    },
+    {
+        "name": "org_list_delegated_tasks",
+        "description": "列出自己委派给他人的任务",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "enum": ["todo", "in_progress", "delivered", "accepted", "rejected", "blocked"], "description": "按状态过滤"},
+                "limit": {"type": "integer", "default": 10, "description": "返回条数"},
+            },
+        },
+    },
+    {
+        "name": "org_list_project_tasks",
+        "description": "列出指定项目的所有任务",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "项目 ID"},
+                "status": {"type": "string", "enum": ["todo", "in_progress", "delivered", "accepted", "rejected", "blocked"], "description": "按状态过滤"},
+                "limit": {"type": "integer", "default": 20, "description": "返回条数"},
+            },
+            "required": ["project_id"],
+        },
+    },
+    {
+        "name": "org_update_project_task",
+        "description": "更新项目任务（进度、状态、计划步骤、执行日志）",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "description": "项目任务 ID"},
+                "task_chain_id": {"type": "string", "description": "任务链 ID（二选一）"},
+                "progress_pct": {"type": "integer", "description": "进度百分比 0-100"},
+                "status": {"type": "string", "enum": ["todo", "in_progress", "delivered", "accepted", "rejected", "blocked"]},
+                "plan_steps": {"type": "array", "items": {"type": "object"}, "description": "计划步骤"},
+                "execution_log": {"type": "array", "items": {"type": "string"}, "description": "执行日志（追加）"},
+            },
+        },
+    },
+    {
+        "name": "org_create_project_task",
+        "description": "在项目中创建新任务",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "项目 ID"},
+                "title": {"type": "string", "description": "任务标题"},
+                "description": {"type": "string", "description": "任务描述"},
+                "assignee_node_id": {"type": "string", "description": "执行人节点 ID"},
+                "parent_task_id": {"type": "string", "description": "父任务 ID（子任务时）"},
+                "chain_id": {"type": "string", "description": "任务链 ID（关联委派）"},
+            },
+            "required": ["project_id", "title"],
+        },
+    },
 ]

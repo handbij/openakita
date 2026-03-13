@@ -17,7 +17,6 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from .models import EdgeType, OrgNode, Organization
 
@@ -75,6 +74,7 @@ class OrgIdentity:
         node_summary: str = "",
         pending_messages: str = "",
         policy_index: str = "",
+        project_tasks_summary: str = "",
     ) -> str:
         """Build the full organization context prompt for a node agent."""
         parent = org.get_parent(node.id)
@@ -149,6 +149,9 @@ class OrgIdentity:
         if children:
             child_str = ", ".join(f"{c.role_title}" for c in children)
             rel_parts.append(f"- 直属下级：{child_str}")
+            rel_parts.append(
+                "- 你有下属，可使用 org_delegate_task 委派任务，下属完成后用 org_submit_deliverable 提交交付物"
+            )
         if connected_peers:
             rel_parts.append(f"- 协作伙伴：{', '.join(connected_peers)}")
         if rel_parts:
@@ -215,6 +218,12 @@ class OrgIdentity:
                 "缺少工具时，用 org_request_tools 向上级申请。"
             )
 
+        if getattr(org, "operation_mode", "") == "command" and not project_tasks_summary:
+            project_tasks_summary = self._get_project_tasks_summary(org, node)
+
+        if project_tasks_summary:
+            parts.append(f"## 当前分配给你的项目任务\n{project_tasks_summary}")
+
         if blackboard_summary:
             parts.append(f"## 当前组织简报\n{blackboard_summary}")
         if dept_summary:
@@ -244,25 +253,28 @@ class OrgIdentity:
         """Build a compact org chart for prompt injection (~200-400 tokens)."""
         departments: dict[str, list[OrgNode]] = {}
         roots: list[OrgNode] = []
+        root_ids: set[str] = set()
         for n in org.nodes:
             if n.level == 0:
                 roots.append(n)
+                root_ids.add(n.id)
             dept = n.department or "未分配"
             departments.setdefault(dept, []).append(n)
 
         lines: list[str] = []
         for root in roots:
             lines.append(f"- {root.role_title} -- {root.role_goal[:30] if root.role_goal else ''}")
-            for dept_name, members in sorted(departments.items()):
-                dept_members = [m for m in members if m.id != root.id]
-                if not dept_members:
-                    continue
-                member_str = ", ".join(
-                    f"{m.role_title}" for m in dept_members[:6]
-                )
-                if len(dept_members) > 6:
-                    member_str += f" 等{len(dept_members)}人"
-                lines.append(f"  - {dept_name}: {member_str}")
+
+        for dept_name, members in sorted(departments.items()):
+            dept_members = [m for m in members if m.id not in root_ids]
+            if not dept_members:
+                continue
+            member_str = ", ".join(
+                f"{m.role_title}" for m in dept_members[:6]
+            )
+            if len(dept_members) > 6:
+                member_str += f" 等{len(dept_members)}人"
+            lines.append(f"  - {dept_name}: {member_str}")
 
         return "\n".join(lines) if lines else "(组织架构为空)"
 
@@ -303,6 +315,33 @@ class OrgIdentity:
         if node.role_backstory:
             parts.append(f"背景：{node.role_backstory}。")
         return "".join(parts)
+
+    def _get_project_tasks_summary(self, org: Organization, node: OrgNode) -> str:
+        """Get summary of project tasks assigned to this node (for command mode)."""
+        if getattr(org, "operation_mode", "") != "command":
+            return ""
+        try:
+            from openakita.orgs.project_store import ProjectStore
+
+            store = ProjectStore(self._org_dir)
+            tasks = store.all_tasks(
+                assignee=node.id,
+                status=None,
+            )
+            in_progress = [t for t in tasks if t.get("status") == "in_progress"]
+            todo = [t for t in tasks if t.get("status") == "todo"]
+            if not in_progress and not todo:
+                return "(暂无分配给你的项目任务)"
+            lines: list[str] = []
+            for t in (in_progress + todo)[:5]:
+                title = t.get("title", "")[:60]
+                status = t.get("status", "")
+                pct = t.get("progress_pct", 0)
+                proj = t.get("project_name", "")
+                lines.append(f"- [{status}] {title} ({proj}) {pct}%")
+            return "\n".join(lines) if lines else "(暂无)"
+        except Exception:
+            return ""
 
     @staticmethod
     def _read_file(path: Path) -> str | None:

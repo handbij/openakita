@@ -200,7 +200,7 @@ class TestHRScalingTools:
         from openakita.orgs.scaler import OrgScaler
         scaler = OrgScaler(mock_runtime)
         mock_runtime.get_scaler = MagicMock(return_value=scaler)
-        mock_runtime._save_org = MagicMock()
+        mock_runtime._save_org = AsyncMock()
         result = await handler.handle(
             "org_request_clone",
             {"source_node_id": "node_dev", "reason": "工作量大", "ephemeral": True},
@@ -227,7 +227,7 @@ class TestHRScalingTools:
         from openakita.orgs.scaler import OrgScaler
         scaler = OrgScaler(mock_runtime)
         mock_runtime.get_scaler = MagicMock(return_value=scaler)
-        mock_runtime._save_org = MagicMock()
+        mock_runtime._save_org = AsyncMock()
         result = await handler.handle(
             "org_dismiss_node", {"node_id": "node_dev"},
             persisted_org.id, "node_ceo",
@@ -263,7 +263,7 @@ class TestScheduleTools:
             persisted_org.id, "node_dev",
         )
         assert "巡检" in result
-        assert "已创建" in result
+        assert "已提交审批" in result
 
     async def test_assign_schedule(self, handler: OrgToolHandler, persisted_org):
         result = await handler.handle(

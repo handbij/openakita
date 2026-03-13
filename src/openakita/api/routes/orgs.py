@@ -310,7 +310,13 @@ async def export_org(request: Request, org_id: str):
 
     output_path = body.get("output_path", "")
     if output_path:
-        out = Path(output_path)
+        data_dir = mgr._orgs_dir.parent
+        safe_base = (data_dir / "exports").resolve()
+        out = (safe_base / output_path).resolve()
+        try:
+            out.relative_to(safe_base)
+        except ValueError:
+            raise HTTPException(400, "Invalid output path")
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(
             json.dumps(export_data, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -753,7 +759,7 @@ async def set_node_offline(request: Request, org_id: str, node_id: str):
         raise HTTPException(404, f"Node not found: {node_id}")
     from openakita.orgs.models import NodeStatus
     node.status = NodeStatus.OFFLINE
-    rt._save_org(org)
+    await rt._save_org(org)
     rt.get_event_store(org_id).emit("node_deactivated", "user", {"node_id": node_id})
     return {"ok": True, "status": "offline"}
 
@@ -771,7 +777,7 @@ async def set_node_online(request: Request, org_id: str, node_id: str):
     if node.status != NodeStatus.OFFLINE:
         raise HTTPException(400, f"Node is not offline (current: {node.status.value})")
     node.status = NodeStatus.IDLE
-    rt._save_org(org)
+    await rt._save_org(org)
     rt.get_event_store(org_id).emit("node_activated", "user", {"node_id": node_id})
     return {"ok": True, "status": "idle"}
 
@@ -862,10 +868,17 @@ async def query_events(request: Request, org_id: str):
     actor = request.query_params.get("actor")
     since = request.query_params.get("since")
     until = request.query_params.get("until")
+    chain_id = request.query_params.get("chain_id")
+    task_id = request.query_params.get("task_id")
     limit = _safe_int(request.query_params.get("limit"), 100)
     events = es.query(
-        event_type=event_type, actor=actor,
-        since=since, until=until, limit=limit,
+        event_type=event_type,
+        actor=actor,
+        since=since,
+        until=until,
+        chain_id=chain_id,
+        task_id=task_id,
+        limit=limit,
     )
     return events
 
@@ -1053,7 +1066,7 @@ async def approve_scaling(request: Request, org_id: str, request_id: str):
     rt = _get_runtime(request)
     scaler = rt.get_scaler()
     try:
-        req = scaler.approve_request(org_id, request_id, approved_by="user")
+        req = await scaler.approve_request(org_id, request_id, approved_by="user")
         return {
             "id": req.id,
             "status": req.status,
@@ -1087,7 +1100,7 @@ async def scale_clone(request: Request, org_id: str):
     if not source_node_id:
         raise HTTPException(400, "source_node_id is required")
     try:
-        req = scaler.request_clone(
+        req = await scaler.request_clone(
             org_id=org_id,
             requester="user",
             source_node_id=source_node_id,
@@ -1131,7 +1144,7 @@ async def scale_recruit(request: Request, org_id: str):
 async def dismiss_node(request: Request, org_id: str, node_id: str):
     rt = _get_runtime(request)
     scaler = rt.get_scaler()
-    ok = scaler.dismiss_node(org_id, node_id, by="user")
+    ok = await scaler.dismiss_node(org_id, node_id, by="user")
     if not ok:
         raise HTTPException(400, "Cannot dismiss this node (non-ephemeral or not found)")
     return {"ok": True}
@@ -1333,6 +1346,7 @@ async def get_org_stats(request: Request, org_id: str):
     per_node: list[dict] = []
     anomalies: list[dict] = []
     agent_cache = getattr(rt, "_agent_cache", None) or {}
+    store = _get_project_store(request, org_id)
     for n in org.nodes:
         cache_key = f"{org_id}:{n.id}"
         cached = agent_cache.get(cache_key) if isinstance(agent_cache, dict) else None
@@ -1345,6 +1359,26 @@ async def get_org_stats(request: Request, org_id: str):
             except Exception:
                 pass
         node_pending = messenger.get_pending_count(n.id) if messenger else 0
+
+        assigned = store.all_tasks(assignee=n.id)
+        delegated = store.all_tasks(delegated_by=n.id)
+        active_assigned = [t for t in assigned if t.get("status") == "in_progress"]
+        current_task_title = active_assigned[0].get("title") if active_assigned else None
+        plan_progress = None
+        if active_assigned:
+            steps = active_assigned[0].get("plan_steps") or []
+            if steps:
+                completed = sum(1 for s in steps if s.get("status") == "completed")
+                plan_progress = {"completed": completed, "total": len(steps)}
+        in_progress_d = sum(1 for t in delegated if t.get("status") == "in_progress")
+        completed_d = sum(1 for t in delegated if t.get("status") in ("accepted", "completed"))
+        delegated_summary = {
+            "in_progress": in_progress_d,
+            "completed": completed_d,
+            "total": len(delegated),
+        }
+        external_tools = list(getattr(n, "external_tools", []) or [])
+
         entry = {
             "id": n.id,
             "role_title": n.role_title,
@@ -1353,6 +1387,10 @@ async def get_org_stats(request: Request, org_id: str):
             "pending_messages": node_pending,
             "idle_seconds": round(idle_secs) if idle_secs is not None else None,
             "current_task": getattr(n, "_current_task_desc", None),
+            "current_task_title": current_task_title,
+            "plan_progress": plan_progress,
+            "delegated_summary": delegated_summary,
+            "external_tools": external_tools,
             "is_clone": n.is_clone,
             "frozen": n.frozen_by is not None,
         }
@@ -1566,6 +1604,41 @@ async def create_task(request: Request, org_id: str, project_id: str):
     return result.to_dict()
 
 
+@router.post("/{org_id}/projects/{project_id}/tasks/{task_id}/dispatch")
+async def dispatch_task(request: Request, org_id: str, project_id: str, task_id: str):
+    """Dispatch a user-created task to the organization for execution."""
+    store = _get_project_store(request, org_id)
+    task_data, proj_data = store.get_task(task_id)
+    if not task_data:
+        raise HTTPException(404, "Task not found")
+    if task_data.project_id != project_id:
+        raise HTTPException(404, "Task not found in this project")
+
+    runtime = _get_runtime(request)
+    org = runtime.get_org(org_id)
+    if not org:
+        raise HTTPException(404, "Organization not found or not running")
+
+    prompt = (
+        f"请执行以下项目任务:\n"
+        f"任务ID: {task_data.id}\n"
+        f"标题: {task_data.title}\n"
+        f"描述: {task_data.description}"
+    )
+
+    store.update_task(project_id, task_id, {"status": "in_progress"})
+
+    chain_id = f"dispatch:{task_id}:{uuid.uuid4().hex[:8]}"
+    store.update_task(project_id, task_id, {"chain_id": chain_id})
+
+    import asyncio
+    asyncio.ensure_future(
+        to_engine(runtime.send_command(org_id, None, prompt, chain_id=chain_id))
+    )
+
+    return {"ok": True, "task_id": task_id, "chain_id": chain_id, "dispatched": True}
+
+
 @router.put("/{org_id}/projects/{project_id}/tasks/{task_id}")
 async def update_task(request: Request, org_id: str, project_id: str, task_id: str):
     from openakita.orgs.models import TaskStatus
@@ -1602,7 +1675,114 @@ async def list_all_tasks(request: Request, org_id: str):
     status = request.query_params.get("status")
     assignee = request.query_params.get("assignee")
     chain_id = request.query_params.get("chain_id")
-    return store.all_tasks(status=status, assignee=assignee, chain_id=chain_id)
+    parent_task_id = request.query_params.get("parent_task_id")
+    root_only = request.query_params.get("root_only", "").lower() == "true"
+    project_id = request.query_params.get("project_id")
+    return store.all_tasks(
+        status=status,
+        assignee=assignee,
+        chain_id=chain_id,
+        parent_task_id=parent_task_id,
+        root_only=root_only,
+        project_id=project_id,
+    )
+
+
+@router.get("/{org_id}/tasks/{task_id}")
+async def get_task_detail(request: Request, org_id: str, task_id: str):
+    """Get single task with full details including subtasks, plan, timeline."""
+    store = _get_project_store(request, org_id)
+    task_data, _ = store.get_task(task_id)
+    if not task_data:
+        raise HTTPException(404, "Task not found")
+    result = task_data.to_dict()
+    result["subtasks"] = [t.to_dict() for t in store.get_subtasks(task_id)]
+    result["ancestors"] = [t.to_dict() for t in store.get_ancestors(task_id)]
+    return result
+
+
+@router.get("/{org_id}/tasks/{task_id}/tree")
+async def get_task_tree(request: Request, org_id: str, task_id: str):
+    """Get recursive subtask tree."""
+    store = _get_project_store(request, org_id)
+    tree = store.get_task_tree(task_id)
+    if not tree:
+        raise HTTPException(404, "Task not found")
+    return tree
+
+
+@router.get("/{org_id}/tasks/{task_id}/timeline")
+async def get_task_timeline(request: Request, org_id: str, task_id: str):
+    """Get task execution timeline from execution_log + events."""
+    store = _get_project_store(request, org_id)
+    task_data, _ = store.get_task(task_id)
+    if not task_data:
+        raise HTTPException(404, "Task not found")
+    timeline: list[dict] = []
+    for entry in task_data.execution_log or []:
+        e = entry if isinstance(entry, dict) else {}
+        timeline.append({
+            "ts": e.get("at", e.get("ts", "")),
+            "event": e.get("event", "execution"),
+            "actor": e.get("by", e.get("actor", "")),
+            "detail": e.get("entry", e.get("detail", "")),
+        })
+    runtime = _get_runtime(request)
+    event_store = runtime.get_event_store(org_id)
+    if event_store:
+        chain_id = task_data.chain_id
+        events = event_store.query(
+            chain_id=chain_id,
+            task_id=task_id if not chain_id else None,
+            limit=100,
+        )
+        for ev in events:
+            timeline.append({
+                "ts": ev.get("timestamp", ""),
+                "event": ev.get("event_type", ""),
+                "actor": ev.get("actor", ""),
+                "detail": str(ev.get("data", "")),
+            })
+    timeline.sort(key=lambda x: x.get("ts", ""))
+    return {"task_id": task_id, "timeline": timeline}
+
+
+@router.get("/{org_id}/nodes/{node_id}/tasks")
+async def get_node_tasks(request: Request, org_id: str, node_id: str):
+    """Get all tasks for a node (assigned + delegated)."""
+    mgr = _get_manager(request)
+    org = mgr.get(org_id)
+    if org is None:
+        raise HTTPException(404, "Organization not found")
+    if org.get_node(node_id) is None:
+        raise HTTPException(404, f"Node not found: {node_id}")
+    store = _get_project_store(request, org_id)
+    assigned = store.all_tasks(assignee=node_id)
+    delegated = store.all_tasks(delegated_by=node_id)
+    return {"assigned": assigned, "delegated": delegated}
+
+
+@router.get("/{org_id}/nodes/{node_id}/active-plan")
+async def get_node_active_plan(request: Request, org_id: str, node_id: str):
+    """Get the active plan for a node's current task."""
+    mgr = _get_manager(request)
+    org = mgr.get(org_id)
+    if org is None:
+        raise HTTPException(404, "Organization not found")
+    if org.get_node(node_id) is None:
+        raise HTTPException(404, f"Node not found: {node_id}")
+    store = _get_project_store(request, org_id)
+    tasks = store.all_tasks(assignee=node_id)
+    active = [t for t in tasks if t.get("status") == "in_progress" and t.get("plan_steps")]
+    if not active:
+        return {"plan": None}
+    task = active[0]
+    return {
+        "task_id": task.get("id"),
+        "title": task.get("title"),
+        "plan_steps": task.get("plan_steps", []),
+        "progress_pct": task.get("progress_pct", 0),
+    }
 
 
 # =====================================================================

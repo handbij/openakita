@@ -18,8 +18,8 @@ def scaler(mock_runtime, persisted_org) -> OrgScaler:
 
 
 class TestRequestClone:
-    def test_creates_pending_request(self, scaler: OrgScaler, persisted_org):
-        req = scaler.request_clone(
+    async def test_creates_pending_request(self, scaler: OrgScaler, persisted_org):
+        req = await scaler.request_clone(
             persisted_org.id, "node_cto", "node_dev", reason="工作量过大",
         )
         assert req.request_type == "clone"
@@ -29,9 +29,9 @@ class TestRequestClone:
         pending = scaler.get_pending_requests(persisted_org.id)
         assert len(pending) == 1
 
-    def test_clone_emits_event(self, scaler: OrgScaler, persisted_org, mock_runtime):
+    async def test_clone_emits_event(self, scaler: OrgScaler, persisted_org, mock_runtime):
         es = mock_runtime.get_event_store()
-        scaler.request_clone(persisted_org.id, "node_cto", "node_dev", reason="人手不足")
+        await scaler.request_clone(persisted_org.id, "node_cto", "node_dev", reason="人手不足")
         events = es.query(event_type="scaling_requested")
         assert len(events) >= 1
 
@@ -49,10 +49,10 @@ class TestRequestRecruit:
 
 
 class TestApproveReject:
-    def test_approve_clone(self, scaler: OrgScaler, persisted_org, mock_runtime):
-        mock_runtime._save_org = MagicMock()
-        req = scaler.request_clone(persisted_org.id, "node_cto", "node_dev", reason="忙")
-        result = scaler.approve_request(persisted_org.id, req.id, "admin")
+    async def test_approve_clone(self, scaler: OrgScaler, persisted_org, mock_runtime):
+        mock_runtime._save_org = AsyncMock()
+        req = await scaler.request_clone(persisted_org.id, "node_cto", "node_dev", reason="忙")
+        result = await scaler.approve_request(persisted_org.id, req.id, "admin")
         assert result is not None
         assert result.status == "approved"
         assert result.result_node_id is not None
@@ -61,25 +61,25 @@ class TestApproveReject:
         pending_only = [r for r in all_reqs if r.status == "pending"]
         assert len(pending_only) == 0
 
-    def test_reject_request(self, scaler: OrgScaler, persisted_org):
-        req = scaler.request_clone(persisted_org.id, "node_cto", "node_dev", reason="忙")
+    async def test_reject_request(self, scaler: OrgScaler, persisted_org):
+        req = await scaler.request_clone(persisted_org.id, "node_cto", "node_dev", reason="忙")
         result = scaler.reject_request(persisted_org.id, req.id, "admin", reason="不需要")
         assert result is not None
         assert result.status == "rejected"
 
-    def test_approve_nonexistent_raises(self, scaler: OrgScaler, persisted_org):
+    async def test_approve_nonexistent_raises(self, scaler: OrgScaler, persisted_org):
         with pytest.raises(ValueError, match="not found"):
-            scaler.approve_request(persisted_org.id, "fake_id", "admin")
+            await scaler.approve_request(persisted_org.id, "fake_id", "admin")
 
 
 class TestDismiss:
-    def test_dismiss_ephemeral(self, scaler: OrgScaler, persisted_org, mock_runtime):
+    async def test_dismiss_ephemeral(self, scaler: OrgScaler, persisted_org, mock_runtime):
         persisted_org.nodes[2].ephemeral = True
-        result = scaler.dismiss_node(persisted_org.id, persisted_org.nodes[2].id, by="admin")
+        result = await scaler.dismiss_node(persisted_org.id, persisted_org.nodes[2].id, by="admin")
         assert result is True
 
-    def test_dismiss_non_ephemeral_returns_false(self, scaler: OrgScaler, persisted_org, mock_runtime):
-        result = scaler.dismiss_node(persisted_org.id, persisted_org.nodes[2].id, by="admin")
+    async def test_dismiss_non_ephemeral_returns_false(self, scaler: OrgScaler, persisted_org, mock_runtime):
+        result = await scaler.dismiss_node(persisted_org.id, persisted_org.nodes[2].id, by="admin")
         assert result is False
 
 
@@ -87,8 +87,8 @@ class TestGetPendingRequests:
     def test_empty_org(self, scaler: OrgScaler):
         assert scaler.get_pending_requests("nonexistent") == []
 
-    def test_after_multiple_requests(self, scaler: OrgScaler, persisted_org):
-        scaler.request_clone(persisted_org.id, "node_cto", "node_dev", reason="忙")
+    async def test_after_multiple_requests(self, scaler: OrgScaler, persisted_org):
+        await scaler.request_clone(persisted_org.id, "node_cto", "node_dev", reason="忙")
         scaler.request_recruit(
             persisted_org.id, "node_ceo",
             role_title="安全", role_goal="审计", department="技术部",

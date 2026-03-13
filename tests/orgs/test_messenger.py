@@ -37,13 +37,20 @@ class TestNodeMailbox:
         got = await mb.get(timeout=0.1)
         assert got is None
 
-    async def test_pause_drops_messages(self):
+    async def test_pause_buffers_messages(self):
         mb = NodeMailbox("n1")
         mb.pause()
         assert mb.is_paused is True
-        msg = OrgMessage(from_node="a", to_node="n1", content="dropped")
+        msg = OrgMessage(from_node="a", to_node="n1", content="buffered")
         await mb.put(msg)
         assert mb.pending_count == 0
+        assert mb.frozen_buffer_count == 1
+        mb.resume()
+        assert mb.frozen_buffer_count == 0
+        assert mb.pending_count == 1
+        got = await mb.get(timeout=1.0)
+        assert got is not None
+        assert got.content == "buffered"
 
     async def test_resume(self):
         mb = NodeMailbox("n1")

@@ -9,7 +9,6 @@ OrgRuntime — 组织运行时引擎
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from collections import OrderedDict
@@ -18,7 +17,7 @@ from typing import Any, TYPE_CHECKING
 
 from .blackboard import OrgBlackboard
 from .event_store import OrgEventStore
-from .identity import OrgIdentity, ResolvedIdentity
+from .identity import OrgIdentity
 from .messenger import OrgMessenger
 from .models import (
     MsgType,
@@ -94,11 +93,15 @@ class OrgRuntime:
 
         self._agent_cache: OrderedDict[str, _CachedAgent] = OrderedDict()
 
+        self._watchdog_tasks: dict[str, asyncio.Task] = {}
+        self._node_busy_since: dict[str, float] = {}
+
         self._running_tasks: dict[str, dict[str, asyncio.Task]] = {}
 
         self._active_orgs: dict[str, Organization] = {}
 
         self._cascade_depth: dict[str, int] = {}
+        self._node_current_chain: dict[str, str] = {}  # org_id:node_id -> chain_id
         self.max_cascade_depth: int = 5
         self.max_concurrent_per_node: int = 2
         self._idle_tasks: dict[str, asyncio.Task] = {}
@@ -106,6 +109,8 @@ class OrgRuntime:
         # 组织级并发控制：限制每个组织同时激活的节点数
         self.max_concurrent_nodes_per_org: int = 5
         self._org_semaphores: dict[str, asyncio.Semaphore] = {}
+
+        self._save_locks: dict[str, asyncio.Lock] = {}
 
         self._started = False
 
@@ -225,9 +230,8 @@ class OrgRuntime:
 
         policies = self.get_policies(org_id)
         if policies:
-            tpl_data = None
             try:
-                tpl_data = getattr(org, "_source_template", None)
+                getattr(org, "_source_template", None)
             except Exception:
                 pass
             existing = policies.list_policies()
@@ -239,10 +243,16 @@ class OrgRuntime:
             "org_id": org_id, "status": "active"
         })
 
-        if org.core_business and org.core_business.strip():
-            asyncio.ensure_future(self._auto_kickoff(org))
+        mode = getattr(org, "operation_mode", "command") or "command"
+        if mode == "autonomous":
+            if org.core_business and org.core_business.strip():
+                asyncio.ensure_future(self._auto_kickoff(org))
+            self._idle_tasks[org_id] = asyncio.ensure_future(self._idle_probe_loop(org_id))
+        else:
+            self._idle_tasks[org_id] = asyncio.ensure_future(self._health_check_loop(org_id))
 
-        self._idle_tasks[org_id] = asyncio.ensure_future(self._idle_probe_loop(org_id))
+        if getattr(org, "watchdog_enabled", False):
+            self._watchdog_tasks[org_id] = asyncio.ensure_future(self._watchdog_loop(org_id))
 
         return org
 
@@ -261,6 +271,14 @@ class OrgRuntime:
         if idle_task and not idle_task.done():
             idle_task.cancel()
 
+        watchdog_task = self._watchdog_tasks.pop(org_id, None)
+        if watchdog_task and not watchdog_task.done():
+            watchdog_task.cancel()
+            try:
+                await watchdog_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
         org_tasks = self._running_tasks.pop(org_id, {})
         for node_id, task in org_tasks.items():
             if not task.done():
@@ -278,7 +296,7 @@ class OrgRuntime:
         org.status = OrgStatus.DORMANT
         org.updated_at = _now_iso()
         self._manager.update(org_id, {"status": org.status.value})
-        self._save_org(org)
+        await self._save_org(org)
         await self._deactivate_org(org_id)
 
         self.get_event_store(org_id).emit("org_stopped", "system")
@@ -378,7 +396,12 @@ class OrgRuntime:
     # ------------------------------------------------------------------
 
     async def send_command(
-        self, org_id: str, target_node_id: str | None, content: str
+        self,
+        org_id: str,
+        target_node_id: str | None,
+        content: str,
+        *,
+        chain_id: str | None = None,
     ) -> dict:
         """Send a user command to an organization node."""
         org = self._active_orgs.get(org_id)
@@ -414,7 +437,9 @@ class OrgRuntime:
         else:
             tagged_content = content
 
-        result = await self._activate_and_run(org, target, tagged_content)
+        result = await self._activate_and_run(org, target, tagged_content, chain_id=chain_id)
+        if chain_id and isinstance(result, dict):
+            result["chain_id"] = chain_id
         return result
 
     async def _auto_kickoff(self, org: Organization) -> None:
@@ -458,8 +483,21 @@ class OrgRuntime:
     # Node activation
     # ------------------------------------------------------------------
 
+    def get_current_chain_id(self, org_id: str, node_id: str) -> str | None:
+        """Get the current task chain_id for a node (set when processing a message)."""
+        return self._node_current_chain.get(f"{org_id}:{node_id}")
+
+    def set_current_chain_id(self, org_id: str, node_id: str, chain_id: str | None) -> None:
+        """Set the current task chain_id for a node."""
+        key = f"{org_id}:{node_id}"
+        if chain_id:
+            self._node_current_chain[key] = chain_id
+        else:
+            self._node_current_chain.pop(key, None)
+
     async def _activate_and_run(
-        self, org: Organization, node: OrgNode, prompt: str
+        self, org: Organization, node: OrgNode, prompt: str,
+        chain_id: str | None = None,
     ) -> dict:
         """Activate a node agent and run a task (with org-level concurrency limit)."""
         if node.status == NodeStatus.FROZEN:
@@ -469,10 +507,11 @@ class OrgRuntime:
 
         sem = self._get_org_semaphore(org.id)
         async with sem:
-            return await self._activate_and_run_inner(org, node, prompt)
+            return await self._activate_and_run_inner(org, node, prompt, chain_id)
 
     async def _activate_and_run_inner(
-        self, org: Organization, node: OrgNode, prompt: str
+        self, org: Organization, node: OrgNode, prompt: str,
+        chain_id: str | None = None,
     ) -> dict:
         """_activate_and_run 的内部实现（已在 org semaphore 保护下）。"""
         if node.status == NodeStatus.FROZEN:
@@ -488,8 +527,12 @@ class OrgRuntime:
 
         agent = await self._get_or_create_agent(org, node)
 
+        self.set_current_chain_id(org.id, node.id, chain_id)
+        if hasattr(agent, "_org_context"):
+            agent._org_context["current_chain_id"] = chain_id or ""
+
         self._set_node_status(org, node, NodeStatus.BUSY, "task_started")
-        self._save_org(org)
+        await self._save_org(org)
 
         self.get_event_store(org.id).emit(
             "node_activated", node.id, {"prompt": prompt[:200]},
@@ -505,30 +548,13 @@ class OrgRuntime:
             if hasattr(agent, "brain") and hasattr(agent.brain, "drain_usage_accumulator"):
                 agent.brain.drain_usage_accumulator()
 
-            result_text, timed_out = await self._run_agent_task(
+            result_text = await self._run_agent_task(
                 agent, prompt, session_id, org, node,
             )
 
-            if timed_out:
-                self._set_node_status(org, node, NodeStatus.IDLE, "task_timeout")
-                self._save_org(org)
-                self.get_event_store(org.id).emit(
-                    "task_timeout", node.id,
-                    {"timeout_s": node.timeout_s if node.timeout_s > 0 else 300},
-                )
-                await self._broadcast_ws("org:node_status", {
-                    "org_id": org.id, "node_id": node.id, "status": "idle",
-                    "current_task": "",
-                })
-                await self._broadcast_ws("org:task_timeout", {
-                    "org_id": org.id, "node_id": node.id,
-                    "timeout_s": node.timeout_s if node.timeout_s > 0 else 300,
-                })
-                return {"node_id": node.id, "result": result_text, "timeout": True}
-
             self._set_node_status(org, node, NodeStatus.IDLE, "task_completed")
             org.total_tasks_completed += 1
-            self._save_org(org)
+            await self._save_org(org)
             self._heartbeat.record_activity(org.id)
 
             self.get_event_store(org.id).emit(
@@ -551,7 +577,7 @@ class OrgRuntime:
         except Exception as e:
             logger.error(f"[OrgRuntime] Task error on {node.id}: {e}")
             self._set_node_status(org, node, NodeStatus.ERROR, str(e)[:200])
-            self._save_org(org)
+            await self._save_org(org)
             self.get_event_store(org.id).emit(
                 "task_failed", node.id, {"error": str(e)[:200]},
             )
@@ -567,25 +593,14 @@ class OrgRuntime:
     async def _run_agent_task(
         self, agent: Any, prompt: str, session_id: str,
         org: Organization, node: OrgNode,
-    ) -> tuple[str, bool]:
-        """Run a single agent task with timeout.
-
-        Returns (response_text, timed_out).
-        """
-        default_timeout = 900 if node.level == 0 else 600
-        timeout = node.timeout_s if node.timeout_s > 0 else default_timeout
+    ) -> str:
+        """Run a single agent task (no timeout wrapper)."""
         try:
-            response = await asyncio.wait_for(
-                agent.chat(prompt, session_id=session_id),
-                timeout=timeout,
-            )
-            return (response or "", False)
-        except TimeoutError:
-            logger.warning(f"[OrgRuntime] Task timeout ({timeout}s) for {node.id}")
-            return (f"(任务超时，超过 {timeout} 秒限制)", True)
+            response = await agent.chat(prompt, session_id=session_id)
+            return response or ""
         except asyncio.CancelledError:
             logger.info(f"[OrgRuntime] Task cancelled for {node.id}")
-            return ("(任务已取消)", False)
+            return "(任务已取消)"
         except Exception as e:
             logger.error(f"[OrgRuntime] Agent task error: {e}")
             raise
@@ -666,7 +681,13 @@ class OrgRuntime:
 
         from .tool_categories import expand_tool_categories
 
-        _KEEP = frozenset({"get_tool_info"})
+        _KEEP = frozenset({
+            "get_tool_info",
+            "create_plan",
+            "update_plan_step",
+            "get_plan_status",
+            "complete_plan",
+        })
         allowed_external = expand_tool_categories(node.external_tools)
 
         if hasattr(agent, "tool_catalog"):
@@ -843,6 +864,10 @@ class OrgRuntime:
 
     async def _on_node_message(self, org_id: str, node_id: str, msg: OrgMessage) -> None:
         """Handle an incoming message for a node — activate and process."""
+        if hasattr(msg, 'status') and msg.status == "expired":
+            logger.debug(f"Skipping expired message {msg.id}")
+            return
+
         org = self._active_orgs.get(org_id) or self._manager.get(org_id)
         if not org:
             return
@@ -851,9 +876,10 @@ class OrgRuntime:
             return
 
         depth = msg.metadata.get("_cascade_depth", 0)
-        if depth >= self.max_cascade_depth:
+        max_depth = org.max_delegation_depth
+        if depth >= max_depth:
             logger.warning(
-                f"[OrgRuntime] Cascade depth limit ({self.max_cascade_depth}) "
+                f"[OrgRuntime] Cascade depth limit ({max_depth}) "
                 f"reached for {node_id}, queuing message instead of activating"
             )
             self.get_event_store(org_id).emit(
@@ -877,16 +903,18 @@ class OrgRuntime:
             if target_clone:
                 task_prompt = self._format_incoming_message(msg)
                 self._cascade_depth[f"{org_id}:{target_clone.id}"] = depth
-                await self._activate_and_run(org, target_clone, task_prompt)
+                chain_id = msg.metadata.get("task_chain_id") or None
+                await self._activate_and_run(org, target_clone, task_prompt, chain_id=chain_id)
                 return
 
             if node.auto_clone_enabled and pending >= node.auto_clone_threshold:
-                new_clone = self._scaler.maybe_auto_clone(org_id, node_id, pending)
+                new_clone = await self._scaler.maybe_auto_clone(org_id, node_id, pending)
                 if new_clone:
                     self._register_clone_in_messenger(org_id, new_clone)
                     task_prompt = self._format_incoming_message(msg)
                     self._cascade_depth[f"{org_id}:{new_clone.id}"] = depth
-                    await self._activate_and_run(org, new_clone, task_prompt)
+                    chain_id = msg.metadata.get("task_chain_id") or None
+                    await self._activate_and_run(org, new_clone, task_prompt, chain_id=chain_id)
                     return
 
             logger.info(
@@ -898,7 +926,8 @@ class OrgRuntime:
         self._cascade_depth[active_key] = depth
 
         task_prompt = self._format_incoming_message(msg)
-        await self._activate_and_run(org, node, task_prompt)
+        chain_id = msg.metadata.get("task_chain_id") or ""
+        await self._activate_and_run(org, node, task_prompt, chain_id=chain_id or None)
 
     def _try_route_to_clone(
         self, org: Organization, node: OrgNode, msg: OrgMessage, pending: int
@@ -925,6 +954,12 @@ class OrgRuntime:
 
         return None
 
+    def _make_message_handler(self, org_id: str, node_id: str) -> Any:
+        async def _handler(msg: OrgMessage, _nid=node_id, _oid=org_id):
+            task = asyncio.create_task(self._on_node_message(_oid, _nid, msg))
+            self._running_tasks.setdefault(_oid, {})[f"{_nid}:{msg.id}"] = task
+        return _handler
+
     def _register_clone_in_messenger(self, org_id: str, clone: OrgNode) -> None:
         """Register a newly created clone in the messenger system."""
         messenger = self.get_messenger(org_id)
@@ -933,11 +968,7 @@ class OrgRuntime:
         org = self._active_orgs.get(org_id)
         if org:
             messenger.update_org(org)
-
-        async def _handler(msg: OrgMessage, _nid=clone.id, _oid=org_id):
-            task = asyncio.create_task(self._on_node_message(_oid, _nid, msg))
-            self._running_tasks.setdefault(_oid, {})[f"{_nid}:{msg.id}"] = task
-        messenger.register_handler(clone.id, _handler)
+        messenger.register_node(clone.id, self._make_message_handler(org_id, clone.id))
 
     def _format_incoming_message(self, msg: OrgMessage) -> str:
         """Format an OrgMessage into a prompt for the receiving agent."""
@@ -1054,6 +1085,15 @@ class OrgRuntime:
         old_status = node.status
         if old_status == new_status:
             return
+        if node.status == NodeStatus.FROZEN and new_status != NodeStatus.FROZEN:
+            if reason != "unfreeze":
+                logger.debug(f"Skipping status change for frozen node {node.id}")
+                return
+        key = f"{org.id}:{node.id}"
+        if new_status == NodeStatus.BUSY:
+            self._node_busy_since[key] = time.monotonic()
+        elif old_status == NodeStatus.BUSY:
+            self._node_busy_since.pop(key, None)
         node.status = new_status
         self.get_event_store(org.id).emit(
             "node_status_change", node.id,
@@ -1120,10 +1160,21 @@ class OrgRuntime:
         keys_to_remove = [k for k in self._agent_cache if k.startswith(f"{org_id}:")]
         for k in keys_to_remove:
             self._agent_cache.pop(k, None)
+        for k in list(self._node_busy_since.keys()):
+            if k.startswith(f"{org_id}:"):
+                self._node_busy_since.pop(k, None)
 
-    def _save_org(self, org: Organization) -> None:
-        org.updated_at = _now_iso()
-        self._manager.update(org.id, org.to_dict())
+    def _get_save_lock(self, org_id: str) -> asyncio.Lock:
+        lock = self._save_locks.get(org_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._save_locks[org_id] = lock
+        return lock
+
+    async def _save_org(self, org: Organization) -> None:
+        async with self._get_save_lock(org.id):
+            org.updated_at = _now_iso()
+            self._manager.update(org.id, org.to_dict())
 
     def _save_state(self, org_id: str) -> None:
         org = self._active_orgs.get(org_id)
@@ -1156,7 +1207,7 @@ class OrgRuntime:
                 recovered_count += 1
 
         if recovered_count > 0:
-            self._save_org(org)
+            await self._save_org(org)
             logger.info(f"[OrgRuntime] Recovered {recovered_count} stale nodes for {org.name}")
 
     def _evict_expired_agents(self) -> None:
@@ -1230,6 +1281,141 @@ class OrgRuntime:
             await self._activate_and_run(org, parent, prompt)
         except Exception as e:
             logger.debug(f"[OrgRuntime] Post-task hook error: {e}")
+
+    async def _health_check_loop(self, org_id: str) -> None:
+        """Command mode: only check node health, recover ERROR nodes to IDLE.
+        No proactive work or idle probing."""
+        while True:
+            try:
+                await asyncio.sleep(60)
+                org = self.get_org(org_id)
+                if not org or org.status not in (OrgStatus.ACTIVE, OrgStatus.RUNNING):
+                    break
+
+                for node in org.nodes:
+                    if node.status == NodeStatus.ERROR:
+                        self._set_node_status(org, node, NodeStatus.IDLE, "health_check_recovery")
+                        self._agent_cache.pop(f"{org_id}:{node.id}", None)
+                await self._save_org(org)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.debug(f"[OrgRuntime] Health check error for {org_id}: {e}")
+                await asyncio.sleep(60)
+
+    async def _watchdog_notify_delegator(
+        self, org: Organization, node: OrgNode, reason: str, stuck_secs: int,
+    ) -> None:
+        """Notify the parent (delegator) node when watchdog recovers a stuck/error child."""
+        parent = org.get_parent(node.id)
+        if not parent:
+            return
+        messenger = self.get_messenger(org.id)
+        if not messenger:
+            return
+        reason_text = {
+            "stuck_busy": f"BUSY 状态无活跃度持续 {stuck_secs} 秒",
+            "error_not_recovering": "持续 ERROR 状态未恢复",
+        }.get(reason, reason)
+        msg = OrgMessage(
+            org_id=org.id,
+            from_node="system",
+            to_node=parent.id,
+            msg_type=MsgType.FEEDBACK,
+            content=(
+                f"[看门狗通知] 您的下属 {node.role_title}({node.id}) "
+                f"因[{reason_text}]被自动恢复。"
+                f"该节点已重置为空闲状态，之前的任务已被中断。"
+                f"如有未完成的委派任务，请重新分配或跟进。"
+            ),
+        )
+        await messenger.send(msg)
+
+    async def _watchdog_loop(self, org_id: str) -> None:
+        """Monitor all nodes for stuck BUSY, unrecovered ERROR, and silence in autonomous mode."""
+        while True:
+            try:
+                org = self.get_org(org_id)
+                interval = getattr(org, "watchdog_interval_s", 30) or 30
+                await asyncio.sleep(interval)
+
+                org = self.get_org(org_id)
+                if not org or org.status not in (OrgStatus.ACTIVE, OrgStatus.RUNNING):
+                    continue
+                if not getattr(org, "watchdog_enabled", False):
+                    break
+
+                stuck_threshold = getattr(org, "watchdog_stuck_threshold_s", 1800) or 1800
+                silence_threshold = getattr(org, "watchdog_silence_threshold_s", 1800) or 1800
+                mode = getattr(org, "operation_mode", "command") or "command"
+                now = time.monotonic()
+
+                for node in org.nodes:
+                    if node.is_clone:
+                        continue
+                    key = f"{org_id}:{node.id}"
+
+                    if node.status == NodeStatus.BUSY:
+                        busy_since = self._node_busy_since.get(key, now)
+                        if (now - busy_since) >= stuck_threshold:
+                            org_tasks = self._running_tasks.get(org_id, {})
+                            for task_key, task in list(org_tasks.items()):
+                                if task_key.startswith(f"{node.id}:") and not task.done():
+                                    task.cancel()
+                                    try:
+                                        await task
+                                    except (asyncio.CancelledError, Exception):
+                                        pass
+                                    org_tasks.pop(task_key, None)
+                            self._agent_cache.pop(key, None)
+                            self._set_node_status(org, node, NodeStatus.IDLE, "watchdog_recovery")
+                            stuck_secs = int(now - busy_since)
+                            self.get_event_store(org_id).emit(
+                                "watchdog_recovery", node.id,
+                                {"reason": "stuck_busy", "stuck_secs": stuck_secs},
+                            )
+                            await self._save_org(org)
+                            await self._watchdog_notify_delegator(
+                                org, node, "stuck_busy", stuck_secs,
+                            )
+                            logger.warning(
+                                f"[OrgRuntime] Watchdog recovered stuck node {node.id} "
+                                f"(BUSY for {stuck_secs}s)"
+                            )
+
+                    elif node.status == NodeStatus.ERROR:
+                        self._set_node_status(org, node, NodeStatus.IDLE, "watchdog_recovery")
+                        self._agent_cache.pop(key, None)
+                        self.get_event_store(org_id).emit(
+                            "watchdog_recovery", node.id, {"reason": "error_not_recovering"},
+                        )
+                        await self._save_org(org)
+                        await self._watchdog_notify_delegator(
+                            org, node, "error_not_recovering", 0,
+                        )
+
+                if mode == "autonomous":
+                    last_activity = self._heartbeat._last_activity.get(org_id, 0)
+                    if last_activity > 0 and (now - last_activity) >= silence_threshold:
+                        roots = org.get_root_nodes()
+                        if roots:
+                            root = roots[0]
+                            if root.status == NodeStatus.IDLE:
+                                prompt = (
+                                    "[看门狗激活] 组织已静默较长时间。请查看黑板和当前进展，"
+                                    "决定是否需要推进工作或分配新任务。"
+                                )
+                                self._heartbeat.record_activity(org_id)
+                                asyncio.ensure_future(
+                                    self._activate_and_run(org, root, prompt)
+                                )
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.debug(f"[OrgRuntime] Watchdog error for {org_id}: {e}")
+                await asyncio.sleep(30)
 
     async def _idle_probe_loop(self, org_id: str) -> None:
         """Periodically check for idle nodes and prompt them to seek work.
@@ -1322,7 +1508,7 @@ class OrgRuntime:
     def _register_org_tool_handler(
         self, agent: Any, org_id: str, node_id: str
     ) -> None:
-        """Patch agent's ToolExecutor to intercept org_* tool calls."""
+        """Patch agent's ToolExecutor to intercept org_* tool calls and bridge plan tools."""
         if not hasattr(agent, "reasoning_engine"):
             return
         engine = agent.reasoning_engine
@@ -1336,6 +1522,13 @@ class OrgRuntime:
         async def _patched_execute(tool_name: str, tool_input: dict, **kwargs) -> str:
             if tool_name.startswith("org_"):
                 return await tool_handler.handle(tool_name, tool_input, org_id, node_id)
-            return await original_execute(tool_name, tool_input, **kwargs)
+            result = await original_execute(tool_name, tool_input, **kwargs)
+            if tool_name in ("create_plan", "update_plan_step", "complete_plan"):
+                chain_id = getattr(agent, "_org_context", {}).get("current_chain_id") or ""
+                if chain_id:
+                    tool_handler._bridge_plan_to_task(
+                        org_id, node_id, tool_name, tool_input, result, chain_id=chain_id
+                    )
+            return result
 
         executor.execute_tool = _patched_execute

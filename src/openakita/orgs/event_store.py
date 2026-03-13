@@ -12,7 +12,6 @@ import logging
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
 
 from .models import _new_id
 
@@ -75,6 +74,8 @@ class OrgEventStore:
         since: str | None = None,
         until: str | None = None,
         limit: int = 100,
+        chain_id: str | None = None,
+        task_id: str | None = None,
     ) -> list[dict]:
         """Query events with optional filters. Returns newest events first."""
         results: list[dict] = []
@@ -108,6 +109,11 @@ class OrgEventStore:
                     if event_type and evt.get("event_type") != event_type:
                         continue
                     if actor and evt.get("actor") != actor:
+                        continue
+                    data = evt.get("data") or {}
+                    if chain_id is not None and data.get("chain_id") != chain_id:
+                        continue
+                    if task_id is not None and data.get("task_id") != task_id:
                         continue
                     results.append(evt)
                     if len(results) >= limit:
@@ -164,13 +170,13 @@ class OrgEventStore:
         log_file = self._logs_dir / f"audit_{now.strftime('%Y%m%d')}.md"
 
         lines = [
-            f"# 审计日志",
-            f"",
+            "# 审计日志",
+            "",
             f"**组织**: {self._org_id}",
             f"**生成时间**: {now.isoformat()}",
             f"**覆盖范围**: 最近 {days} 天",
             f"**事件数量**: {len(events)}",
-            f"",
+            "",
             "| 时间 | 事件 | 执行者 | 详情 |",
             "|------|------|--------|------|",
         ]
@@ -243,19 +249,19 @@ class OrgEventStore:
         report_path = self._reports_dir / f"report_{now.strftime('%Y%m%d')}.md"
 
         lines = [
-            f"# 组织运行报告",
-            f"",
+            "# 组织运行报告",
+            "",
             f"**组织**: {self._org_id}",
             f"**生成时间**: {now.isoformat()}",
             f"**统计周期**: 最近 {days} 天",
-            f"",
-            f"## 概览",
+            "",
+            "## 概览",
             f"- 总事件数: {summary['total_events']}",
             f"- 完成任务: {summary['tasks_completed']}",
             f"- 失败任务: {summary['tasks_failed']}",
             f"- 消息总量: {summary['messages_sent']}",
-            f"",
-            f"## 事件类型分布",
+            "",
+            "## 事件类型分布",
         ]
 
         for etype, count in summary["event_type_distribution"].items():

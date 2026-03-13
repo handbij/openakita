@@ -157,6 +157,10 @@ class TestSendCommand:
 
             mock_agent = AsyncMock()
             mock_agent.chat = AsyncMock(return_value="收到命令")
+            mock_agent.brain = MagicMock()
+            mock_agent.brain.drain_usage_accumulator = MagicMock(
+                return_value={"calls": 0, "tokens_in": 0, "tokens_out": 0}
+            )
 
             with patch.object(runtime, "_get_or_create_agent", new_callable=AsyncMock, return_value=mock_agent):
                 with patch.object(runtime, "_broadcast_ws", new_callable=AsyncMock):
@@ -178,6 +182,7 @@ class TestAutoKickoff:
         try:
             org_data = make_org(name="自动启动测试").to_dict()
             org_data["core_business"] = "做一个电商平台"
+            org_data["operation_mode"] = "autonomous"
             org = org_manager.create(org_data)
 
             with patch.object(runtime, "_auto_kickoff", new_callable=AsyncMock) as mock_kickoff:
@@ -198,6 +203,7 @@ class TestAutoKickoff:
         try:
             org_data = make_org(name="无业务测试").to_dict()
             org_data["core_business"] = ""
+            org_data["operation_mode"] = "autonomous"
             org = org_manager.create(org_data)
 
             with patch.object(runtime, "_auto_kickoff", new_callable=AsyncMock) as mock_kickoff:
@@ -215,6 +221,7 @@ class TestAutoKickoff:
         try:
             org_data = make_org(name="主编团队").to_dict()
             org_data["core_business"] = "内容运营"
+            org_data["operation_mode"] = "autonomous"
             org_data["nodes"][0]["role_title"] = "主编"
             org = org_manager.create(org_data)
 
@@ -245,6 +252,7 @@ class TestAutoKickoff:
             from openakita.orgs.models import UserPersona
             org_data = make_org(name="投资项目").to_dict()
             org_data["core_business"] = "AI 研究"
+            org_data["operation_mode"] = "autonomous"
             org_data["user_persona"] = {"title": "投资人", "display_name": "张总", "description": ""}
             org = org_manager.create(org_data)
 

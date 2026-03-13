@@ -99,9 +99,10 @@ class TestToolFilteringE2E:
 
         agent = await runtime._create_node_agent(org, org.get_node("boss"))
 
+        _PLAN_TOOLS = {"create_plan", "update_plan_step", "get_plan_status", "complete_plan"}
         tool_names = {t["name"] for t in agent._tools}
         for name in tool_names:
-            assert name.startswith("org_") or name == "get_tool_info", \
+            assert name.startswith("org_") or name == "get_tool_info" or name in _PLAN_TOOLS, \
                 f"Unexpected tool '{name}' on node without external_tools"
 
     async def test_node_with_research_tools_retains_web_search(self, runtime_env):
@@ -118,11 +119,13 @@ class TestToolFilteringE2E:
         tool_names = {t["name"] for t in agent._tools}
         assert "web_search" in tool_names or "news_search" in tool_names, \
             f"research tools missing, got: {tool_names}"
+        _PLAN_TOOLS = {"create_plan", "update_plan_step", "get_plan_status", "complete_plan"}
         for name in tool_names:
             assert (
                 name.startswith("org_")
                 or name == "get_tool_info"
                 or name in expand_tool_categories(["research"])
+                or name in _PLAN_TOOLS
             ), f"Unexpected tool '{name}'"
 
     async def test_node_with_multiple_categories(self, runtime_env):
@@ -191,8 +194,8 @@ class TestPromptInjectionE2E:
         agent = await runtime._create_node_agent(org, org.get_node("n"))
 
         prompt = agent._context.system if hasattr(agent, "_context") else ""
-        assert "只使用上述 org_* 工具" in prompt
-        assert "外部执行工具" not in prompt
+        assert "org_" in prompt
+        assert "create_plan" in prompt
 
     async def test_prompt_mentions_tool_request(self, runtime_env):
         """Both prompt variants should mention org_request_tools."""
@@ -471,11 +474,11 @@ class TestCloneInheritsExternalTools:
 
         from openakita.orgs.scaler import OrgScaler
 
-        runtime._save_org = lambda o: manager.update(o.id, o.to_dict())
+        runtime._save_org = AsyncMock(side_effect=lambda o: manager.update(o.id, o.to_dict()))
         scaler = OrgScaler(runtime)
 
-        req = scaler.request_clone(org.id, "boss", "dev", reason="负载测试")
-        result = scaler.approve_request(org.id, req.id, "admin")
+        req = await scaler.request_clone(org.id, "boss", "dev", reason="负载测试")
+        result = await scaler.approve_request(org.id, req.id, "admin")
         assert result.status == "approved"
 
         updated_org = manager.get(org.id)

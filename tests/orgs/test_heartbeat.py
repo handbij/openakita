@@ -65,7 +65,7 @@ class TestTriggerHeartbeat:
         call_args = mock_runtime.send_command.call_args
         assert call_args[0][0] == persisted_org.id
         assert call_args[0][1] == "node_ceo"
-        assert "心跳检查" in call_args[0][2]
+        assert "健康检查" in call_args[0][2]
 
     async def test_heartbeat_prompt_contains_node_status(self, heartbeat: OrgHeartbeat, persisted_org, mock_runtime):
         mock_runtime.send_command = AsyncMock(return_value={"result": "ok"})
@@ -75,7 +75,7 @@ class TestTriggerHeartbeat:
         assert "CEO" in prompt
         assert "CTO" in prompt
         assert "状态=" in prompt
-        assert "心跳提示" in prompt
+        assert "健康检查" in prompt
 
     async def test_heartbeat_emits_events(self, heartbeat: OrgHeartbeat, persisted_org, mock_runtime):
         mock_runtime.send_command = AsyncMock(return_value={"result": "ok"})
@@ -92,6 +92,7 @@ class TestHeartbeatWithCoreBusiness:
     """Tests for heartbeat behavior when core_business is set (v1.3)."""
 
     async def test_heartbeat_uses_review_mode(self, heartbeat: OrgHeartbeat, persisted_org, mock_runtime):
+        persisted_org.operation_mode = "autonomous"
         persisted_org.core_business = "做一个 AI 产品，当前阶段目标：完成 MVP"
         mock_runtime.send_command = AsyncMock(return_value={"result": "复盘完成"})
         result = await heartbeat.trigger_heartbeat(persisted_org.id)
@@ -112,6 +113,7 @@ class TestHeartbeatWithCoreBusiness:
         assert "回顾" in prompt or "查看黑板" in prompt
 
     async def test_heartbeat_without_core_business_uses_check_mode(self, heartbeat: OrgHeartbeat, persisted_org, mock_runtime):
+        persisted_org.operation_mode = "autonomous"
         persisted_org.core_business = ""
         mock_runtime.send_command = AsyncMock(return_value={"result": "ok"})
         await heartbeat.trigger_heartbeat(persisted_org.id)

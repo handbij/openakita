@@ -159,7 +159,7 @@ def tool_handler_with_org(org_with_tools, tmp_path):
 
     rt.get_event_store = MagicMock(return_value=es)
     rt.get_messenger = MagicMock(return_value=messenger)
-    rt._save_org = MagicMock()
+    rt._save_org = AsyncMock()
     rt.evict_node_agent = MagicMock()
 
     handler = OrgToolHandler(rt)

@@ -13,6 +13,7 @@ import {
   AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Loader2, RefreshCw, Trash2, Pencil, Check, X, Search, Brain } from "lucide-react";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 
 type MemoryItem = {
   id: string;
@@ -478,50 +479,44 @@ export function MemoryView({ serviceRunning, apiBaseUrl = "" }: Props) {
       ) : (
         /* ── Desktop: table layout ── */
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: "var(--bg)", borderBottom: "1px solid var(--line)" }}>
-                <th style={{ padding: "8px 12px", textAlign: "left", width: 36 }}>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[36px] px-3">
                   <Checkbox
                     checked={selected.size === memories.length && memories.length > 0}
                     onCheckedChange={selectAll}
                   />
-                </th>
-                <th style={{ padding: "8px 12px", textAlign: "left", width: 80 }}>类型</th>
-                <th style={{ padding: "8px 12px", textAlign: "left" }}>内容</th>
-                <th style={{ padding: "8px 12px", textAlign: "center", width: 60 }}>分数</th>
-                <th style={{ padding: "8px 12px", textAlign: "center", width: 90 }}>创建时间</th>
-                <th style={{ padding: "8px 12px", textAlign: "center", width: 100 }}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
+                </TableHead>
+                <TableHead className="w-[80px]">类型</TableHead>
+                <TableHead>内容</TableHead>
+                <TableHead className="w-[60px] text-center">分数</TableHead>
+                <TableHead className="w-[90px] text-center">创建时间</TableHead>
+                <TableHead className="w-[100px] text-center">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {loading ? (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: "center", padding: 40, color: "var(--muted)" }}>
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
                     <Loader2 size={20} className="inline animate-spin mr-2" />加载中...
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : memories.length === 0 ? (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: "center", padding: 40, color: "var(--muted)" }}>
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
                     暂无记忆数据
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : memories.map(m => (
-                <tr
+                <TableRow
                   key={m.id}
-                  style={{
-                    borderBottom: "1px solid var(--line)",
-                    background: selected.has(m.id) ? "rgba(99,102,241,0.06)" : undefined,
-                    transition: "background 0.15s",
-                  }}
-                  onMouseEnter={e => { if (!selected.has(m.id)) (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.02)"; }}
-                  onMouseLeave={e => { if (!selected.has(m.id)) (e.currentTarget as HTMLElement).style.background = ""; }}
+                  className={selected.has(m.id) ? "bg-indigo-500/[0.06]" : ""}
                 >
-                  <td style={{ padding: "8px 12px" }}>
+                  <TableCell className="px-3">
                     <Checkbox checked={selected.has(m.id)} onCheckedChange={() => toggleSelect(m.id)} />
-                  </td>
-                  <td style={{ padding: "8px 12px" }}>
+                  </TableCell>
+                  <TableCell>
                     <span style={{
                       display: "inline-block", padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 500,
                       whiteSpace: "nowrap",
@@ -531,8 +526,8 @@ export function MemoryView({ serviceRunning, apiBaseUrl = "" }: Props) {
                     }}>
                       {TYPE_LABELS[m.type] || m.type}
                     </span>
-                  </td>
-                  <td style={{ padding: "8px 12px", maxWidth: 400 }}>
+                  </TableCell>
+                  <TableCell className="max-w-[400px]">
                     {editingId === m.id ? (
                       <div className="flex flex-col gap-1.5">
                         <Textarea
@@ -559,24 +554,20 @@ export function MemoryView({ serviceRunning, apiBaseUrl = "" }: Props) {
                       </div>
                     ) : (
                       <div>
-                        <div style={{ lineHeight: 1.5, wordBreak: "break-word", whiteSpace: "pre-wrap" }}>
+                        <div className="leading-relaxed break-words whitespace-pre-wrap">
                           {m.content}
                         </div>
                         {(m.subject || m.predicate) && (
-                          <div style={{ marginTop: 4, fontSize: 11, color: "var(--muted)" }}>
+                          <div className="mt-1 text-[11px] text-muted-foreground">
                             {m.subject && <span>主体: {m.subject}</span>}
                             {m.subject && m.predicate && <span> · </span>}
                             {m.predicate && <span>属性: {m.predicate}</span>}
                           </div>
                         )}
                         {m.tags && m.tags.length > 0 && (
-                          <div style={{ marginTop: 4, display: "flex", gap: 4, flexWrap: "wrap" }}>
+                          <div className="mt-1 flex gap-1 flex-wrap">
                             {m.tags.map(tag => (
-                              <span key={tag} style={{
-                                padding: "1px 6px", borderRadius: 8, fontSize: 10,
-                                background: "rgba(99,102,241,0.1)", color: "#6366f1",
-                                whiteSpace: "nowrap",
-                              }}>
+                              <span key={tag} className="px-1.5 py-px rounded-lg text-[10px] bg-indigo-500/10 text-indigo-500 whitespace-nowrap">
                                 {tag}
                               </span>
                             ))}
@@ -584,19 +575,18 @@ export function MemoryView({ serviceRunning, apiBaseUrl = "" }: Props) {
                         )}
                       </div>
                     )}
-                  </td>
-                  <td style={{ padding: "8px 12px", textAlign: "center" }}>
-                    <span style={{
-                      fontWeight: 600, fontSize: 12,
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <span className="font-semibold text-xs" style={{
                       color: m.importance_score >= 0.85 ? "#10b981" : m.importance_score >= 0.7 ? "#f59e0b" : "#6b7280",
                     }}>
                       {m.importance_score.toFixed(2)}
                     </span>
-                  </td>
-                  <td style={{ padding: "8px 12px", textAlign: "center", fontSize: 11, color: "var(--muted)" }}>
+                  </TableCell>
+                  <TableCell className="text-center text-[11px] text-muted-foreground">
                     {fmtDate(m.created_at)}
-                  </td>
-                  <td style={{ padding: "8px 12px", textAlign: "center" }}>
+                  </TableCell>
+                  <TableCell className="text-center">
                     <div className="flex gap-1 justify-center">
                       <Button variant="ghost" size="icon-sm" title="编辑" className="text-muted-foreground hover:text-foreground" onClick={() => startEdit(m)}>
                         <Pencil size={13} />
@@ -605,11 +595,11 @@ export function MemoryView({ serviceRunning, apiBaseUrl = "" }: Props) {
                         <Trash2 size={13} />
                       </Button>
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
       <AlertDialog open={!!confirmDialog} onOpenChange={open => { if (!open) setConfirmDialog(null); }}>

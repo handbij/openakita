@@ -16,7 +16,7 @@ export function Section({ title, subtitle, children, toggle, className }: {
           ) : (
             <span className="size-4 shrink-0" />
           )}
-          <span className="flex flex-col">
+          <span className="flex items-baseline gap-2">
             <span>{title}</span>
             {subtitle && <span className="text-xs font-normal text-muted-foreground">{subtitle}</span>}
           </span>

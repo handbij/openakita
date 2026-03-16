@@ -383,7 +383,9 @@ class Agent:
             _all_tools.extend(_DT)
         if settings.multi_agent_enabled:
             from ..tools.definitions.agent import AGENT_TOOLS
+            from ..tools.definitions.org_setup import ORG_SETUP_TOOLS
             _all_tools.extend(AGENT_TOOLS)
+            _all_tools.extend(ORG_SETUP_TOOLS)
         self.tool_catalog = ToolCatalog(_all_tools)
 
         # 定时任务调度器
@@ -455,8 +457,10 @@ class Agent:
         # Multi-agent tools (only when enabled)
         if settings.multi_agent_enabled:
             from ..tools.definitions.agent import AGENT_TOOLS
+            from ..tools.definitions.org_setup import ORG_SETUP_TOOLS
             self._tools.extend(AGENT_TOOLS)
-            logger.info(f"Multi-agent tools enabled ({len(AGENT_TOOLS)} tools)")
+            self._tools.extend(ORG_SETUP_TOOLS)
+            logger.info(f"Multi-agent tools enabled ({len(AGENT_TOOLS) + len(ORG_SETUP_TOOLS)} tools)")
 
         self._update_shell_tool_description()
 
@@ -1106,6 +1110,12 @@ class Agent:
                 "agent",
                 create_agent_tool_handler(self),
                 ["delegate_to_agent", "delegate_parallel", "spawn_agent", "create_agent"],
+            )
+            from ..tools.handlers.org_setup import create_handler as create_org_setup_handler
+            self.handler_registry.register(
+                "org_setup",
+                create_org_setup_handler(self),
+                ["setup_organization"],
             )
 
         logger.info(

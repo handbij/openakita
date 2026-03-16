@@ -3222,47 +3222,9 @@ export function OrgEditorView({
                   placeholder="如：技术总监、前端工程师、QA 负责人"
                   style={{ fontSize: 13 }}
                 />
-                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>
-                  岗位目标
-                  <span style={{ fontWeight: 400, marginLeft: 6 }}>— 这个岗位要达成什么</span>
+                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>Agent 来源
+                  <span style={{ fontWeight: 400, marginLeft: 6 }}>— 决定节点的专业能力</span>
                 </label>
-                <textarea
-                  className="input"
-                  value={selectedNode.role_goal}
-                  onChange={(e) => updateNodeData("role_goal", e.target.value)}
-                  rows={2}
-                  placeholder="如：负责整体技术架构设计，把控代码质量，推进技术选型和落地"
-                  style={{ fontSize: 13, resize: "vertical" }}
-                />
-                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>
-                  角色背景
-                  <span style={{ fontWeight: 400, marginLeft: 6 }}>— 专业经验和能力特长</span>
-                </label>
-                <textarea
-                  className="input"
-                  value={selectedNode.role_backstory}
-                  onChange={(e) => updateNodeData("role_backstory", e.target.value)}
-                  rows={3}
-                  placeholder="如：10年全栈开发经验，精通 Python/TypeScript，熟悉微服务架构，曾主导多个大型项目的技术选型"
-                  style={{ fontSize: 13, resize: "vertical" }}
-                />
-                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>部门</label>
-                <input
-                  className="input"
-                  value={selectedNode.department}
-                  onChange={(e) => updateNodeData("department", e.target.value)}
-                  style={{ fontSize: 13 }}
-                />
-                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>层级</label>
-                <input
-                  className="input"
-                  type="number"
-                  min={0}
-                  value={selectedNode.level}
-                  onChange={(e) => updateNodeData("level", parseInt(e.target.value) || 0)}
-                  style={{ fontSize: 13, width: 80 }}
-                />
-                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>Agent 来源</label>
                 <div style={{ display: "flex", gap: 6 }}>
                   <select
                     className="input"
@@ -3276,7 +3238,7 @@ export function OrgEditorView({
                 </div>
                 {selectedNode.agent_source.startsWith("ref:") && (
                   <>
-                    <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>选择 Agent</label>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", marginTop: -4 }}>选择 Agent</label>
                     <div style={{ position: "relative" }}>
                       <div
                         className="input"
@@ -3358,6 +3320,46 @@ export function OrgEditorView({
                     </div>
                   </>
                 )}
+                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>
+                  岗位目标
+                  <span style={{ fontWeight: 400, marginLeft: 6 }}>— 这个岗位要达成什么</span>
+                </label>
+                <textarea
+                  className="input"
+                  value={selectedNode.role_goal}
+                  onChange={(e) => updateNodeData("role_goal", e.target.value)}
+                  rows={2}
+                  placeholder="如：负责整体技术架构设计，把控代码质量，推进技术选型和落地"
+                  style={{ fontSize: 13, resize: "vertical" }}
+                />
+                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>
+                  角色背景
+                  <span style={{ fontWeight: 400, marginLeft: 6 }}>— 专业经验和能力特长</span>
+                </label>
+                <textarea
+                  className="input"
+                  value={selectedNode.role_backstory}
+                  onChange={(e) => updateNodeData("role_backstory", e.target.value)}
+                  rows={3}
+                  placeholder="如：10年全栈开发经验，精通 Python/TypeScript，熟悉微服务架构，曾主导多个大型项目的技术选型"
+                  style={{ fontSize: 13, resize: "vertical" }}
+                />
+                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>部门</label>
+                <input
+                  className="input"
+                  value={selectedNode.department}
+                  onChange={(e) => updateNodeData("department", e.target.value)}
+                  style={{ fontSize: 13 }}
+                />
+                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>层级</label>
+                <input
+                  className="input"
+                  type="number"
+                  min={0}
+                  value={selectedNode.level}
+                  onChange={(e) => updateNodeData("level", parseInt(e.target.value) || 0)}
+                  style={{ fontSize: 13, width: 80 }}
+                />
               </div>
             )}
 

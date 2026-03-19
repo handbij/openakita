@@ -813,6 +813,25 @@ class LLMClient:
         if override_provider and override_provider in eligible:
             eligible.remove(override_provider)
             eligible.insert(0, override_provider)
+        elif override_provider and override_provider not in eligible and require_thinking:
+            # 用户明确选择的端点仅因缺少 thinking 能力被排除时，
+            # 将其追加到末尾作为 non-thinking fallback。
+            # 这样当所有 thinking 端点都失败后，可以在同一轮 _try_endpoints 内
+            # 立即回落到用户选的端点，而不是走完整的降级重试周期。
+            cfg = override_provider.config
+            passes_other = (
+                (not require_tools or cfg.has_capability("tools"))
+                and (not require_vision or cfg.has_capability("vision"))
+                and (not require_video or cfg.has_capability("video"))
+                and (not require_audio or cfg.has_capability("audio"))
+                and (not require_pdf or cfg.has_capability("pdf"))
+            )
+            if passes_other:
+                eligible.append(override_provider)
+                logger.info(
+                    f"[LLM] User-selected endpoint {override_provider.name} "
+                    f"lacks thinking capability; appended as non-thinking fallback"
+                )
 
         return eligible
 
@@ -863,6 +882,16 @@ class LLMClient:
         providers_to_try = providers
 
         for i, provider in enumerate(providers_to_try):
+            # 当端点不支持 thinking 但请求要求 thinking 时，临时降级
+            _thinking_downgraded = False
+            if request.enable_thinking and not provider.config.has_capability("thinking"):
+                request.enable_thinking = False
+                _thinking_downgraded = True
+                logger.info(
+                    f"[LLM] endpoint={provider.name} thinking soft-disabled "
+                    f"(endpoint lacks thinking capability)"
+                )
+
             for attempt in range(max_attempts):
                 try:
                     tools_count = len(request.tools) if request.tools else 0
@@ -1044,6 +1073,10 @@ class LLMClient:
                         f"(category={provider.error_category})"
                     )
                     break
+
+            # 恢复 thinking 标记，确保下一个端点拿到原始请求参数
+            if _thinking_downgraded:
+                request.enable_thinking = True
 
             # 切换到下一个端点
             if i < len(providers_to_try) - 1:

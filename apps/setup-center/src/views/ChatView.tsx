@@ -4465,7 +4465,7 @@ export function ChatView({
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="text-xs" onPointerDownOutside={(e) => e.preventDefault()}>
-                    {`深度思考: ${thinkingMode === "on" ? "开启" : thinkingMode === "off" ? "关闭" : "自动"}`}
+                    {thinkingMode === "on" ? "思考模式: 开启深度思考" : thinkingMode === "off" ? "思考模式: 关闭深度思考" : "思考模式: 自动"}
                   </TooltipContent>
                 </Tooltip>
                 {thinkingMode !== "off" && (

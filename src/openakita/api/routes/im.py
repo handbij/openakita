@@ -328,18 +328,13 @@ async def delete_session_messages(request: Request, session_id: str, body: Delet
     deleted_keys: set[tuple[str, str]] = set()
     try:
         safe_id = _to_safe_session_id(session_id)
-        placeholders = ",".join("?" for _ in body.turn_ids)
-        conn = getattr(storage, "_conn", None)
-        if conn:
-            rows = conn.execute(
-                f"SELECT role, content FROM conversation_turns "
-                f"WHERE session_id = ? AND id IN ({placeholders})",
-                [safe_id] + list(body.turn_ids),
-            ).fetchall()
-            for r in rows:
-                deleted_keys.add((r[0] or "", (r[1] or "")[:200]))
-    except Exception:
-        pass
+        all_turns, _ = storage.list_turns(safe_id, limit=9999, offset=0)
+        turn_id_set = set(body.turn_ids)
+        for t in all_turns:
+            if t.get("id") in turn_id_set:
+                deleted_keys.add((t.get("role", ""), (t.get("content") or "")[:200]))
+    except Exception as exc:
+        logger.warning("[IM] Failed to build deleted_keys for session %s: %s", session_id, exc)
 
     deleted = storage.delete_turns(body.turn_ids)
     if deleted:

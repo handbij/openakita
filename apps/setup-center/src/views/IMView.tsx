@@ -308,7 +308,6 @@ function MessagesTab({ serviceRunning, apiBase }: { serviceRunning: boolean; api
       const data = await res.json();
       setMessages(data.messages || []);
       setTotalMessages(data.total || 0);
-      isFirstLoad.current = true;
     } catch { /* ignore */ }
   }, [serviceRunning, apiBase]);
 
@@ -380,6 +379,7 @@ function MessagesTab({ serviceRunning, apiBase }: { serviceRunning: boolean; api
     if (list.length > 0) {
       const first = list[0];
       setSelectedSessionId(first.sessionId);
+      isFirstLoad.current = true;
       fetchMessages(first.sessionId);
     }
   }, [fetchSessions, fetchMessages]);
@@ -388,6 +388,7 @@ function MessagesTab({ serviceRunning, apiBase }: { serviceRunning: boolean; api
     setSelectedSessionId(sid);
     setSelectMode(false);
     setSelectedMsgIds(new Set());
+    isFirstLoad.current = true;
     fetchMessages(sid);
   }, [fetchMessages]);
 
@@ -587,7 +588,7 @@ function MessagesTab({ serviceRunning, apiBase }: { serviceRunning: boolean; api
           </div>
 
           {/* Channel list */}
-          <div className="px-1.5">
+          <div className="px-1.5 space-y-0.5">
             {channels.length === 0 && (
               <div className="px-4 py-4 text-center text-xs text-muted-foreground">{t("im.noChannels")}</div>
             )}
@@ -595,17 +596,17 @@ function MessagesTab({ serviceRunning, apiBase }: { serviceRunning: boolean; api
               <button
                 key={ch.channel}
                 className={cn(
-                  "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13px] transition-colors cursor-pointer select-none border-l-2",
+                  "flex w-full items-center justify-between rounded-[10px] px-2.5 py-2 text-[13px] font-semibold transition-[background,color,border] duration-150 cursor-pointer select-none",
                   selectedChannel === ch.channel
-                    ? "bg-primary/10 text-foreground border-primary font-medium"
-                    : "hover:bg-accent/50 border-transparent"
+                    ? "bg-[rgba(37,99,235,0.12)] dark:bg-[rgba(96,165,250,0.18)] text-[var(--brand)] border-l-[3px] border-l-[var(--brand)] border-y border-y-transparent border-r border-r-transparent"
+                    : "hover:bg-[var(--nav-hover)] text-muted-foreground border-l-[3px] border-transparent hover:text-foreground"
                 )}
                 onClick={() => handleSelectChannel(ch.channel)}
               >
                 <span className="flex items-center gap-1.5 min-w-0">
                   {ch.status === "online" ? <DotGreen /> : <DotGray />}
                   {(IM_LOGO_MAP[(ch.channel_type || "").toLowerCase()] || IM_LOGO_MAP[(ch.channel || "").toLowerCase()])?.({ size: 14 })}
-                  <span className="font-semibold truncate">{getChannelDisplayName(ch)}</span>
+                  <span className="truncate">{getChannelDisplayName(ch)}</span>
                 </span>
                 <Badge variant="secondary" className="ml-1.5 h-5 min-w-[20px] justify-center text-[11px] px-1.5">
                   {ch.sessionCount}
@@ -673,11 +674,11 @@ function MessagesTab({ serviceRunning, apiBase }: { serviceRunning: boolean; api
                     <div
                       key={s.sessionId}
                       className={cn(
-                        "group flex flex-col gap-0.5 rounded-lg py-2 transition-colors cursor-pointer select-none border-l-2",
+                        "group flex flex-col gap-0.5 rounded-[10px] py-1.5 transition-[background,color] duration-150 cursor-pointer select-none border",
                         item.indented ? "pl-5 pr-2.5" : "px-2.5",
                         selectedSessionId === s.sessionId
-                          ? "bg-primary/10 text-foreground border-primary"
-                          : "hover:bg-accent/50 border-transparent",
+                          ? "bg-[var(--nav-active)] text-[var(--brand)] border-[var(--nav-active-border)]"
+                          : "hover:bg-[var(--nav-hover)] border-transparent",
                         !isBotActive && "opacity-50",
                       )}
                       onClick={() => handleSelectSession(s.sessionId)}
@@ -1093,10 +1094,10 @@ function GroupPolicyTab({ apiBase }: { apiBase: string }) {
             <button
               key={ch.channel}
               className={cn(
-                "flex w-full items-center gap-1.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors cursor-pointer select-none border-l-2",
+                "flex w-full items-center gap-1.5 rounded-[10px] px-2.5 py-2 text-[13px] font-semibold transition-[background,color,border] duration-150 cursor-pointer select-none",
                 selectedChannel === ch.channel
-                  ? "bg-primary/10 text-foreground border-primary font-medium"
-                  : "hover:bg-accent/50 border-transparent",
+                  ? "bg-[rgba(37,99,235,0.12)] dark:bg-[rgba(96,165,250,0.18)] text-[var(--brand)] border-l-[3px] border-l-[var(--brand)] border-y border-y-transparent border-r border-r-transparent"
+                  : "hover:bg-[var(--nav-hover)] text-muted-foreground border-l-[3px] border-transparent hover:text-foreground",
               )}
               onClick={() => handleSelectChannel(ch.channel)}
             >

@@ -85,10 +85,14 @@ class ContextManager:
         """
         动态获取当前模型的上下文窗口大小。
 
-        优先级：
-        1. 端点配置的 context_window 字段
-        2. 兜底值 200000
-        3. 减去 max_tokens（输出预留）和 5% buffer
+        Fallback 链（从精确到宽泛）：
+        1. 按端点名精确匹配 → 读取 context_window 并计算可用预算
+        2. 名称匹配失败时，取最高优先级端点的 context_window 计算
+        3. 以上均失败时返回 DEFAULT_MAX_CONTEXT_TOKENS (160K)
+
+        计算公式：(context_window - output_reserve) * 0.95
+        - context_window < 8192 视为无效，使用兜底值 200000
+        - output_reserve = min(max_tokens or 4096, context_window / 3)
 
         Args:
             conversation_id: 对话 ID（用于识别 per-conversation 端点覆盖）
@@ -99,20 +103,42 @@ class ContextManager:
             info = self._brain.get_current_model_info(conversation_id=conversation_id)
             ep_name = info.get("name", "")
             endpoints = self._brain._llm_client.endpoints
+
+            target_ep = None
             for ep in endpoints:
                 if ep.name == ep_name:
-                    ctx = getattr(ep, "context_window", 0) or 0
-                    if ctx < 8192:
-                        ctx = FALLBACK_CONTEXT_WINDOW
-                    output_reserve = ep.max_tokens or 4096
-                    output_reserve = min(output_reserve, ctx // 3)
-                    result = int((ctx - output_reserve) * 0.95)
-                    if result < 4096:
-                        return DEFAULT_MAX_CONTEXT_TOKENS
-                    return result
+                    target_ep = ep
+                    break
+
+            if target_ep is None and endpoints:
+                target_ep = min(endpoints, key=lambda e: e.priority)
+                logger.debug(
+                    "[ContextManager] endpoint '%s' not matched, "
+                    "falling back to primary endpoint '%s'",
+                    ep_name, target_ep.name,
+                )
+
+            if target_ep is not None:
+                return self._calc_context_budget(target_ep, FALLBACK_CONTEXT_WINDOW)
+
+            logger.debug("[ContextManager] no endpoints available, using default %d", DEFAULT_MAX_CONTEXT_TOKENS)
             return DEFAULT_MAX_CONTEXT_TOKENS
-        except Exception:
+        except Exception as e:
+            logger.debug("[ContextManager] get_max_context_tokens failed: %s", e)
             return DEFAULT_MAX_CONTEXT_TOKENS
+
+    @staticmethod
+    def _calc_context_budget(ep, fallback_window: int) -> int:
+        """从端点配置计算可用上下文预算。"""
+        ctx = getattr(ep, "context_window", 0) or 0
+        if ctx < 8192:
+            ctx = fallback_window
+        output_reserve = ep.max_tokens or 4096
+        output_reserve = min(output_reserve, ctx // 3)
+        result = int((ctx - output_reserve) * 0.95)
+        if result < 4096:
+            return DEFAULT_MAX_CONTEXT_TOKENS
+        return result
 
     def estimate_tokens(self, text: str) -> int:
         """

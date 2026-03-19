@@ -112,9 +112,6 @@ if sys.platform == "win32":
 logger = logging.getLogger(__name__)
 
 # 上下文管理常量
-# 默认上下文预算：基于 200K context_window 计算 (200000 - 4096 输出预留) * 0.90 ≈ 176K
-# 仅在无法从端点配置获取 context_window 时使用此兜底值
-DEFAULT_MAX_CONTEXT_TOKENS = 160000
 CHARS_PER_TOKEN = 2  # JSON 序列化后约 2 字符 = 1 token（与 brain.py 一致）
 MIN_RECENT_TURNS = 4  # 至少保留最近 4 轮对话
 COMPRESSION_RATIO = 0.15  # 目标压缩到原上下文的 15%
@@ -2214,47 +2211,6 @@ create_agent(name="名称", description="描述", skills=["技能"], custom_prom
                 lines.append(f"- **{name}**: {desc}")
 
         return "\n".join(lines)
-
-    def _get_max_context_tokens(self) -> int:
-        """
-        动态获取当前模型的上下文窗口大小
-
-        优先级：
-        1. 端点配置的 context_window 字段（输入+输出总 token 上限）
-        2. 如果 context_window 缺失/为 0，使用兜底值 200000
-        3. 减去 max_tokens（输出预留）和 10% buffer → 可用对话预算
-        4. 完全无法获取时 fallback 到 DEFAULT_MAX_CONTEXT_TOKENS (160K)
-
-        额外保护：
-        - context_window 异常小 (< 8192) 时使用兜底值
-        - 计算结果异常小 (< 4096) 时使用兜底值
-        """
-        FALLBACK_CONTEXT_WINDOW = 200000  # 兜底上下文窗口
-
-        try:
-            info = self.brain.get_current_model_info()
-            ep_name = info.get("name", "")
-            endpoints = self.brain._llm_client.endpoints
-            for ep in endpoints:
-                if ep.name == ep_name:
-                    ctx = getattr(ep, "context_window", 0) or 0
-
-                    # context_window 缺失或异常小 → 使用兜底值
-                    if ctx < 8192:
-                        ctx = FALLBACK_CONTEXT_WINDOW
-
-                    # context_window 是总上限，减去输出预留和 5% buffer
-                    output_reserve = ep.max_tokens or 4096
-                    output_reserve = min(output_reserve, ctx // 3)
-                    result = int((ctx - output_reserve) * 0.95)
-
-                    # 最终安全检查：结果不能太小
-                    if result < 4096:
-                        return DEFAULT_MAX_CONTEXT_TOKENS
-                    return result
-            return DEFAULT_MAX_CONTEXT_TOKENS
-        except Exception:
-            return DEFAULT_MAX_CONTEXT_TOKENS
 
     def _estimate_tokens(self, text: str) -> int:
         """

@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 from pathlib import Path
 
 from fastapi import APIRouter, Request
@@ -202,30 +201,13 @@ async def workspace_info():
 
 @router.get("/api/config/env")
 async def read_env():
-    """Read .env file content as key-value pairs.
-
-    Sensitive values (containing TOKEN, SECRET, PASSWORD, KEY in the name)
-    are masked before being returned.  The ``has_value`` map tells the
-    frontend which keys actually have a non-empty value without leaking
-    the real secret.
-    """
+    """Read .env file content as key-value pairs (plaintext)."""
     env_path = _project_root() / ".env"
     if not env_path.exists():
-        return {"env": {}, "has_value": {}, "raw": ""}
+        return {"env": {}, "raw": ""}
     content = env_path.read_bytes().decode("utf-8", errors="replace")
     env = _parse_env(content)
-    sensitive_pattern = re.compile(
-        r"(TOKEN|SECRET|PASSWORD|KEY|APIKEY)", re.IGNORECASE,
-    )
-    masked: dict[str, str] = {}
-    has_value: dict[str, bool] = {}
-    for k, v in env.items():
-        has_value[k] = bool(v and v.strip())
-        if sensitive_pattern.search(k) and v:
-            masked[k] = v[:4] + "***" + v[-2:] if len(v) > 6 else "***"
-        else:
-            masked[k] = v
-    return {"env": masked, "has_value": has_value, "raw": ""}
+    return {"env": env, "raw": content}
 
 
 @router.post("/api/config/env")
@@ -240,31 +222,18 @@ async def write_env(body: EnvUpdateRequest):
     existing = ""
     if env_path.exists():
         existing = env_path.read_bytes().decode("utf-8", errors="replace")
-
-    _sensitive_key = re.compile(
-        r"(TOKEN|SECRET|PASSWORD|KEY|APIKEY)", re.IGNORECASE,
-    )
-    safe_entries: dict[str, str] = {}
-    for key, value in body.entries.items():
-        if "***" in value and _sensitive_key.search(key):
-            logger.warning(
-                "[Config API] write_env: dropping masked value for %s", key,
-            )
-            continue
-        safe_entries[key] = value
-
     new_content = _update_env_content(
-        existing, safe_entries, delete_keys=set(body.delete_keys)
+        existing, body.entries, delete_keys=set(body.delete_keys)
     )
     env_path.write_text(new_content, encoding="utf-8")
-    for key, value in safe_entries.items():
+    for key, value in body.entries.items():
         if value:
             os.environ[key] = value
     for key in body.delete_keys:
         os.environ.pop(key, None)
-    count = len([v for v in safe_entries.values() if v]) + len(body.delete_keys)
+    count = len([v for v in body.entries.values() if v]) + len(body.delete_keys)
     logger.info(f"[Config API] Updated .env with {count} entries")
-    return {"status": "ok", "updated_keys": list(safe_entries.keys())}
+    return {"status": "ok", "updated_keys": list(body.entries.keys())}
 
 
 @router.get("/api/config/endpoints")
@@ -325,20 +294,11 @@ async def save_endpoint(body: SaveEndpointRequest, request: Request):
     """
     from openakita.llm.endpoint_manager import ConflictError
 
-    api_key = body.api_key
-    if api_key is not None and "***" in api_key:
-        logger.warning(
-            "[Config API] save-endpoint: ignoring masked API key value "
-            "(len=%d) — treating as unchanged",
-            len(api_key),
-        )
-        api_key = None
-
     mgr = _get_endpoint_manager()
     try:
         result = mgr.save_endpoint(
             endpoint=body.endpoint,
-            api_key=api_key,
+            api_key=body.api_key,
             endpoint_type=body.endpoint_type,
             expected_version=body.expected_version,
         )

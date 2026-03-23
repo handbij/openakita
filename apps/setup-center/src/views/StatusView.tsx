@@ -87,7 +87,6 @@ export function StatusView(props: StatusViewProps) {
   const effectiveWsId = currentWorkspaceId || workspaces[0]?.id || null;
   const ws = workspaces.find((w) => w.id === effectiveWsId) || workspaces[0] || null;
   const im = [
-    { k: "TELEGRAM_ENABLED", name: "Telegram", required: ["TELEGRAM_BOT_TOKEN"] },
     { k: "FEISHU_ENABLED", name: t("status.feishu"), required: ["FEISHU_APP_ID", "FEISHU_APP_SECRET"] },
     { k: "WEWORK_ENABLED", name: t("status.wework"), required: ["WEWORK_CORP_ID", "WEWORK_TOKEN", "WEWORK_ENCODING_AES_KEY"] },
     { k: "WEWORK_WS_ENABLED", name: t("status.weworkWs"), required: ["WEWORK_WS_BOT_ID", "WEWORK_WS_SECRET"] },

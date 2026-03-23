@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { LogoTelegram, LogoFeishu, LogoWework, LogoDingtalk, LogoQQ, LogoOneBot, LogoWechat } from "../icons";
+import { LogoFeishu, LogoWework, LogoDingtalk, LogoQQ, LogoOneBot, LogoWechat } from "../icons";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -32,7 +32,6 @@ const PLATFORMS = [
   { id: "dingtalk", title: "config.imDingtalk", logo: LogoDingtalk, docUrl: "https://open.dingtalk.com/" },
   { id: "wework", title: "config.imWework", logo: LogoWework, docUrl: "https://work.weixin.qq.com/" },
   { id: "qqbot", title: "config.imQQBot", logo: LogoQQ, docUrl: "https://bot.q.qq.com/wiki/develop/api-v2/" },
-  { id: "telegram", title: "Telegram", logo: LogoTelegram, docUrl: "https://t.me/BotFather" },
   { id: "onebot", title: "OneBot", logo: LogoOneBot, docUrl: "https://github.com/botuniverse/onebot-11" },
 ] as const;
 

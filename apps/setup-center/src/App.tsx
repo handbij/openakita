@@ -63,7 +63,7 @@ import {
 //   2. Wizard Full（开发者模式）：选工作区 → 装 venv → 配置端点(本地) → 启动服务 → HTTP API
 // ═══════════════════════════════════════════════════════════════════════
 import { CliManager } from "./components/CliManager";
-import { FieldText, FieldBool, FieldSelect, FieldCombo, TelegramPairingCodeHint } from "./components/EnvFields";
+import { FieldText, FieldBool, FieldSelect, FieldCombo } from "./components/EnvFields";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ModalOverlay } from "./components/ModalOverlay";
 import { Sidebar } from "./components/Sidebar";
@@ -3114,21 +3114,6 @@ export function App() {
             <div className="divider" />
 
             {[
-              {
-                title: "Telegram",
-                enabledKey: "TELEGRAM_ENABLED",
-                apply: "https://t.me/BotFather",
-                body: (
-                  <>
-                    {FT({ k: "TELEGRAM_BOT_TOKEN", label: "Bot Token", placeholder: "从 BotFather 获取（仅会显示一次）", type: "password" })}
-                    {FT({ k: "TELEGRAM_PROXY", label: "代理（可选）", placeholder: "http://127.0.0.1:7890 / socks5://..." })}
-                    {FB({ k: "TELEGRAM_REQUIRE_PAIRING", label: t("config.imPairing") })}
-                    {FT({ k: "TELEGRAM_PAIRING_CODE", label: t("config.imPairingCode"), placeholder: t("config.imPairingCodeHint") })}
-                    <TelegramPairingCodeHint currentWorkspaceId={currentWorkspaceId} envDraft={envDraft} onEnvChange={setEnvDraft} />
-                    {FT({ k: "TELEGRAM_WEBHOOK_URL", label: "Webhook URL", placeholder: "https://..." })}
-                  </>
-                ),
-              },
               {
                 title: "飞书（需要 openakita[feishu]）",
                 enabledKey: "FEISHU_ENABLED",

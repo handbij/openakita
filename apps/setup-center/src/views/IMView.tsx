@@ -31,7 +31,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { LogoTelegram, LogoFeishu, LogoWework, LogoDingtalk, LogoQQ, LogoOneBot, LogoWechat } from "../icons";
+import { LogoFeishu, LogoWework, LogoDingtalk, LogoQQ, LogoOneBot, LogoWechat } from "../icons";
 import { AlertCircle, ArrowLeft, ArrowRight, Bot, BotOff, Check, Dices, Loader2, MoreHorizontal, Pencil, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────
@@ -100,7 +100,7 @@ type AgentProfile = {
 
 const DEFAULT_API = "http://127.0.0.1:18900";
 
-const BOT_TYPES = ["wechat", "wework", "wework_ws", "qqbot", "feishu", "dingtalk", "telegram", "onebot", "onebot_reverse"] as const;
+const BOT_TYPES = ["wechat", "wework", "wework_ws", "qqbot", "feishu", "dingtalk", "onebot", "onebot_reverse"] as const;
 
 const BOT_TYPE_LABEL_KEYS: Record<string, string> = {
   feishu: "im.botTypeFeishu",
@@ -1980,7 +1980,6 @@ const WIZARD_PLATFORMS = [
   { id: "dingtalk", botType: "dingtalk", title: "config.imDingtalk", logo: LogoDingtalk },
   { id: "wework", botType: "wework_ws", title: "config.imWework", logo: LogoWework },
   { id: "qqbot", botType: "qqbot", title: "config.imQQBot", logo: LogoQQ },
-  { id: "telegram", botType: "telegram", title: "Telegram", logo: LogoTelegram },
   { id: "onebot", botType: "onebot_reverse", title: "OneBot", logo: LogoOneBot },
 ] as const;
 

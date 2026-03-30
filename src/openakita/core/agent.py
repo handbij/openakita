@@ -3358,14 +3358,6 @@ create_agent(name="名称", description="描述", skills=["技能"], custom_prom
                 except (ValueError, TypeError):
                     pass
             if role in ("user", "assistant") and content:
-                # 从消息元数据中提取时间戳，注入 [HH:MM] 前缀帮助 LLM 理解时序
-                _ts = msg.get("timestamp", "")
-                if _ts:
-                    try:
-                        _dt = datetime.fromisoformat(_ts)
-                        content = f"[{_dt.strftime('%H:%M')}] {content}"
-                    except (ValueError, TypeError):
-                        pass
                 if messages and messages[-1]["role"] == role:
                     messages[-1]["content"] += "\n" + content
                 else:

@@ -3349,6 +3349,14 @@ create_agent(name="名称", description="描述", skills=["技能"], custom_prom
                         content = content[:content.index(_marker)]
                 if content.startswith("[执行摘要]") or content.startswith("[子Agent工作总结]"):
                     content = ""
+            # 为历史消息注入 [HH:MM] 时间戳，帮助 LLM 理解对话时序
+            ts = msg.get("timestamp", "")
+            if ts and content:
+                try:
+                    dt = datetime.fromisoformat(ts)
+                    content = f"[{dt.strftime('%H:%M')}] {content}"
+                except (ValueError, TypeError):
+                    pass
             if role in ("user", "assistant") and content:
                 # 从消息元数据中提取时间戳，注入 [HH:MM] 前缀帮助 LLM 理解时序
                 _ts = msg.get("timestamp", "")

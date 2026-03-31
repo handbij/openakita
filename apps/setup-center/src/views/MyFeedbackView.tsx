@@ -35,6 +35,8 @@ type DeveloperReply = {
 
 type FeedbackDetail = {
   status: string;
+  summary?: string;
+  created_at?: string;
   developer_replies?: DeveloperReply[];
   labels?: string[];
   source?: string;
@@ -247,19 +249,12 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
     setSending(reportId);
     setReplyError(null);
     try {
-      const res = await safeFetch(`${apiBaseUrl}/api/feedback-reply/${reportId}`, {
+      await safeFetch(`${apiBaseUrl}/api/feedback-reply/${reportId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body: text }),
+        signal: AbortSignal.timeout(30_000),
       });
-      if (res.status === 429) {
-        setReplyError(t("myFeedback.replyRateLimit"));
-        return;
-      }
-      if (!res.ok) {
-        setReplyError(t("myFeedback.replyFailed"));
-        return;
-      }
       setReplyText((prev) => ({ ...prev, [reportId]: "" }));
       const newReply: DeveloperReply = {
         author: "user",
@@ -281,8 +276,13 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
       setTimeout(() => {
         replyEndRef.current[reportId]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }, 50);
-    } catch {
-      setReplyError(t("myFeedback.replyFailed"));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (msg.startsWith("HTTP 429")) {
+        setReplyError(t("myFeedback.replyRateLimit"));
+      } else {
+        setReplyError(t("myFeedback.replyFailed"));
+      }
     } finally {
       setSending(null);
     }
@@ -474,60 +474,73 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
                         <IconLoader size={14} className="animate-spin" />
                         {t("myFeedback.refreshing")}
                       </div>
-                    ) : detail?.developer_replies && detail.developer_replies.length > 0 ? (
+                    ) : rec.has_token && detail ? (
                       <div className="space-y-3 mt-2">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-[13px] font-medium">{t("myFeedback.repliesTitle")}</p>
-                          {detail?.labels && detail.labels.length > 0 && detail.labels.map((label) => (
+                          {detail.labels && detail.labels.length > 0 && detail.labels.map((label) => (
                             <Badge key={label} variant="outline" className="text-[10px] px-1.5 py-0">{label}</Badge>
                           ))}
                         </div>
-                        {detail.developer_replies.map((reply, i) => {
-                          const isUserReply = reply.source === "user_reply";
-                          return isUserReply ? (
-                            <div key={i} className="flex justify-end">
-                              <div className="max-w-[80%]">
-                                <div className="flex items-center justify-end gap-2 text-[12px]">
-                                  <span className="text-muted-foreground">{formatDate(reply.created_at)}</span>
-                                  <span className="font-medium text-blue-600 dark:text-blue-400">{t("myFeedback.you")}</span>
-                                </div>
-                                <div className="mt-1 px-3 py-2 rounded-lg bg-blue-500/10 text-[13px] whitespace-pre-wrap break-words">
-                                  {reply.body}
-                                </div>
+
+                        {detail.summary && (
+                          <div className="flex justify-end">
+                            <div className="max-w-[80%]">
+                              <div className="flex items-center justify-end gap-2 text-[12px]">
+                                <span className="text-muted-foreground">{detail.created_at ? formatDate(detail.created_at) : formatDate(rec.submitted_at)}</span>
+                                <span className="font-medium text-blue-600 dark:text-blue-400">{t("myFeedback.originalDescription")}</span>
+                              </div>
+                              <div className="mt-1 px-3 py-2 rounded-lg bg-blue-500/10 text-[13px] whitespace-pre-wrap break-words">
+                                {detail.summary}
                               </div>
                             </div>
-                          ) : (
-                            <div key={i} className="flex gap-2.5">
-                              <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[11px] font-bold shrink-0 mt-0.5">
-                                {reply.author.charAt(0).toUpperCase()}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 text-[12px]">
-                                  <span className="font-medium">{reply.author}</span>
-                                  <span className="text-muted-foreground">{formatDate(reply.created_at)}</span>
+                          </div>
+                        )}
+
+                        {detail.developer_replies && detail.developer_replies.length > 0 ? (
+                          detail.developer_replies.map((reply, i) => {
+                            const isUserReply = reply.source === "user_reply";
+                            return isUserReply ? (
+                              <div key={i} className="flex justify-end">
+                                <div className="max-w-[80%]">
+                                  <div className="flex items-center justify-end gap-2 text-[12px]">
+                                    <span className="text-muted-foreground">{formatDate(reply.created_at)}</span>
+                                    <span className="font-medium text-blue-600 dark:text-blue-400">{t("myFeedback.you")}</span>
+                                  </div>
+                                  <div className="mt-1 px-3 py-2 rounded-lg bg-blue-500/10 text-[13px] whitespace-pre-wrap break-words">
+                                    {reply.body}
+                                  </div>
                                 </div>
-                                <div className="mt-1 px-3 py-2 rounded-lg bg-muted text-[13px] break-words">
-                                  {mdModules ? (
-                                    <div className="feedbackMdContent">
-                                      <mdModules.ReactMarkdown remarkPlugins={[mdModules.remarkGfm]}>{reply.body}</mdModules.ReactMarkdown>
-                                    </div>
-                                  ) : <span style={{ whiteSpace: "pre-wrap" }}>{reply.body}</span>}
+                              </div>
+                            ) : (
+                              <div key={i} className="flex gap-2.5">
+                                <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[11px] font-bold shrink-0 mt-0.5">
+                                  {reply.author.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 text-[12px]">
+                                    <span className="font-medium">{reply.author}</span>
+                                    <span className="text-muted-foreground">{formatDate(reply.created_at)}</span>
+                                  </div>
+                                  <div className="mt-1 px-3 py-2 rounded-lg bg-muted text-[13px] break-words">
+                                    {mdModules ? (
+                                      <div className="feedbackMdContent">
+                                        <mdModules.ReactMarkdown remarkPlugins={[mdModules.remarkGfm]}>{reply.body}</mdModules.ReactMarkdown>
+                                      </div>
+                                    ) : <span style={{ whiteSpace: "pre-wrap" }}>{reply.body}</span>}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          );
-                        })}
+                            );
+                          })
+                        ) : !detail.summary ? (
+                          <p className="text-[13px] text-muted-foreground">{t("myFeedback.noReplies")}</p>
+                        ) : null}
+
                         <div ref={(el) => { replyEndRef.current[rec.report_id] = el; }} />
                       </div>
                     ) : rec.has_token ? (
                       <div className="py-2">
-                        {detail?.labels && detail.labels.length > 0 && (
-                          <div className="flex gap-1 flex-wrap mb-2">
-                            {detail.labels.map((label) => (
-                              <Badge key={label} variant="outline" className="text-[10px] px-1.5 py-0">{label}</Badge>
-                            ))}
-                          </div>
-                        )}
                         <p className="text-[13px] text-muted-foreground">{t("myFeedback.noReplies")}</p>
                       </div>
                     ) : null}

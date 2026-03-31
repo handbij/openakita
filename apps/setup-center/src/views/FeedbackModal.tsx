@@ -638,7 +638,7 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
     </Dialog>
 
     {/* Success confirmation dialog */}
-    <Dialog open={successOpen} onOpenChange={(v) => { if (!v) setSuccessOpen(false); }}>
+    <Dialog open={successOpen} onOpenChange={(v) => { if (!v) { setSuccessOpen(false); onNavigateToMyFeedback?.(); } }}>
       <DialogContent className="sm:max-w-[380px]">
         <DialogHeader>
           <DialogTitle>{t("feedback.submitSuccessTitle")}</DialogTitle>
@@ -648,7 +648,7 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
           {t("feedback.submitSuccessMessage")}
         </p>
         <div className="flex justify-end gap-2 pt-2">
-          <Button variant="outline" size="sm" onClick={() => setSuccessOpen(false)}>
+          <Button variant="outline" size="sm" onClick={() => { setSuccessOpen(false); onNavigateToMyFeedback?.(); }}>
             {t("feedback.close")}
           </Button>
           {onNavigateToMyFeedback && (

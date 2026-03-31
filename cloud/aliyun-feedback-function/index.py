@@ -451,6 +451,7 @@ def _sanitize_status(metadata: dict) -> dict:
         "title": metadata.get("title", ""),
         "type": metadata.get("type", "bug"),
         "status": metadata.get("status", "open"),
+        "summary": metadata.get("summary", ""),
         "labels": metadata.get("labels", []),
         "created_at": metadata.get("created_at", ""),
         "completed_at": metadata.get("completed_at"),

@@ -1402,6 +1402,7 @@
     "deleteConfirm": "Delete this feedback record? (Cloud data will not be affected)",
     "deleted": "Deleted",
     "repliesTitle": "Replies",
+    "originalDescription": "Original Description",
     "noReplies": "No replies yet. We'll get back to you soon.",
     "refreshing": "Refreshing status...",
     "viewFeedback": "View My Feedback",

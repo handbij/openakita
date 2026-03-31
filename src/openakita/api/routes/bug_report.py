@@ -647,7 +647,7 @@ async def _build_bug_zip(
             "description": description,
             "steps": steps,
             "system_info": sys_info,
-            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
         if contact_email or contact_wechat:
             metadata["contact"] = {
@@ -1278,7 +1278,7 @@ async def get_feedback_status(report_id: str):
             )
             if resp.status_code == 200:
                 data = resp.json()
-                now = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+                now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                 replies = data.get("developer_replies", [])
                 last_reply = (
                     replies[-1].get("created_at") if replies else None
@@ -1360,15 +1360,18 @@ async def get_feedback_status_batch():
             if resp.status_code == 200:
                 data = resp.json()
                 results = data.get("results", {})
-                now = time.strftime("%Y-%m-%dT%H:%M:%SZ")
                 for rid, info in results.items():
                     if isinstance(info, dict) and "error" not in info:
                         replies = info.get(
                             "developer_replies", []
                         )
+                        external = [
+                            r for r in replies
+                            if r.get("source") != "user_reply"
+                        ]
                         last_reply = (
-                            replies[-1].get("created_at")
-                            if replies
+                            external[-1].get("created_at")
+                            if external
                             else None
                         )
                         await feedback_store.update_status(
@@ -1377,7 +1380,6 @@ async def get_feedback_status_batch():
                                 "status", "pending"
                             ),
                             last_reply_at=last_reply,
-                            last_checked_at=now,
                         )
                         info["source"] = "live"
                 return {"results": results}
@@ -1430,6 +1432,10 @@ async def post_feedback_reply(report_id: str, body: dict):
                 timeout=15,
             )
             if resp.status_code == 200:
+                now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                await feedback_store.update_status(
+                    report_id, last_checked_at=now,
+                )
                 return resp.json()
             try:
                 detail = resp.json().get("error", resp.text[:200])

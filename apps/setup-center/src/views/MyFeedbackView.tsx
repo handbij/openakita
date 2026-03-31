@@ -434,16 +434,14 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
                       <IconZap size={16} className="text-amber-500" />
                     )}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[14px] font-medium truncate">{rec.title}</span>
-                      {rec.has_unread && (
-                        <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                      )}
-                    </div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5">
-                      {t("myFeedback.submittedAt")} {formatDate(rec.submitted_at)}
-                    </div>
+                  <div className="flex-1 min-w-0 flex items-center gap-2">
+                    <span className="text-[14px] font-medium truncate">{rec.title}</span>
+                    {rec.has_unread && (
+                      <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                    )}
+                    <span className="text-[11px] text-muted-foreground whitespace-nowrap ml-auto">
+                      {formatDate(rec.submitted_at)}
+                    </span>
                   </div>
                   <Badge
                     variant="secondary"
@@ -451,13 +449,11 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
                   >
                     {t(`myFeedback.${statusKey(rec.cached_status)}`)}
                   </Badge>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDelete(rec.report_id); }}
-                    className="shrink-0 p-1 rounded hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive"
-                    title={t("myFeedback.deleteRecord")}
-                  >
-                    <IconTrash size={14} />
-                  </button>
+                  <IconTrash
+                    size={14}
+                    className="shrink-0 cursor-pointer text-muted-foreground/40 hover:text-destructive transition-colors"
+                    onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleDelete(rec.report_id); }}
+                  />
                 </div>
 
                 {/* Expanded detail */}
@@ -476,7 +472,7 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
                       </div>
                     ) : rec.has_token && detail ? (
                       <div className="space-y-3 mt-2">
-                        <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-2 flex-wrap pb-2 border-b border-border">
                           <p className="text-[13px] font-medium">{t("myFeedback.repliesTitle")}</p>
                           {detail.labels && detail.labels.length > 0 && detail.labels.map((label) => (
                             <Badge key={label} variant="outline" className="text-[10px] px-1.5 py-0">{label}</Badge>
@@ -549,7 +545,7 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
 
                     {rec.has_token && !TERMINAL_STATUSES.includes(rec.cached_status) && (
                       <div className="mt-3 pt-3 border-t border-border">
-                        <div className="flex gap-2">
+                        <div className="flex items-start gap-2">
                           <textarea
                             className="flex-1 min-h-[60px] max-h-[120px] px-3 py-2 text-[13px] rounded-md border border-input bg-background resize-y placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                             placeholder={t("myFeedback.replyPlaceholder")}
@@ -564,19 +560,32 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
                               }
                             }}
                           />
-                          <Button
-                            size="sm"
-                            disabled={sending === rec.report_id || !(replyText[rec.report_id] || "").trim()}
-                            onClick={() => sendReply(rec.report_id)}
-                            className="self-end gap-1.5"
-                          >
-                            {sending === rec.report_id ? (
-                              <IconLoader size={14} className="animate-spin" />
-                            ) : (
-                              <IconSend size={14} />
+                          <div className="flex flex-col gap-1.5">
+                            <Button
+                              size="sm"
+                              disabled={sending === rec.report_id || !(replyText[rec.report_id] || "").trim()}
+                              onClick={() => sendReply(rec.report_id)}
+                              className="gap-1.5"
+                            >
+                              {sending === rec.report_id ? (
+                                <IconLoader size={14} className="animate-spin" />
+                              ) : (
+                                <IconSend size={14} />
+                              )}
+                              {sending === rec.report_id ? t("myFeedback.sending") : t("myFeedback.sendReply")}
+                            </Button>
+                            {(replyText[rec.report_id] || "").trim() && !sending && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setReplyText((prev) => ({ ...prev, [rec.report_id]: "" }))}
+                                className="gap-1.5"
+                              >
+                                <IconTrash size={14} />
+                                {t("myFeedback.clearReply")}
+                              </Button>
                             )}
-                            {sending === rec.report_id ? t("myFeedback.sending") : t("myFeedback.sendReply")}
-                          </Button>
+                          </div>
                         </div>
                         {replyError && sending !== rec.report_id && (
                           <p className="text-[12px] text-destructive mt-1">{replyError}</p>

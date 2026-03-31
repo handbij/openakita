@@ -1415,6 +1415,7 @@
     "submitFeedback": "Submit Feedback",
     "replyPlaceholder": "Type your reply...",
     "sendReply": "Send",
+    "clearReply": "Clear",
     "sending": "Sending...",
     "replySent": "Reply sent",
     "replyFailed": "Failed to send, please retry",

@@ -66,7 +66,7 @@ async def save_record(
 ) -> None:
     conn = await _get_conn()
     try:
-        now = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         await conn.execute(
             """INSERT INTO feedback_records
                (report_id, feedback_token, title, type, contact_email, submitted_at)

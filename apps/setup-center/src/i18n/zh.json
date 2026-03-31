@@ -1415,6 +1415,7 @@
     "submitFeedback": "提交反馈",
     "replyPlaceholder": "输入回复...",
     "sendReply": "发送",
+    "clearReply": "清空",
     "sending": "发送中...",
     "replySent": "回复已发送",
     "replyFailed": "发送失败，请重试",

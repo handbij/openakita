@@ -520,12 +520,12 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
                                 <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[11px] font-bold shrink-0 mt-0.5">
                                   {reply.author.charAt(0).toUpperCase()}
                                 </div>
-                                <div className="flex-1 min-w-0">
+                                <div className="max-w-[80%]">
                                   <div className="flex items-center gap-2 text-[12px]">
                                     <span className="font-medium">{reply.author}</span>
                                     <span className="text-muted-foreground">{formatDate(reply.created_at)}</span>
                                   </div>
-                                  <div className="mt-1 px-3 py-2 rounded-lg bg-primary/5 border border-border/50 text-[13px] break-words">
+                                  <div className="mt-1 px-3 py-2 rounded-lg bg-primary/5 border border-border/50 text-[13px] break-words inline-block">
                                     {mdModules ? (
                                       <div className="feedbackMdContent">
                                         <mdModules.ReactMarkdown remarkPlugins={[mdModules.remarkGfm]}>{reply.body}</mdModules.ReactMarkdown>

@@ -1361,11 +1361,12 @@
     "stepsLabel": "Steps to Reproduce (optional)",
     "stepsPlaceholder": "1. ...\n2. ...\n3. ...",
     "images": "Screenshots",
-    "imageDropHint": "Click or drag images here (max 10)",
+    "imageDropHint": "Click or drag images here, or Ctrl+V to paste (max 10)",
     "uploadLogs": "Upload recent logs (frontend, backend, delegation)",
     "uploadDebug": "Upload debug data (LLM records, reasoning traces, agent state)",
     "debugWarning": "Debug data may contain recent conversation content and system config. Sensitive info is auto-redacted, but uncheck if concerned",
     "contactHint": "Leave your contact info to receive bug fix updates",
+    "contactEmailLabel": "Email (optional, receive bug fix progress updates)",
     "systemInfo": "System Information (auto-collected)",
     "submit": "Submit Report",
     "submitting": "Submitting...",
@@ -1428,7 +1429,9 @@
     "statsActive": "active",
     "statsUnread": "unread",
     "statsResolved": "resolved",
-    "viewOnGithub": "View on GitHub"
+    "viewOnGithub": "View on GitHub",
+    "resubmitPrompt": "Issue not resolved? Submit feedback again",
+    "resubmitHint": "This issue was previously reported as \"{{title}}\" but has not been fully resolved.\n\nPlease describe what is still not working:"
   },
   "adv": {
     "networkSecurityTitle": "Network & Security",

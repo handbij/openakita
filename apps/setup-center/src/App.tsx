@@ -15,7 +15,7 @@ import { MemoryView } from "./views/MemoryView";
 import { IdentityView } from "./views/IdentityView";
 import { AgentDashboardView } from "./views/AgentDashboardView";
 import { AgentManagerView } from "./views/AgentManagerView";
-import { FeedbackModal } from "./views/FeedbackModal";
+import { FeedbackModal, type FeedbackPrefill } from "./views/FeedbackModal";
 import { IMConfigView } from "./views/IMConfigView";
 import { AgentSystemView } from "./views/AgentSystemView";
 import { AgentStoreView } from "./views/AgentStoreView";
@@ -255,6 +255,7 @@ export function App() {
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth <= 768);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [bugReportOpen, setBugReportOpen] = useState(false);
+  const [feedbackPrefill, setFeedbackPrefill] = useState<FeedbackPrefill | null>(null);
   const [unreadFeedbackCount, setUnreadFeedbackCount] = useState(0);
   const [disabledViews, setDisabledViews] = useState<string[]>([]);
   const [multiAgentEnabled, setMultiAgentEnabled] = useState(false);
@@ -4667,7 +4668,10 @@ export function App() {
         <MyFeedbackView
           apiBaseUrl={httpApiBase()}
           serviceRunning={serviceStatus?.running ?? false}
-          onOpenFeedbackModal={() => setBugReportOpen(true)}
+          onOpenFeedbackModal={(prefill) => {
+            setFeedbackPrefill(prefill ?? null);
+            setBugReportOpen(true);
+          }}
         />
       );
     }
@@ -5190,8 +5194,9 @@ export function App() {
       {/* Feedback Modal (Bug Report + Feature Request) */}
       <FeedbackModal
         open={bugReportOpen}
-        onClose={() => setBugReportOpen(false)}
+        onClose={() => { setBugReportOpen(false); setFeedbackPrefill(null); }}
         apiBase={httpApiBase()}
+        prefill={feedbackPrefill}
         onNavigateToMyFeedback={() => setView("my_feedback")}
       />
     </div>

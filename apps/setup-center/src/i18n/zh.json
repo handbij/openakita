@@ -1361,11 +1361,12 @@
     "stepsLabel": "复现步骤（可选）",
     "stepsPlaceholder": "1. ...\n2. ...\n3. ...",
     "images": "截图",
-    "imageDropHint": "点击或拖拽图片到此处（最多 10 张）",
+    "imageDropHint": "点击或拖拽图片到此处，也可 Ctrl+V 粘贴截图（最多 10 张）",
     "uploadLogs": "上传近期日志（含前端、后端、委派日志）",
     "uploadDebug": "上传调试数据（LLM 记录、推理链、Agent 状态等）",
     "debugWarning": "调试数据可能包含近期对话内容和系统配置，敏感信息已自动脱敏。如仍有顾虑请取消勾选",
     "contactHint": "如需接收修复进度通知，请留下联系方式",
+    "contactEmailLabel": "邮箱（可选，接收 BUG 处理进度邮件）",
     "systemInfo": "系统信息（自动采集）",
     "submit": "提交报告",
     "submitting": "提交中...",
@@ -1428,7 +1429,9 @@
     "statsActive": "条处理中",
     "statsUnread": "条未读",
     "statsResolved": "条已解决",
-    "viewOnGithub": "在 GitHub 查看"
+    "viewOnGithub": "在 GitHub 查看",
+    "resubmitPrompt": "问题没解决？再次提交反馈",
+    "resubmitHint": "此问题之前以「{{title}}」提交过，但尚未完全解决。\n\n请描述仍然存在的问题："
   },
   "adv": {
     "networkSecurityTitle": "网络与安全",

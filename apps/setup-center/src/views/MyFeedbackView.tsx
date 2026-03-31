@@ -43,10 +43,16 @@ type FeedbackDetail = {
 type FilterTab = "all" | "active" | "resolved" | "unread";
 type SortBy = "date" | "status" | "type";
 
+type FeedbackPrefill = {
+  mode?: "bug" | "feature";
+  title?: string;
+  description?: string;
+};
+
 type MyFeedbackViewProps = {
   apiBaseUrl: string;
   serviceRunning: boolean;
-  onOpenFeedbackModal?: () => void;
+  onOpenFeedbackModal?: (prefill?: FeedbackPrefill) => void;
 };
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; border?: string }> = {
@@ -306,7 +312,7 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
             <Button
               size="sm"
               disabled={!serviceRunning}
-              onClick={onOpenFeedbackModal}
+              onClick={() => onOpenFeedbackModal()}
               className="gap-1.5"
             >
               <IconPlus size={14} />
@@ -394,17 +400,6 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
               </Select>
             </div>
           </div>
-
-          {/* Stats summary */}
-          {records.length > 0 && (
-            <p className="text-[11px] text-muted-foreground mb-2">
-              {stats.active > 0 && <>{stats.active} {t("myFeedback.statsActive")}</>}
-              {stats.active > 0 && stats.unread > 0 && " · "}
-              {stats.unread > 0 && <span className="text-blue-500">{stats.unread} {t("myFeedback.statsUnread")}</span>}
-              {(stats.active > 0 || stats.unread > 0) && stats.resolved > 0 && " · "}
-              {stats.resolved > 0 && <>{stats.resolved} {t("myFeedback.statsResolved")}</>}
-            </p>
-          )}
 
           {/* Filtered list */}
           {filteredRecords.length === 0 ? (
@@ -575,6 +570,21 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
                         {replyError && sending !== rec.report_id && (
                           <p className="text-[12px] text-destructive mt-1">{replyError}</p>
                         )}
+                      </div>
+                    )}
+
+                    {rec.has_token && TERMINAL_STATUSES.includes(rec.cached_status) && onOpenFeedbackModal && (
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <button
+                          onClick={() => onOpenFeedbackModal({
+                            mode: rec.type,
+                            title: rec.title,
+                            description: t("myFeedback.resubmitHint", { title: rec.title }),
+                          })}
+                          className="text-[13px] text-blue-500 hover:text-blue-600 hover:underline"
+                        >
+                          {t("myFeedback.resubmitPrompt")}
+                        </button>
                       </div>
                     )}
                   </div>

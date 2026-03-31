@@ -16,7 +16,7 @@ import { Textarea } from "../components/ui/textarea";
 import { Label } from "../components/ui/label";
 import { Checkbox } from "../components/ui/checkbox";
 
-type FeedbackMode = "bug" | "feature";
+export type FeedbackMode = "bug" | "feature";
 
 type SystemInfo = {
   os?: string;
@@ -29,15 +29,22 @@ type SystemInfo = {
   [key: string]: unknown;
 };
 
+export type FeedbackPrefill = {
+  mode?: FeedbackMode;
+  title?: string;
+  description?: string;
+};
+
 type FeedbackModalProps = {
   open: boolean;
   onClose: () => void;
   apiBase: string;
   initialMode?: FeedbackMode;
+  prefill?: FeedbackPrefill | null;
   onNavigateToMyFeedback?: () => void;
 };
 
-export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", onNavigateToMyFeedback }: FeedbackModalProps) {
+export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", prefill, onNavigateToMyFeedback }: FeedbackModalProps) {
   const { t } = useTranslation();
 
   const [mode, setMode] = useState<FeedbackMode>(initialMode);
@@ -51,10 +58,8 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", onN
   const [uploadLogs, setUploadLogs] = useState(true);
   const [uploadDebug, setUploadDebug] = useState(true);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
-  const [sysInfoExpanded, setSysInfoExpanded] = useState(false);
 
   const [contactEmail, setContactEmail] = useState("");
-  const [contactWechat, setContactWechat] = useState("");
 
   const [captchaCfg, setCaptchaCfg] = useState<{ scene_id: string; prefix: string } | null>(null);
 
@@ -75,12 +80,14 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", onN
 
   useEffect(() => {
     if (open) {
-      setMode(initialMode);
+      setMode(prefill?.mode ?? initialMode);
+      setTitle(prefill?.title ?? "");
+      setDescription(prefill?.description ?? "");
       setSubmitResult(null);
       setDownloading(false);
       setUploadProgress(null);
     }
-  }, [open, initialMode]);
+  }, [open, initialMode, prefill]);
 
   useEffect(() => {
     if (!open) return;
@@ -207,6 +214,21 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", onN
     if (e.dataTransfer.files.length) addImages(e.dataTransfer.files);
   }, [addImages]);
 
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imgs: File[] = [];
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) imgs.push(file);
+      }
+    }
+    if (imgs.length > 0) {
+      addImages(imgs);
+    }
+  }, [addImages]);
+
   const handleSubmit = useCallback(async () => {
     if (!title.trim() || !description.trim()) return;
     if (captchaCfg && !captchaTokenRef.current) return;
@@ -237,7 +259,7 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", onN
         url = `${apiBase}/api/feature-request`;
       }
       form.append("contact_email", contactEmail.trim());
-      form.append("contact_wechat", contactWechat.trim());
+      form.append("contact_wechat", "");
 
       const res = await fetch(url, {
         method: "POST",
@@ -290,7 +312,6 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", onN
                 setDescription("");
                 setSteps("");
                 setContactEmail("");
-                setContactWechat("");
                 setImageFiles([]);
                 setImagePreviews((old) => { old.forEach(URL.revokeObjectURL); return []; });
               }
@@ -317,7 +338,6 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", onN
           setDescription("");
           setSteps("");
           setContactEmail("");
-          setContactWechat("");
           setImageFiles([]);
           setImagePreviews((old) => { old.forEach(URL.revokeObjectURL); return []; });
         }
@@ -334,7 +354,7 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", onN
       abortRef.current = null;
       setSubmitting(false);
     }
-  }, [captchaCfg, mode, title, description, steps, uploadLogs, uploadDebug, contactEmail, contactWechat, imageFiles, apiBase, t]);
+  }, [captchaCfg, mode, title, description, steps, uploadLogs, uploadDebug, contactEmail, imageFiles, apiBase, t]);
 
   handleSubmitRef.current = handleSubmit;
 
@@ -352,6 +372,7 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", onN
       <DialogContent
         className="sm:max-w-[520px] p-0 gap-0 overflow-hidden"
         showCloseButton={true}
+        onPaste={handlePaste}
         onPointerDownOutside={(e) => {
           const t = e.target as HTMLElement | null;
           if (t?.closest?.("[class*='aliyunCaptcha'], [id*='aliyunCaptcha'], [id*='aliyun-captcha']")) {
@@ -437,26 +458,14 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", onN
           {/* Contact info */}
           <div className="space-y-1">
             <Label className="text-[13px]">
-              {isBug ? t("featureRequest.contactLabel") : t("featureRequest.contactLabel")}
+              {t("bugReport.contactEmailLabel")}
             </Label>
-            {isBug && (
-              <p className="text-[11px] text-muted-foreground/70">{t("bugReport.contactHint")}</p>
-            )}
-            <div className="flex gap-2">
-              <Input
-                value={contactEmail}
-                onChange={(e) => setContactEmail(e.target.value)}
-                placeholder={t("featureRequest.emailPlaceholder")}
-                type="email"
-                className="flex-1"
-              />
-              <Input
-                value={contactWechat}
-                onChange={(e) => setContactWechat(e.target.value)}
-                placeholder={t("featureRequest.wechatPlaceholder")}
-                className="flex-1"
-              />
-            </div>
+            <Input
+              value={contactEmail}
+              onChange={(e) => setContactEmail(e.target.value)}
+              placeholder={t("featureRequest.emailPlaceholder")}
+              type="email"
+            />
           </div>
 
           {/* Image upload */}
@@ -483,13 +492,15 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", onN
             {imagePreviews.length > 0 && (
               <div className="flex gap-1.5 flex-wrap mt-1.5">
                 {imagePreviews.map((src, i) => (
-                  <div key={i} className="relative w-14 h-14 rounded-md overflow-hidden border border-border">
+                  <div key={i} className="relative w-14 h-14 rounded-md overflow-hidden border border-border group">
                     <img src={src} alt="" className="w-full h-full object-cover" />
                     <button
+                      type="button"
                       onClick={(e) => { e.stopPropagation(); removeImage(i); }}
-                      className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full border-0 bg-black/60 text-white text-[9px] flex items-center justify-center cursor-pointer p-0"
+                      className="absolute top-0 right-0 w-5 h-5 rounded-bl-md bg-black/60 hover:bg-black/80 text-white flex items-center justify-center cursor-pointer transition-colors"
+                      style={{ border: "none", padding: 0, lineHeight: 1 }}
                     >
-                      <IconX size={8} />
+                      <IconX size={10} />
                     </button>
                   </div>
                 ))}
@@ -523,23 +534,7 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", onN
             </div>
           )}
 
-          {/* Bug: System info */}
-          {isBug && systemInfo && (
-            <div>
-              <button
-                type="button"
-                onClick={() => setSysInfoExpanded(!sysInfoExpanded)}
-                className="text-[12px] cursor-pointer text-muted-foreground bg-transparent border-0 p-0 select-none hover:text-foreground transition-colors"
-              >
-                {sysInfoExpanded ? "▾" : "▸"} {t("bugReport.systemInfo")}
-              </button>
-              {sysInfoExpanded && (
-                <pre className="text-[11px] bg-muted rounded-md p-2 mt-1 overflow-x-auto max-h-32 whitespace-pre-wrap break-all leading-relaxed">
-                  {JSON.stringify(systemInfo, null, 2)}
-                </pre>
-              )}
-            </div>
-          )}
+          {/* System info: hidden from UI, still collected for submission */}
 
           <div ref={captchaContainerRef} id="aliyun-captcha-element" />
 

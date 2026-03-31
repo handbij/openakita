@@ -78,13 +78,15 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
   const handleSubmitRef = useRef<() => void>(() => {});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [successOpen, setSuccessOpen] = useState(false);
+  type Phase = "form" | "uploading" | "success";
+  const [phase, setPhase] = useState<Phase>("form");
 
   useEffect(() => {
     if (open) {
       setSubmitResult(null);
       setDownloading(false);
       setUploadProgress(null);
+      setPhase("form");
       if (prefill) {
         setMode(prefill.mode ?? initialMode);
         setTitle(prefill.title ?? "");
@@ -252,6 +254,7 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
 
     setSubmitting(true);
     setSubmitResult(null);
+    setPhase("uploading");
     setUploadProgress({ percent: 0, phase: "starting", detail: t("feedback.progressPacking") });
 
     const controller = new AbortController();
@@ -322,14 +325,15 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
                   msg: t("feedback.uploadFailedSaved", { error: data.error || "unknown" }),
                   downloadUrl: dlUrl,
                 });
+                setPhase("form");
               } else {
                 resetForm();
-                onClose();
-                setSuccessOpen(true);
+                setPhase("success");
               }
             } else if (eventType === "error") {
               setUploadProgress(null);
               setSubmitResult({ ok: false, msg: data.detail || t("feedback.uploadFailedNetwork") });
+              setPhase("form");
             }
           }
         }
@@ -343,10 +347,10 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
             msg: t("feedback.uploadFailedSaved", { error: data.error || "unknown" }),
             downloadUrl: dlUrl,
           });
+          setPhase("form");
         } else {
           resetForm();
-          onClose();
-          setSuccessOpen(true);
+          setPhase("success");
         }
       }
     } catch (err: any) {
@@ -356,12 +360,13 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
       } else {
         setSubmitResult({ ok: false, msg: err?.message || t("feedback.uploadFailedNetwork") });
       }
+      setPhase("form");
     } finally {
       captchaTokenRef.current = "";
       abortRef.current = null;
       setSubmitting(false);
     }
-  }, [captchaCfg, mode, title, description, steps, uploadLogs, uploadDebug, contactEmail, imageFiles, apiBase, t, resetForm, onClose]);
+  }, [captchaCfg, mode, title, description, steps, uploadLogs, uploadDebug, contactEmail, imageFiles, apiBase, t, resetForm]);
 
   handleSubmitRef.current = handleSubmit;
 
@@ -375,247 +380,230 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
   const isBug = mode === "bug";
 
   return (
-    <>
-    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) {
+          if (phase === "uploading") return;
+          if (phase === "success") { onNavigateToMyFeedback?.(); }
+          handleClose();
+        }
+      }}
+    >
       <DialogContent
-        className="sm:max-w-[520px] p-0 gap-0 overflow-hidden"
-        showCloseButton={true}
-        onPaste={handlePaste}
+        className={`p-0 gap-0 overflow-hidden ${phase === "form" ? "sm:max-w-[520px]" : "sm:max-w-[380px]"}`}
+        showCloseButton={phase !== "uploading"}
+        onPaste={phase === "form" ? handlePaste : undefined}
         onPointerDownOutside={(e) => {
-          const t = e.target as HTMLElement | null;
-          if (t?.closest?.("[class*='aliyunCaptcha'], [id*='aliyunCaptcha'], [id*='aliyun-captcha']")) {
+          if (phase === "uploading") { e.preventDefault(); return; }
+          const el = e.target as HTMLElement | null;
+          if (el?.closest?.("[class*='aliyunCaptcha'], [id*='aliyunCaptcha'], [id*='aliyun-captcha']")) {
             e.preventDefault();
           }
         }}
         onInteractOutside={(e) => {
-          const t = e.target as HTMLElement | null;
-          if (t?.closest?.("[class*='aliyunCaptcha'], [id*='aliyunCaptcha'], [id*='aliyun-captcha']")) {
+          if (phase === "uploading") { e.preventDefault(); return; }
+          const el = e.target as HTMLElement | null;
+          if (el?.closest?.("[class*='aliyunCaptcha'], [id*='aliyunCaptcha'], [id*='aliyun-captcha']")) {
             e.preventDefault();
           }
         }}
+        onEscapeKeyDown={(e) => { if (phase === "uploading") e.preventDefault(); }}
       >
-        <DialogHeader className="sr-only">
-          <DialogTitle>{isBug ? t("bugReport.title") : t("featureRequest.title")}</DialogTitle>
-          <DialogDescription>{isBug ? t("bugReport.title") : t("featureRequest.title")}</DialogDescription>
-        </DialogHeader>
+        {phase === "form" && (
+          <>
+            <DialogHeader className="sr-only">
+              <DialogTitle>{isBug ? t("bugReport.title") : t("featureRequest.title")}</DialogTitle>
+              <DialogDescription>{isBug ? t("bugReport.title") : t("featureRequest.title")}</DialogDescription>
+            </DialogHeader>
 
-        {/* Tab navigation as header */}
-        <div className="flex items-end gap-0 border-b border-border px-5 pt-4 shrink-0">
-          {(["bug", "feature"] as FeedbackMode[]).map((m) => (
-            <span
-              key={m}
-              onClick={() => { setMode(m); setSubmitResult(null); }}
-              className={`relative mr-6 pb-2.5 text-[15px] cursor-pointer transition-colors select-none ${
-                mode === m
-                  ? "font-semibold text-primary"
-                  : "font-normal text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {m === "bug" ? t("bugReport.tabBug") : t("featureRequest.tabFeature")}
-              {mode === m && (
-                <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-full" />
-              )}
-            </span>
-          ))}
-        </div>
-
-        {/* Scrollable body */}
-        <fieldset disabled={submitting} className="contents">
-        <div className="overflow-y-auto overflow-x-hidden px-5 py-4 space-y-3.5" style={{ maxHeight: "calc(85vh - 180px)" }}>
-          {/* Title */}
-          <div className="space-y-1">
-            <Label className="text-[13px]">
-              {isBug ? t("bugReport.titleLabel") : t("featureRequest.nameLabel")} <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder={isBug ? t("bugReport.titlePlaceholder") : t("featureRequest.namePlaceholder")}
-              maxLength={200}
-            />
-          </div>
-
-          {/* Description */}
-          <div className="space-y-1">
-            <Label className="text-[13px]">
-              {isBug ? t("bugReport.descLabel") : t("featureRequest.descLabel")} <span className="text-destructive">*</span>
-            </Label>
-            <Textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={isBug ? t("bugReport.descPlaceholder") : t("featureRequest.descPlaceholder")}
-              rows={3}
-              className="resize-y"
-            />
-          </div>
-
-          {/* Bug: Repro steps */}
-          {isBug && (
-            <div className="space-y-1">
-              <Label className="text-[13px]">{t("bugReport.stepsLabel")}</Label>
-              <Textarea
-                value={steps}
-                onChange={(e) => setSteps(e.target.value)}
-                placeholder={t("bugReport.stepsPlaceholder")}
-                rows={2}
-                className="resize-y"
-              />
-            </div>
-          )}
-
-          {/* Contact info */}
-          <div className="space-y-1">
-            <Label className="text-[13px]">
-              {t("bugReport.contactEmailLabel")}
-            </Label>
-            <Input
-              value={contactEmail}
-              onChange={(e) => setContactEmail(e.target.value)}
-              placeholder={t("featureRequest.emailPlaceholder")}
-              type="email"
-            />
-          </div>
-
-          {/* Image upload */}
-          <div className="space-y-1">
-            <Label className="text-[13px]">{isBug ? t("bugReport.images") : t("featureRequest.attachments")}</Label>
-            <div
-              onDrop={handleDrop}
-              onDragOver={(e) => e.preventDefault()}
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-border rounded-md py-3 text-center cursor-pointer text-[13px] text-muted-foreground transition-colors hover:border-primary/40"
-              onDragEnter={(e) => { e.currentTarget.classList.add("border-primary"); }}
-              onDragLeave={(e) => { e.currentTarget.classList.remove("border-primary"); }}
-            >
-              {t("bugReport.imageDropHint")}
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={(e) => { if (e.target.files) addImages(e.target.files); e.target.value = ""; }}
-            />
-            {imagePreviews.length > 0 && (
-              <div className="flex gap-1.5 flex-wrap mt-1.5">
-                {imagePreviews.map((src, i) => (
-                  <div key={i} className="relative w-14 h-14 rounded-md overflow-hidden border border-border group">
-                    <img src={src} alt="" className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); removeImage(i); }}
-                      className="absolute top-0 right-0 w-5 h-5 rounded-bl-md bg-black/60 hover:bg-black/80 text-white flex items-center justify-center cursor-pointer transition-colors"
-                      style={{ border: "none", padding: 0, lineHeight: 1 }}
-                    >
-                      <IconX size={10} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Bug: Checkboxes */}
-          {isBug && (
-            <div className="space-y-2 pt-0.5">
-              <label className="flex items-center gap-2 cursor-pointer" htmlFor="upload-logs">
-                <Checkbox
-                  id="upload-logs"
-                  checked={uploadLogs}
-                  onCheckedChange={(v) => setUploadLogs(v === true)}
-                />
-                <span className="text-[13px]">{t("bugReport.uploadLogs")}</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer" htmlFor="upload-debug">
-                <Checkbox
-                  id="upload-debug"
-                  checked={uploadDebug}
-                  onCheckedChange={(v) => setUploadDebug(v === true)}
-                />
-                <span className="text-[13px]">{t("bugReport.uploadDebug")}</span>
-              </label>
-              <p className="text-[11px] text-muted-foreground/70 leading-relaxed pl-6">
-                <IconInfo size={10} className="inline align-[-1px] mr-0.5" />
-                {t("bugReport.debugWarning")}
-              </p>
-            </div>
-          )}
-
-          {/* System info: hidden from UI, still collected for submission */}
-
-          <div ref={captchaContainerRef} id="aliyun-captcha-element" />
-
-          {/* Upload Progress */}
-          {uploadProgress && (
-            <div className="space-y-1.5 px-1">
-              <div className="flex items-center justify-between text-[12px] text-muted-foreground">
-                <span>{uploadProgress.detail}</span>
-                <span>{uploadProgress.percent}%</span>
-              </div>
-              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
-                  style={{ width: `${uploadProgress.percent}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Error result (success is handled by separate dialog) */}
-          {submitResult && !submitResult.ok && (
-            <div className="rounded-md p-2.5 text-[13px] leading-relaxed bg-destructive/10 text-destructive">
-              <div className="whitespace-pre-wrap">{submitResult.msg}</div>
-              {submitResult.downloadUrl && (
-                <Button
-                  size="sm"
-                  disabled={downloading}
-                  className="mt-1.5 h-7 text-xs"
-                  onClick={async () => {
-                    if (!submitResult.downloadUrl) return;
-                    setDownloading(true);
-                    const url = submitResult.downloadUrl;
-                    const ts = Math.floor(Date.now() / 1000);
-                    const filename = `openakita-feedback-${ts}.zip`;
-                    try {
-                      const dest = await downloadFile(url, filename);
-                      await showInFolder(dest);
-                    } catch (err: unknown) {
-                      const msg = t("feedback.downloadFailed", {
-                        error: err instanceof Error ? err.message : String(err),
-                      });
-                      setSubmitResult((prev) => (prev ? { ...prev, msg: prev.msg + "\n" + msg } : prev));
-                    } finally {
-                      setDownloading(false);
-                    }
-                  }}
+            {/* Tab navigation as header */}
+            <div className="flex items-end gap-0 border-b border-border px-5 pt-4 shrink-0">
+              {(["bug", "feature"] as FeedbackMode[]).map((m) => (
+                <span
+                  key={m}
+                  onClick={() => { setMode(m); setSubmitResult(null); }}
+                  className={`relative mr-6 pb-2.5 text-[15px] cursor-pointer transition-colors select-none ${
+                    mode === m
+                      ? "font-semibold text-primary"
+                      : "font-normal text-muted-foreground hover:text-foreground"
+                  }`}
                 >
-                  {downloading ? t("feedback.downloading") : t("feedback.saveLocal")}
-                </Button>
+                  {m === "bug" ? t("bugReport.tabBug") : t("featureRequest.tabFeature")}
+                  {mode === m && (
+                    <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-full" />
+                  )}
+                </span>
+              ))}
+            </div>
+
+            {/* Scrollable body */}
+            <fieldset disabled={submitting} className="contents">
+            <div className="overflow-y-auto overflow-x-hidden px-5 py-4 space-y-3.5" style={{ maxHeight: "calc(85vh - 180px)" }}>
+              {/* Title */}
+              <div className="space-y-1">
+                <Label className="text-[13px]">
+                  {isBug ? t("bugReport.titleLabel") : t("featureRequest.nameLabel")} <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder={isBug ? t("bugReport.titlePlaceholder") : t("featureRequest.namePlaceholder")}
+                  maxLength={200}
+                />
+              </div>
+
+              {/* Description */}
+              <div className="space-y-1">
+                <Label className="text-[13px]">
+                  {isBug ? t("bugReport.descLabel") : t("featureRequest.descLabel")} <span className="text-destructive">*</span>
+                </Label>
+                <Textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder={isBug ? t("bugReport.descPlaceholder") : t("featureRequest.descPlaceholder")}
+                  rows={3}
+                  className="resize-y"
+                />
+              </div>
+
+              {/* Bug: Repro steps */}
+              {isBug && (
+                <div className="space-y-1">
+                  <Label className="text-[13px]">{t("bugReport.stepsLabel")}</Label>
+                  <Textarea
+                    value={steps}
+                    onChange={(e) => setSteps(e.target.value)}
+                    placeholder={t("bugReport.stepsPlaceholder")}
+                    rows={2}
+                    className="resize-y"
+                  />
+                </div>
+              )}
+
+              {/* Contact info */}
+              <div className="space-y-1">
+                <Label className="text-[13px]">
+                  {t("bugReport.contactEmailLabel")}
+                </Label>
+                <Input
+                  value={contactEmail}
+                  onChange={(e) => setContactEmail(e.target.value)}
+                  placeholder={t("featureRequest.emailPlaceholder")}
+                  type="email"
+                />
+              </div>
+
+              {/* Image upload */}
+              <div className="space-y-1">
+                <Label className="text-[13px]">{isBug ? t("bugReport.images") : t("featureRequest.attachments")}</Label>
+                <div
+                  onDrop={handleDrop}
+                  onDragOver={(e) => e.preventDefault()}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-border rounded-md py-3 text-center cursor-pointer text-[13px] text-muted-foreground transition-colors hover:border-primary/40"
+                  onDragEnter={(e) => { e.currentTarget.classList.add("border-primary"); }}
+                  onDragLeave={(e) => { e.currentTarget.classList.remove("border-primary"); }}
+                >
+                  {t("bugReport.imageDropHint")}
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => { if (e.target.files) addImages(e.target.files); e.target.value = ""; }}
+                />
+                {imagePreviews.length > 0 && (
+                  <div className="flex gap-1.5 flex-wrap mt-1.5">
+                    {imagePreviews.map((src, i) => (
+                      <div key={i} className="relative w-14 h-14 rounded-md overflow-hidden border border-border group">
+                        <img src={src} alt="" className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); removeImage(i); }}
+                          className="absolute top-0 right-0 w-5 h-5 rounded-bl-md bg-black/60 hover:bg-black/80 text-white flex items-center justify-center cursor-pointer transition-colors"
+                          style={{ border: "none", padding: 0, lineHeight: 1 }}
+                        >
+                          <IconX size={10} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Bug: Checkboxes */}
+              {isBug && (
+                <div className="space-y-2 pt-0.5">
+                  <label className="flex items-center gap-2 cursor-pointer" htmlFor="upload-logs">
+                    <Checkbox
+                      id="upload-logs"
+                      checked={uploadLogs}
+                      onCheckedChange={(v) => setUploadLogs(v === true)}
+                    />
+                    <span className="text-[13px]">{t("bugReport.uploadLogs")}</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer" htmlFor="upload-debug">
+                    <Checkbox
+                      id="upload-debug"
+                      checked={uploadDebug}
+                      onCheckedChange={(v) => setUploadDebug(v === true)}
+                    />
+                    <span className="text-[13px]">{t("bugReport.uploadDebug")}</span>
+                  </label>
+                  <p className="text-[11px] text-muted-foreground/70 leading-relaxed pl-6">
+                    <IconInfo size={10} className="inline align-[-1px] mr-0.5" />
+                    {t("bugReport.debugWarning")}
+                  </p>
+                </div>
+              )}
+
+              <div ref={captchaContainerRef} id="aliyun-captcha-element" />
+
+              {/* Error result */}
+              {submitResult && !submitResult.ok && (
+                <div className="rounded-md p-2.5 text-[13px] leading-relaxed bg-destructive/10 text-destructive">
+                  <div className="whitespace-pre-wrap">{submitResult.msg}</div>
+                  {submitResult.downloadUrl && (
+                    <Button
+                      size="sm"
+                      disabled={downloading}
+                      className="mt-1.5 h-7 text-xs"
+                      onClick={async () => {
+                        if (!submitResult.downloadUrl) return;
+                        setDownloading(true);
+                        const url = submitResult.downloadUrl;
+                        const ts = Math.floor(Date.now() / 1000);
+                        const filename = `openakita-feedback-${ts}.zip`;
+                        try {
+                          const dest = await downloadFile(url, filename);
+                          await showInFolder(dest);
+                        } catch (err: unknown) {
+                          const msg = t("feedback.downloadFailed", {
+                            error: err instanceof Error ? err.message : String(err),
+                          });
+                          setSubmitResult((prev) => (prev ? { ...prev, msg: prev.msg + "\n" + msg } : prev));
+                        } finally {
+                          setDownloading(false);
+                        }
+                      }}
+                    >
+                      {downloading ? t("feedback.downloading") : t("feedback.saveLocal")}
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
-          )}
-        </div>
-        </fieldset>
+            </fieldset>
 
-        {/* Footer */}
-        <div className="flex items-center px-5 py-3 border-t border-border shrink-0">
-          {!uploadProgress && !submitting && (
-            <Button variant="ghost" size="sm" onClick={resetForm} className="text-muted-foreground hover:text-foreground">
-              {t("feedback.clearForm")}
-            </Button>
-          )}
-          <div className="flex items-center gap-2 ml-auto">
-            {uploadProgress ? (
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => { abortRef.current?.abort(); }}
-              >
-                {t("feedback.cancelUpload")}
+            {/* Footer */}
+            <div className="flex items-center px-5 py-3 border-t border-border shrink-0">
+              <Button variant="ghost" size="sm" onClick={resetForm} className="text-muted-foreground hover:text-foreground">
+                {t("feedback.clearForm")}
               </Button>
-            ) : (
-              <>
+              <div className="flex items-center gap-2 ml-auto">
                 <Button variant="outline" size="sm" onClick={handleClose}>
                   {t("common.cancel")}
                 </Button>
@@ -630,35 +618,69 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
                     ? t("bugReport.submitting")
                     : isBug ? t("bugReport.submit") : t("featureRequest.submit")}
                 </Button>
-              </>
-            )}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+              </div>
+            </div>
+          </>
+        )}
 
-    {/* Success confirmation dialog */}
-    <Dialog open={successOpen} onOpenChange={(v) => { if (!v) { setSuccessOpen(false); onNavigateToMyFeedback?.(); } }}>
-      <DialogContent className="sm:max-w-[380px]">
-        <DialogHeader>
-          <DialogTitle>{t("feedback.submitSuccessTitle")}</DialogTitle>
-          <DialogDescription className="sr-only">{t("feedback.submitSuccessTitle")}</DialogDescription>
-        </DialogHeader>
-        <p className="text-[14px] text-muted-foreground leading-relaxed">
-          {t("feedback.submitSuccessMessage")}
-        </p>
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="outline" size="sm" onClick={() => { setSuccessOpen(false); onNavigateToMyFeedback?.(); }}>
-            {t("feedback.close")}
-          </Button>
-          {onNavigateToMyFeedback && (
-            <Button size="sm" onClick={() => { setSuccessOpen(false); onNavigateToMyFeedback(); }}>
-              {t("myFeedback.viewFeedback")}
-            </Button>
-          )}
-        </div>
+        {phase === "uploading" && (
+          <>
+            <DialogHeader className="px-5 pt-5 pb-0">
+              <DialogTitle className="text-[15px]">{t("feedback.uploadingTitle")}</DialogTitle>
+              <DialogDescription className="sr-only">{t("feedback.uploadingTitle")}</DialogDescription>
+            </DialogHeader>
+            <div className="px-5 py-6 space-y-4">
+              {uploadProgress && (
+                <>
+                  <div className="flex items-center justify-between text-[13px] text-muted-foreground">
+                    <span>{uploadProgress.detail}</span>
+                    <span>{uploadProgress.percent}%</span>
+                  </div>
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
+                      style={{ width: `${uploadProgress.percent}%` }}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="flex justify-end px-5 py-3 border-t border-border">
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => { abortRef.current?.abort(); }}
+              >
+                {t("feedback.cancelUpload")}
+              </Button>
+            </div>
+          </>
+        )}
+
+        {phase === "success" && (
+          <>
+            <DialogHeader className="px-5 pt-5 pb-0">
+              <DialogTitle className="text-[15px]">{t("feedback.submitSuccessTitle")}</DialogTitle>
+              <DialogDescription className="sr-only">{t("feedback.submitSuccessTitle")}</DialogDescription>
+            </DialogHeader>
+            <div className="px-5 py-4">
+              <p className="text-[14px] text-muted-foreground leading-relaxed">
+                {t("feedback.submitSuccessMessage")}
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-3 border-t border-border">
+              <Button variant="outline" size="sm" onClick={() => { onNavigateToMyFeedback?.(); handleClose(); }}>
+                {t("feedback.close")}
+              </Button>
+              {onNavigateToMyFeedback && (
+                <Button size="sm" onClick={() => { onNavigateToMyFeedback(); handleClose(); }}>
+                  {t("myFeedback.viewFeedback")}
+                </Button>
+              )}
+            </div>
+          </>
+        )}
       </DialogContent>
     </Dialog>
-    </>
   );
 }

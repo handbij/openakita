@@ -1401,7 +1401,7 @@
     "localOnlyHint": "This feedback was not uploaded to the cloud and cannot be tracked",
     "deleteConfirm": "Delete this feedback record? (Cloud data will not be affected)",
     "deleted": "Deleted",
-    "repliesTitle": "Developer Replies",
+    "repliesTitle": "Replies",
     "noReplies": "No replies yet. We'll get back to you soon.",
     "refreshing": "Refreshing status...",
     "viewFeedback": "View My Feedback",

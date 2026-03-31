@@ -13,6 +13,7 @@ import {
   IconChevronDown, IconChevronRight, IconLoader, IconMessageCircle,
   IconSend, IconPlus, IconSearch,
 } from "../icons";
+import { useMdModules } from "../hooks/useMdModules";
 
 type FeedbackRecord = {
   report_id: string;
@@ -86,6 +87,7 @@ function statusKey(status: string): string {
 
 export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal, refreshTrigger }: MyFeedbackViewProps) {
   const { t } = useTranslation();
+  const mdModules = useMdModules();
   const [records, setRecords] = useState<FeedbackRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -499,8 +501,12 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
                                   <span className="font-medium">{reply.author}</span>
                                   <span className="text-muted-foreground">{formatDate(reply.created_at)}</span>
                                 </div>
-                                <div className="mt-1 px-3 py-2 rounded-lg bg-muted text-[13px] whitespace-pre-wrap break-words">
-                                  {reply.body}
+                                <div className="mt-1 px-3 py-2 rounded-lg bg-muted text-[13px] break-words">
+                                  {mdModules ? (
+                                    <div className="feedbackMdContent">
+                                      <mdModules.ReactMarkdown remarkPlugins={[mdModules.remarkGfm]}>{reply.body}</mdModules.ReactMarkdown>
+                                    </div>
+                                  ) : <span style={{ whiteSpace: "pre-wrap" }}>{reply.body}</span>}
                                 </div>
                               </div>
                             </div>

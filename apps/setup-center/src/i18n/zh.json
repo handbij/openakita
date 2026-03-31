@@ -1401,7 +1401,7 @@
     "localOnlyHint": "此反馈未能上传到云端，无法追踪进度",
     "deleteConfirm": "确定删除此反馈记录？（不影响已提交到云端的数据）",
     "deleted": "已删除",
-    "repliesTitle": "开发者回复",
+    "repliesTitle": "回复动态",
     "noReplies": "暂无回复，我们会尽快处理",
     "refreshing": "正在刷新状态...",
     "viewFeedback": "查看我的反馈",

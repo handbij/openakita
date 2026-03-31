@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import {
-  IconRefresh, IconTrash, IconBug, IconZap,
+  IconRefresh, IconTrash, IconBug, IconZap, IconUser,
   IconChevronDown, IconChevronRight, IconLoader, IconMessageCircle,
   IconSend, IconPlus, IconSearch,
 } from "../icons";
@@ -93,7 +93,7 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
   const [records, setRecords] = useState<FeedbackRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [details, setDetails] = useState<Record<string, FeedbackDetail>>({});
   const [detailLoading, setDetailLoading] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
@@ -120,20 +120,22 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
     try {
       await safeFetch(`${apiBaseUrl}/api/feedback-status/batch`, { method: "POST" });
       await fetchRecords();
-      if (expandedId) {
-        try {
-          const res = await safeFetch(`${apiBaseUrl}/api/feedback-status/${expandedId}`);
-          const data = await res.json();
-          setDetails((prev) => ({ ...prev, [expandedId]: data }));
-          if (data.status) {
-            setRecords((prev) => prev.map((r) =>
-              r.report_id === expandedId
-                ? { ...r, cached_status: data.status, has_unread: false }
-                : r
-            ));
+      if (expandedIds.size > 0) {
+        for (const eid of expandedIds) {
+          try {
+            const res = await safeFetch(`${apiBaseUrl}/api/feedback-status/${eid}`);
+            const data = await res.json();
+            setDetails((prev) => ({ ...prev, [eid]: data }));
+            if (data.status) {
+              setRecords((prev) => prev.map((r) =>
+                r.report_id === eid
+                  ? { ...r, cached_status: data.status, has_unread: false }
+                  : r
+              ));
+            }
+          } catch {
+            // detail refresh failed, keep stale data
           }
-        } catch {
-          // detail refresh failed, keep stale data
         }
       }
     } catch {
@@ -141,7 +143,7 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
     } finally {
       setRefreshing(false);
     }
-  }, [apiBaseUrl, fetchRecords, expandedId]);
+  }, [apiBaseUrl, fetchRecords, expandedIds]);
 
   const batchRefreshRef = useRef(batchRefresh);
   batchRefreshRef.current = batchRefresh;
@@ -179,14 +181,18 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
   }, [apiBaseUrl]);
 
   const toggleExpand = useCallback((reportId: string) => {
-    if (expandedId === reportId) {
-      setExpandedId(null);
-    } else {
-      setExpandedId(reportId);
-      setReplyError(null);
-      if (!details[reportId]) fetchDetail(reportId);
-    }
-  }, [expandedId, details, fetchDetail]);
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(reportId)) {
+        next.delete(reportId);
+      } else {
+        next.add(reportId);
+        setReplyError(null);
+        if (!details[reportId]) fetchDetail(reportId);
+      }
+      return next;
+    });
+  }, [details, fetchDetail]);
 
   const handleDelete = useCallback((reportId: string) => {
     setConfirmDialog({
@@ -195,13 +201,13 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
         try {
           await safeFetch(`${apiBaseUrl}/api/feedback-history/${reportId}`, { method: "DELETE" });
           setRecords((prev) => prev.filter((r) => r.report_id !== reportId));
-          if (expandedId === reportId) setExpandedId(null);
+          setExpandedIds((prev) => { const next = new Set(prev); next.delete(reportId); return next; });
         } catch {
           // silently fail
         }
       },
     });
-  }, [apiBaseUrl, expandedId, t]);
+  }, [apiBaseUrl, t]);
 
   const stats = useMemo(() => {
     let active = 0, unread = 0, resolved = 0;
@@ -412,7 +418,7 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
           ) : (
         <div className="space-y-2">
           {filteredRecords.map((rec) => {
-            const isExpanded = expandedId === rec.report_id;
+            const isExpanded = expandedIds.has(rec.report_id);
             const detail = details[rec.report_id];
             const isLoadingDetail = detailLoading === rec.report_id;
             const style = STATUS_STYLES[rec.cached_status] ?? STATUS_STYLES.pending;
@@ -472,15 +478,8 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
                       </div>
                     ) : rec.has_token && detail ? (
                       <div className="space-y-3 mt-2">
-                        <div className="flex items-center gap-2 flex-wrap pb-2 border-b border-border">
-                          <p className="text-[13px] font-medium">{t("myFeedback.repliesTitle")}</p>
-                          {detail.labels && detail.labels.length > 0 && detail.labels.map((label) => (
-                            <Badge key={label} variant="outline" className="text-[10px] px-1.5 py-0">{label}</Badge>
-                          ))}
-                        </div>
-
                         {detail.summary && (
-                          <div className="flex justify-end">
+                          <div className="flex justify-end gap-2.5">
                             <div className="max-w-[80%]">
                               <div className="flex items-center justify-end gap-2 text-[12px]">
                                 <span className="text-muted-foreground">{detail.created_at ? formatDate(detail.created_at) : formatDate(rec.submitted_at)}</span>
@@ -490,6 +489,9 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
                                 {detail.summary}
                               </div>
                             </div>
+                            <div className="w-6 h-6 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
+                              <IconUser size={14} />
+                            </div>
                           </div>
                         )}
 
@@ -497,7 +499,7 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
                           detail.developer_replies.map((reply, i) => {
                             const isUserReply = reply.source === "user_reply";
                             return isUserReply ? (
-                              <div key={i} className="flex justify-end">
+                              <div key={i} className="flex justify-end gap-2.5">
                                 <div className="max-w-[80%]">
                                   <div className="flex items-center justify-end gap-2 text-[12px]">
                                     <span className="text-muted-foreground">{formatDate(reply.created_at)}</span>
@@ -506,6 +508,9 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
                                   <div className="mt-1 px-3 py-2 rounded-lg bg-blue-500/10 text-[13px] whitespace-pre-wrap break-words">
                                     {reply.body}
                                   </div>
+                                </div>
+                                <div className="w-6 h-6 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
+                                  <IconUser size={14} />
                                 </div>
                               </div>
                             ) : (
@@ -518,7 +523,7 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
                                     <span className="font-medium">{reply.author}</span>
                                     <span className="text-muted-foreground">{formatDate(reply.created_at)}</span>
                                   </div>
-                                  <div className="mt-1 px-3 py-2 rounded-lg bg-muted text-[13px] break-words">
+                                  <div className="mt-1 px-3 py-2 rounded-lg bg-primary/5 border border-border/50 text-[13px] break-words">
                                     {mdModules ? (
                                       <div className="feedbackMdContent">
                                         <mdModules.ReactMarkdown remarkPlugins={[mdModules.remarkGfm]}>{reply.body}</mdModules.ReactMarkdown>
@@ -594,18 +599,19 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
                     )}
 
                     {rec.has_token && TERMINAL_STATUSES.includes(rec.cached_status) && onOpenFeedbackModal && (
-                      <div className="mt-3 pt-3 border-t border-border">
-                        <button
+                      <p className="mt-2 text-[11px] text-muted-foreground text-center">
+                        {t("myFeedback.resubmitLabel")}{" "}
+                        <span
+                          className="text-blue-500 hover:text-blue-600 cursor-pointer hover:underline"
                           onClick={() => onOpenFeedbackModal({
                             mode: rec.type,
                             title: rec.title,
                             description: t("myFeedback.resubmitHint", { title: rec.title }),
                           })}
-                          className="text-[13px] text-blue-500 hover:text-blue-600 hover:underline"
                         >
-                          {t("myFeedback.resubmitPrompt")}
-                        </button>
-                      </div>
+                          {t("myFeedback.resubmitAction")}
+                        </span>
+                      </p>
                     )}
                   </div>
                 )}

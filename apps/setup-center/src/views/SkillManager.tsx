@@ -608,8 +608,9 @@ export function SkillManager({
   const [manualUrl, setManualUrl] = useState("");
   const [manualInstalling, setManualInstalling] = useState(false);
   const [marketDetailSkill, setMarketDetailSkill] = useState<MarketplaceSkill | null>(null);
-  const [marketDetailContent, setMarketDetailContent] = useState<{ frontmatter: Record<string, string>; body: string } | null>(null);
+  const [marketDetailContent, setMarketDetailContent] = useState<{ frontmatter: Record<string, string>; body: string; empty?: boolean } | null>(null);
   const [marketDetailLoading, setMarketDetailLoading] = useState(false);
+  const [marketDetailError, setMarketDetailError] = useState<"timeout" | "network" | "server" | null>(null);
   const marketDetailReqRef = useRef(0);
   const [enabledDraft, setEnabledDraft] = useState<Record<string, boolean>>({});
   const [enabledDirty, setEnabledDirty] = useState(false);
@@ -1182,6 +1183,7 @@ export function SkillManager({
   const openMarketDetail = useCallback(async (skill: MarketplaceSkill) => {
     setMarketDetailSkill(skill);
     setMarketDetailContent(null);
+    setMarketDetailError(null);
     setMarketDetailLoading(true);
     const reqId = ++marketDetailReqRef.current;
 
@@ -1194,12 +1196,27 @@ export function SkillManager({
 
     try {
       const params = new URLSearchParams({ source, skill_id: sid });
-      const resp = await safeFetch(`${apiBaseUrl}/api/skills/marketplace/detail?${params}`);
+      const resp = await safeFetch(
+        `${apiBaseUrl}/api/skills/marketplace/detail?${params}`,
+        { signal: AbortSignal.timeout(20_000) },
+      );
       const data = await resp.json();
       if (reqId !== marketDetailReqRef.current) return;
-      setMarketDetailContent({ frontmatter: data.frontmatter || {}, body: data.body || "" });
-    } catch {
-      // GitHub fetch failed — just show list-level info
+      setMarketDetailContent({
+        frontmatter: data.frontmatter || {},
+        body: data.body || "",
+        empty: !!data.empty,
+      });
+    } catch (err: unknown) {
+      if (reqId !== marketDetailReqRef.current) return;
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("TimeoutError") || msg.includes("timed out") || msg.includes("aborted")) {
+        setMarketDetailError("timeout");
+      } else if (msg.startsWith("HTTP 5")) {
+        setMarketDetailError("server");
+      } else {
+        setMarketDetailError("network");
+      }
     } finally {
       if (reqId === marketDetailReqRef.current) setMarketDetailLoading(false);
     }
@@ -1700,6 +1717,20 @@ export function SkillManager({
                     <Loader2 className="animate-spin" style={{ display: "inline-block", marginBottom: 8 }} />
                     <div>{t("skills.loadingContent")}</div>
                   </div>
+                ) : marketDetailError ? (
+                  <div style={{ textAlign: "center", padding: 32 }}>
+                    <div style={{ fontSize: 13, color: "var(--destructive, #ef4444)", marginBottom: 12 }}>
+                      {marketDetailError === "timeout" && t("skills.detailTimeout")}
+                      {marketDetailError === "network" && t("skills.detailNetworkError")}
+                      {marketDetailError === "server" && t("skills.detailServerError")}
+                    </div>
+                    <Button
+                      variant="outline" size="sm"
+                      onClick={() => openMarketDetail(marketDetailSkill)}
+                    >
+                      {t("skills.detailRetry")}
+                    </Button>
+                  </div>
                 ) : (
                   <>
                     {/* Summary section */}
@@ -1769,8 +1800,23 @@ export function SkillManager({
                       </div>
                     )}
 
-                    {/* No content fallback */}
-                    {!marketDetailContent?.body && !desc && (
+                    {/* Content actually empty — SKILL.md not found in repo */}
+                    {!marketDetailContent?.body && !desc && marketDetailContent?.empty && (
+                      <div style={{ textAlign: "center", padding: 32 }}>
+                        <div style={{ fontSize: 13, opacity: 0.5, marginBottom: 12 }}>
+                          {t("skills.detailEmpty")}
+                        </div>
+                        <Button
+                          variant="outline" size="sm"
+                          onClick={() => openMarketDetail(marketDetailSkill)}
+                        >
+                          {t("skills.detailRetry")}
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Loaded but simply no description */}
+                    {!marketDetailContent?.body && !desc && !marketDetailContent?.empty && (
                       <div style={{ textAlign: "center", padding: 32, opacity: 0.4 }}>
                         {t("skillStore.noDesc")}
                       </div>

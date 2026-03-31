@@ -1414,6 +1414,8 @@
     "refresh": "Refresh",
     "submitFeedback": "Submit Feedback",
     "replyPlaceholder": "Type your reply...",
+    "replyAction": "Reply",
+    "cancelReply": "Cancel",
     "sendReply": "Send",
     "clearReply": "Clear",
     "sending": "Sending...",

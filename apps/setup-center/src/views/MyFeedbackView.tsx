@@ -98,6 +98,7 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
   const [detailLoading, setDetailLoading] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [replyText, setReplyText] = useState<Record<string, string>>({});
+  const [replyOpen, setReplyOpen] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState<string | null>(null);
   const [replyError, setReplyError] = useState<string | null>(null);
   const replyEndRef = useRef<Record<string, HTMLDivElement | null>>({});
@@ -262,6 +263,7 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
         signal: AbortSignal.timeout(30_000),
       });
       setReplyText((prev) => ({ ...prev, [reportId]: "" }));
+      setReplyOpen((prev) => { const n = new Set(prev); n.delete(reportId); return n; });
       const newReply: DeveloperReply = {
         author: "user",
         body: text,
@@ -549,52 +551,42 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
 
 
                     {rec.has_token && !TERMINAL_STATUSES.includes(rec.cached_status) && (
-                      <div className="mt-3 pt-3 border-t border-border">
-                        <div className="flex items-start gap-2">
-                          <textarea
-                            className="flex-1 min-h-[60px] max-h-[120px] px-3 py-2 text-[13px] rounded-md border border-input bg-background resize-y placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                            placeholder={t("myFeedback.replyPlaceholder")}
-                            value={replyText[rec.report_id] || ""}
-                            onChange={(e) => setReplyText((prev) => ({ ...prev, [rec.report_id]: e.target.value }))}
-                            disabled={sending === rec.report_id}
-                            maxLength={2000}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                                e.preventDefault();
-                                sendReply(rec.report_id);
-                              }
-                            }}
-                          />
-                          <div className="flex flex-col gap-1.5">
-                            <Button
-                              size="sm"
-                              disabled={sending === rec.report_id || !(replyText[rec.report_id] || "").trim()}
-                              onClick={() => sendReply(rec.report_id)}
-                              className="gap-1.5"
-                            >
-                              {sending === rec.report_id ? (
-                                <IconLoader size={14} className="animate-spin" />
-                              ) : (
-                                <IconSend size={14} />
-                              )}
-                              {sending === rec.report_id ? t("myFeedback.sending") : t("myFeedback.sendReply")}
-                            </Button>
-                            {(replyText[rec.report_id] || "").trim() && !sending && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setReplyText((prev) => ({ ...prev, [rec.report_id]: "" }))}
-                                className="gap-1.5"
-                              >
-                                <IconTrash size={14} />
-                                {t("myFeedback.clearReply")}
-                              </Button>
+                      <div className="mt-3 mx-6">
+                          <div style={{ position: "relative", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", boxShadow: "0 1px 2px rgba(0,0,0,0.05)" }}>
+                            <textarea
+                              style={{ width: "100%", minHeight: 48, maxHeight: 120, padding: "10px 36px 10px 12px", fontSize: 13, lineHeight: 1.5, background: "transparent", border: "none", outline: "none", boxShadow: "none", resize: "vertical", color: "inherit", fontFamily: "inherit" }}
+                              placeholder={t("myFeedback.replyPlaceholder")}
+                              value={replyText[rec.report_id] || ""}
+                              onChange={(e) => setReplyText((prev) => ({ ...prev, [rec.report_id]: e.target.value }))}
+                              disabled={sending === rec.report_id}
+                              maxLength={2000}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                                  e.preventDefault();
+                                  sendReply(rec.report_id);
+                                }
+                              }}
+                            />
+                            {(() => {
+                              const disabled = sending === rec.report_id || !(replyText[rec.report_id] || "").trim();
+                              return (
+                                <span
+                                  onClick={disabled ? undefined : () => sendReply(rec.report_id)}
+                                  title={t("myFeedback.sendReply")}
+                                  style={{ position: "absolute", right: 14, bottom: 10, cursor: disabled ? "default" : "pointer", color: disabled ? "var(--muted-foreground)" : "#3b82f6", opacity: disabled ? 0.3 : 1, transition: "color 0.15s, opacity 0.15s" }}
+                                >
+                                  {sending === rec.report_id ? (
+                                    <IconLoader size={18} className="animate-spin" />
+                                  ) : (
+                                    <IconSend size={18} />
+                                  )}
+                                </span>
+                              );
+                            })()}
+                            {replyError && sending !== rec.report_id && (
+                              <p style={{ fontSize: 12, color: "var(--destructive)", padding: "0 12px 8px", margin: 0 }}>{replyError}</p>
                             )}
                           </div>
-                        </div>
-                        {replyError && sending !== rec.report_id && (
-                          <p className="text-[12px] text-destructive mt-1">{replyError}</p>
-                        )}
                       </div>
                     )}
 

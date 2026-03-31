@@ -1414,6 +1414,8 @@
     "refresh": "刷新",
     "submitFeedback": "提交反馈",
     "replyPlaceholder": "输入回复...",
+    "replyAction": "回复",
+    "cancelReply": "取消",
     "sendReply": "发送",
     "clearReply": "清空",
     "sending": "发送中...",

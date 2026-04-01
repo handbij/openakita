@@ -192,10 +192,7 @@ class TaskMonitor:
         )
         self._phase = TaskPhase.WAITING_LLM
 
-        # 每次进入新迭代视为有进展（至少系统仍在推进循环）
-        self._touch_progress()
-
-        # 检查是否“无进展超时”（避免长任务被硬切）
+        # 先检查是否“无进展超时”（距上次 _touch_progress 的真实空闲时间）
         if self.progress_idle_seconds > self.timeout_seconds and not self._timeout_triggered:
             self._handle_timeout()
 
@@ -207,6 +204,9 @@ class TaskMonitor:
             and not self._timeout_triggered
         ):
             self._handle_timeout()
+
+        # 检查完毕后再标记进展：进入新迭代说明系统仍在推进
+        self._touch_progress()
 
     def end_iteration(self, llm_response_preview: str = "") -> None:
         """结束迭代"""

@@ -903,7 +903,7 @@ export function SkillManager({
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ url: folderPath }),
-            signal: AbortSignal.timeout(60_000),
+            signal: AbortSignal.timeout(180_000),
           });
           const data = await res.json();
           if (data.error) throw new Error(data.error);
@@ -1239,7 +1239,7 @@ export function SkillManager({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url: skill.url }),
-          signal: AbortSignal.timeout(60_000),
+          signal: AbortSignal.timeout(180_000),
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
@@ -1310,7 +1310,7 @@ export function SkillManager({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url }),
-          signal: AbortSignal.timeout(120_000),
+          signal: AbortSignal.timeout(180_000),
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);

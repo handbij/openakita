@@ -174,6 +174,11 @@ class ShellTool:
     # PowerShell 检测 & 编码
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _has_non_ascii(text: str) -> bool:
+        """命令是否含有非 ASCII 字符（中文、日文等）"""
+        return any(ord(c) > 127 for c in text)
+
     def _needs_powershell(self, command: str) -> bool:
         """检查命令是否需要 PowerShell 执行"""
         if not self._is_windows:
@@ -191,6 +196,11 @@ class ShellTool:
 
         # 2) 通用 Verb-Noun cmdlet 模式
         if self._VERB_NOUN_RE.search(command):
+            return True
+
+        # 3) 含非 ASCII 字符时走 PowerShell -EncodedCommand，
+        #    避免 cmd.exe 的 OEM 代码页（GBK）破坏 Unicode 参数
+        if self._has_non_ascii(command):
             return True
 
         return False
@@ -247,7 +257,7 @@ class ShellTool:
 
         策略：
         1. 如果命令已是 powershell/pwsh 调用 → 提取内部命令再编码
-        2. 否则直接对整个命令编码
+        2. 否则直接对整个命令编码（转义反引号防止 PS 解释 `n/`t 等）
         """
         stripped = command.strip().lower()
         if stripped.startswith(("powershell", "pwsh")):
@@ -261,8 +271,10 @@ class ShellTool:
                 logger.debug("Cannot extract inner PS command, passing through as-is")
                 return command
 
-        # 普通 cmdlet 命令，直接编码
-        return self._encode_for_powershell(command)
+        # 非 PowerShell 命令（包括因非 ASCII 而路由到 PS 的外部命令）：
+        # 转义反引号，防止 PowerShell 将 `n/`t/`r 等解释为转义序列
+        safe_command = command.replace("`", "``")
+        return self._encode_for_powershell(safe_command)
 
     async def run(
         self,

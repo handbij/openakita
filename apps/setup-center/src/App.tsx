@@ -1522,7 +1522,7 @@ export function App() {
           const raw = data.raw;
           const hasEndpoints = raw && typeof raw === "object" && Array.isArray(raw.endpoints) && raw.endpoints.length > 0;
           if (hasEndpoints) return JSON.stringify(raw);
-          const fallback = { endpoints: data.endpoints || [] };
+          const fallback: Record<string, any> = { endpoints: data.endpoints || [] };
           if (Array.isArray(raw?.compiler_endpoints)) fallback.compiler_endpoints = raw.compiler_endpoints;
           if (Array.isArray(raw?.stt_endpoints)) fallback.stt_endpoints = raw.stt_endpoints;
           if (raw?.settings) fallback.settings = raw.settings;

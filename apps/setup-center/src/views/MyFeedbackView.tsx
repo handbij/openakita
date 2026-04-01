@@ -14,6 +14,9 @@ import {
   IconSend, IconPlus, IconSearch,
 } from "../icons";
 import { useMdModules } from "../hooks/useMdModules";
+import { PublicFeedbackList } from "./PublicFeedbackList";
+
+type FeedbackTab = "mine" | "all";
 
 type FeedbackRecord = {
   report_id: string;
@@ -90,6 +93,7 @@ function statusKey(status: string): string {
 export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal, refreshTrigger }: MyFeedbackViewProps) {
   const { t } = useTranslation();
   const mdModules = useMdModules();
+  const [activeTab, setActiveTab] = useState<FeedbackTab>("mine");
   const [records, setRecords] = useState<FeedbackRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -318,33 +322,55 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
-        <h2 className="text-lg font-semibold">{t("myFeedback.title")}</h2>
-        <div className="flex items-center gap-2">
-          {onOpenFeedbackModal && (
+        <ToggleGroup
+          type="single"
+          value={activeTab}
+          onValueChange={(v) => { if (v) setActiveTab(v as FeedbackTab); }}
+          variant="outline"
+        >
+          <ToggleGroupItem
+            value="mine"
+            className="text-sm data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
+          >
+            {t("myFeedback.tabMine")}
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            value="all"
+            className="text-sm data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
+          >
+            {t("myFeedback.tabAll")}
+          </ToggleGroupItem>
+        </ToggleGroup>
+        {activeTab === "mine" && (
+          <div className="flex items-center gap-2">
+            {onOpenFeedbackModal && (
+              <Button
+                size="sm"
+                disabled={!serviceRunning}
+                onClick={() => onOpenFeedbackModal()}
+                className="gap-1.5"
+              >
+                <IconPlus size={14} />
+                {t("myFeedback.submitFeedback")}
+              </Button>
+            )}
             <Button
+              variant="outline"
               size="sm"
-              disabled={!serviceRunning}
-              onClick={() => onOpenFeedbackModal()}
+              disabled={refreshing || !serviceRunning}
+              onClick={batchRefresh}
               className="gap-1.5"
             >
-              <IconPlus size={14} />
-              {t("myFeedback.submitFeedback")}
+              {refreshing ? <IconLoader size={14} className="animate-spin" /> : <IconRefresh size={14} />}
+              {t("myFeedback.refresh")}
             </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={refreshing || !serviceRunning}
-            onClick={batchRefresh}
-            className="gap-1.5"
-          >
-            {refreshing ? <IconLoader size={14} className="animate-spin" /> : <IconRefresh size={14} />}
-            {t("myFeedback.refresh")}
-          </Button>
-        </div>
+          </div>
+        )}
       </div>
 
-      {records.length === 0 ? (
+      {activeTab === "all" ? (
+        <PublicFeedbackList apiBaseUrl={apiBaseUrl} serviceRunning={serviceRunning} />
+      ) : records.length === 0 ? (
         <div className="text-center py-16">
           <IconMessageCircle size={40} className="mx-auto mb-3 text-muted-foreground/30" />
           <p className="text-muted-foreground text-[15px]">{t("myFeedback.empty")}</p>

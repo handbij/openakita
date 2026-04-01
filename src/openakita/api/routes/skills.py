@@ -581,37 +581,108 @@ async def update_skill_content(skill_name: str, request: Request):
     }
 
 
-@router.get("/api/skills/marketplace")
-async def search_marketplace(q: str = "agent"):
-    """Proxy to skills.sh search API (bypasses CORS for desktop app)."""
+def _build_marketplace_client_kwargs() -> dict:
+    """Build httpx client kwargs with proxy/transport for marketplace requests."""
     from openakita.llm.providers.proxy_utils import (
         get_httpx_transport,
         get_proxy_config,
     )
 
+    kwargs: dict = {"timeout": 15, "follow_redirects": True, "trust_env": False}
+    proxy = get_proxy_config()
+    if proxy:
+        kwargs["proxy"] = proxy
+    transport = get_httpx_transport()
+    if transport:
+        kwargs["transport"] = transport
+    return kwargs
+
+
+@router.get("/api/skills/marketplace")
+async def search_marketplace(q: str = "agent"):
+    """Proxy to skills.sh search API (bypasses CORS for desktop app)."""
     try:
-        client_kwargs: dict = {
-            "timeout": 15,
-            "follow_redirects": True,
-            "trust_env": False,
-        }
-
-        # 复用项目的代理和 IPv4 设置（get_proxy_config 含可达性验证）
-        proxy = get_proxy_config()
-        if proxy:
-            client_kwargs["proxy"] = proxy
-
-        transport = get_httpx_transport()
-        if transport:
-            client_kwargs["transport"] = transport
-
-        async with httpx.AsyncClient(**client_kwargs) as client:
+        async with httpx.AsyncClient(**_build_marketplace_client_kwargs()) as client:
             resp = await client.get(SKILLS_SH_API, params={"q": q})
             resp.raise_for_status()
             return resp.json()
     except Exception as e:
         logger.warning("skills.sh API error: %s", e)
         return {"skills": [], "count": 0, "error": str(e)}
+
+
+@router.get("/api/skills/marketplace/detail")
+async def marketplace_skill_detail(source: str, skill_id: str):
+    """Fetch SKILL.md from GitHub for a skills.sh marketplace skill.
+
+    Tries multiple common path conventions concurrently (main+master × 3 paths).
+    Returns the first successful result.
+    """
+    if not source or "/" not in source:
+        raise HTTPException(status_code=400, detail="source must be owner/repo")
+
+    raw_base = f"https://raw.githubusercontent.com/{source}"
+    branches = ["main", "master"]
+    paths = [
+        f"skills/{skill_id}/SKILL.md",
+        f"{skill_id}/SKILL.md",
+        "SKILL.md",
+    ]
+
+    urls = [f"{raw_base}/{b}/{p}" for b in branches for p in paths]
+
+    async def _try_fetch(client: httpx.AsyncClient, url: str) -> str | None:
+        try:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                return resp.text
+        except Exception:
+            pass
+        return None
+
+    content: str | None = None
+    try:
+        async with httpx.AsyncClient(**_build_marketplace_client_kwargs()) as client:
+            results = await asyncio.gather(*[_try_fetch(client, u) for u in urls])
+            for r in results:
+                if r:
+                    content = r
+                    break
+    except Exception as e:
+        logger.warning("marketplace detail fetch error: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
+
+    if not content:
+        return {
+            "source": source, "skillId": skill_id,
+            "frontmatter": {}, "body": "", "empty": True,
+        }
+
+    # Parse YAML frontmatter into a dict
+    frontmatter: dict[str, str] = {}
+    body = content
+    if content.startswith("---"):
+        parts = content.split("---", 2)
+        if len(parts) >= 3:
+            body = parts[2].strip()
+            current_key = ""
+            for line in parts[1].strip().splitlines():
+                if ":" in line and not line.startswith(" ") and not line.startswith("\t"):
+                    key, _, val = line.partition(":")
+                    key = key.strip()
+                    val = val.strip().strip("\"'")
+                    frontmatter[key] = val
+                    current_key = key
+                elif current_key and (line.startswith("  ") or line.startswith("\t")):
+                    # Multi-line value continuation
+                    frontmatter[current_key] += " " + line.strip()
+
+    return {
+        "source": source,
+        "skillId": skill_id,
+        "frontmatter": frontmatter,
+        "body": body,
+    }
 
 
 # Register API-layer side effects (cache invalidation + WS broadcast) so that

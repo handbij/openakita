@@ -147,51 +147,6 @@ class FilesystemHandler:
         )
         return f'python "{tmp.name}"'
 
-    @staticmethod
-    def _fix_windows_pip_user(command: str) -> str:
-        """Windows 非 venv 环境下自动为 pip install 添加 --user 标志。
-
-        系统 Python 的 site-packages 位于 C:\\PythonXX\\ 等系统目录，
-        非管理员进程写入时会触发 [WinError 5] 拒绝访问。
-        """
-        import sys
-
-        stripped = command.strip()
-        # 匹配 pip install / python -m pip install 等模式
-        pip_patterns = [
-            r"^pip\d?\s+install\b",
-            r"^python\S*\s+-m\s+pip\s+install\b",
-        ]
-        is_pip_install = any(re.match(p, stripped, re.IGNORECASE) for p in pip_patterns)
-        if not is_pip_install:
-            return command
-
-        if "--user" in command or "--target" in command or "-t " in command:
-            return command
-
-        # venv 内不需要 --user
-        if sys.prefix != sys.base_prefix:
-            return command
-
-        from ...runtime_env import IS_FROZEN, get_python_executable
-        if IS_FROZEN:
-            py = get_python_executable()
-            if py:
-                from pathlib import Path
-                p = Path(py).resolve()
-                if p.parent.name in ("Scripts", "bin"):
-                    cfg = p.parent.parent / "pyvenv.cfg"
-                    if cfg.exists():
-                        return command
-
-        return re.sub(
-            r"(pip\d?\s+install)\b",
-            r"\1 --user",
-            command,
-            count=1,
-            flags=re.IGNORECASE,
-        )
-
     # run_shell 成功输出最大行数
     SHELL_MAX_LINES = 200
 
@@ -220,7 +175,6 @@ class FilesystemHandler:
         import platform
         if platform.system() == "Windows":
             command = self._fix_windows_python_c(command)
-            command = self._fix_windows_pip_user(command)
 
         result = await self.agent.shell_tool.run(
             command,
@@ -288,7 +242,7 @@ class FilesystemHandler:
 
             # Windows [WinError 5] = 拒绝访问，给出可操作的诊断
             combined = f"{result.stdout}\n{result.stderr}"
-            if "WinError 5" in combined or "拒绝访问" in combined:
+            if "WinError 5]" in combined or "拒绝访问" in combined:
                 cmd_lower = command.strip().lower()
                 if "pip install" in cmd_lower and "--user" not in cmd_lower:
                     output_parts.append(

@@ -1070,6 +1070,7 @@ export function OrgEditorView({
       const res = await safeFetch(`${apiBaseUrl}/api/orgs`);
       const data = await res.json();
       const list = Array.isArray(data) ? (data as OrgSummary[]) : [];
+      list.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
       setOrgList(list);
       return list;
     } catch (e) {

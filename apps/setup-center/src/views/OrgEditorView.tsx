@@ -1822,6 +1822,22 @@ export function OrgEditorView({
     setContextMenu(null);
   }, [selectedNodeId, setNodes, setEdges]);
 
+  const ctxUnfreezeNode = useCallback(async (nodeId: string) => {
+    setContextMenu(null);
+    if (!selectedOrgId) return;
+    try {
+      const res = await safeFetch(`${apiBaseUrl}/api/orgs/${selectedOrgId}/nodes/${nodeId}/unfreeze`, { method: "POST" });
+      if (!res.ok) throw new Error(await res.text());
+      setNodes((prev) => prev.map((n) => {
+        if (n.id !== nodeId) return n;
+        return { ...n, data: { ...n.data, status: "idle", frozen_by: null, frozen_reason: null, frozen_at: null } };
+      }));
+      showToast("节点已解除冻结");
+    } catch (e) {
+      showToast(`解除冻结失败: ${e}`, "error");
+    }
+  }, [selectedOrgId, apiBaseUrl, setNodes, showToast]);
+
   const ctxDeleteEdge = useCallback((edgeId: string) => {
     setEdges((prev) => prev.filter((e) => e.id !== edgeId));
     if (selectedEdgeId === edgeId) setSelectedEdgeId(null);
@@ -2329,6 +2345,11 @@ export function OrgEditorView({
                   {liveMode && selectedOrgId && (
                     <button onClick={() => { setChatPanelNode(contextMenu.id); setChatPanelOpen(true); setContextMenu(null); }}>
                       <span className="org-ctx-icon">💬</span>与该节点对话
+                    </button>
+                  )}
+                  {liveMode && selectedOrgId && (nodes.find(n => n.id === contextMenu.id)?.data as any)?.status === "frozen" && (
+                    <button onClick={() => ctxUnfreezeNode(contextMenu.id!)}>
+                      <span className="org-ctx-icon">🔓</span>解除冻结
                     </button>
                   )}
                   <button onClick={() => ctxCopyNode(contextMenu.id!)}>

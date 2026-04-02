@@ -870,6 +870,7 @@ class OrgToolHandler:
         target.frozen_by = None
         target.frozen_reason = None
         target.frozen_at = None
+        self._runtime._node_consecutive_failures.pop(f"{org_id}:{target_id}", None)
         await self._runtime._save_org(org)
         messenger = self._runtime.get_messenger(org_id)
         if messenger:

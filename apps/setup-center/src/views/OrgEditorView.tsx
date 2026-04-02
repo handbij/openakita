@@ -966,6 +966,8 @@ export function OrgEditorView({
   const [nodeTasks, setNodeTasks] = useState<{ assigned: any[]; delegated: any[] } | null>(null);
   const [nodeActivePlan, setNodeActivePlan] = useState<any>(null);
   const [nodeTasksLoading, setNodeTasksLoading] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const [toast, setToast] = useState<{ message: string; type: "ok" | "error" } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1103,6 +1105,7 @@ export function OrgEditorView({
       setNodes(hasOverlap ? computeTreeLayout(flowNodes, flowEdges) : flowNodes);
       setEdges(flowEdges);
       setSelectedNodeId(null);
+      setEditingName(false);
       const running = data.status === "active" || data.status === "running";
       setLayoutLocked(running);
     } catch (e) {
@@ -1959,11 +1962,25 @@ export function OrgEditorView({
               <IconMenu size={14} />
             </button>
             {!isMobile && (
-              <input
-                className="org-topbar-name"
-                value={currentOrg.name}
-                onChange={(e) => setCurrentOrg({ ...currentOrg, name: e.target.value })}
-              />
+              editingName ? (
+                <input
+                  ref={nameInputRef}
+                  className="org-topbar-name org-topbar-name--editing"
+                  value={currentOrg.name}
+                  onChange={(e) => setCurrentOrg({ ...currentOrg, name: e.target.value })}
+                  onBlur={() => setEditingName(false)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") { setEditingName(false); e.currentTarget.blur(); } }}
+                  autoFocus
+                />
+              ) : (
+                <span
+                  className="org-topbar-name"
+                  onClick={() => setEditingName(true)}
+                  title="点击重命名"
+                >
+                  {currentOrg.name || "未命名组织"}
+                </span>
+              )
             )}
             <span
               className="org-topbar-status"
@@ -2767,11 +2784,22 @@ export function OrgEditorView({
               flex-shrink: 1; min-width: 0; overflow: hidden;
             }
             .org-topbar-name {
-              border: none; background: transparent;
               font-weight: 600; font-size: 14px;
-              outline: none; width: 140px;
               color: var(--text);
+              max-width: 180px;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+              cursor: pointer; border-radius: 4px;
+              padding: 2px 6px;
+              transition: background 0.15s;
             }
+            .org-topbar-name:hover { background: var(--hover-bg, rgba(99,102,241,0.08)); }
+            .org-topbar-name--editing {
+              border: 1px solid var(--primary, #6366f1);
+              background: var(--card-bg, #fff);
+              outline: none; width: 160px;
+              cursor: text;
+            }
+            .org-topbar-name--editing:hover { background: var(--card-bg, #fff); }
             .org-topbar-status {
               font-size: 10px; padding: 2px 6px; border-radius: 4px;
               font-weight: 600; white-space: nowrap; flex-shrink: 0;

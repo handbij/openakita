@@ -43,7 +43,6 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconRadar,
-  IconSave,
   IconInbox,
   IconSnowflake,
   IconLayoutGrid,
@@ -946,9 +945,9 @@ export function OrgEditorView({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const lastSavedRef = useRef<string>("");
-  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showNewNodeForm, setShowNewNodeForm] = useState(false);
   const [propsTab, setPropsTab] = useState<"overview" | "identity" | "capabilities" | "tasks">("overview");
@@ -1094,6 +1093,8 @@ export function OrgEditorView({
     try {
       const res = await safeFetch(`${apiBaseUrl}/api/orgs/${orgId}`);
       const data: OrgFull = await res.json();
+      if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+      setSaveStatus("idle");
       setCurrentOrg(data);
       lastSavedRef.current = "";
       const flowNodes = data.nodes.map(orgNodeToFlowNode);
@@ -1450,13 +1451,13 @@ export function OrgEditorView({
     };
   }, [currentOrg, nodes, edges]);
 
-  const doSave = useCallback(async (quiet = false): Promise<boolean> => {
+  const doSave = useCallback(async (): Promise<boolean> => {
     if (!currentOrg) return false;
     const payload = buildSavePayload();
     if (!payload) return false;
     const snapshot = JSON.stringify(payload);
     if (snapshot === lastSavedRef.current) return true;
-    setSaving(true);
+    setSaveStatus("saving");
     try {
       const resp = await safeFetch(`${apiBaseUrl}/api/orgs/${currentOrg.id}`, {
         method: "PUT",
@@ -1465,32 +1466,42 @@ export function OrgEditorView({
       });
       if (!resp.ok) throw new Error(`保存失败 (${resp.status})`);
       lastSavedRef.current = snapshot;
-      if (!quiet) showToast("保存成功", "ok");
+      setSaveStatus("saved");
       fetchOrgList();
       return true;
     } catch (e: any) {
       console.error("Failed to save org:", e);
-      if (!quiet) showToast(e.message || "保存失败", "error");
+      setSaveStatus("error");
+      showToast(e.message || "自动保存失败", "error");
       return false;
-    } finally {
-      setSaving(false);
     }
   }, [currentOrg, buildSavePayload, apiBaseUrl, fetchOrgList, showToast]);
 
-  const handleSave = useCallback(() => doSave(false), [doSave]);
+  const doSaveRef = useRef(doSave);
+  doSaveRef.current = doSave;
 
-  const autoSave = useCallback(() => {
-    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    autoSaveTimerRef.current = setTimeout(() => doSave(true), 300);
-  }, [doSave]);
+  const flushSave = useCallback(() => {
+    if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+    doSaveRef.current();
+  }, []);
 
   useEffect(() => {
     if (!currentOrg) return;
     const payload = buildSavePayload();
     if (!payload) return;
     const snap = JSON.stringify(payload);
-    if (!lastSavedRef.current) lastSavedRef.current = snap;
+    if (!lastSavedRef.current) { lastSavedRef.current = snap; return; }
+    if (snap === lastSavedRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => { doSaveRef.current(); }, 1500);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
   }, [currentOrg, buildSavePayload]);
+
+  useEffect(() => {
+    if (saveStatus !== "saved") return;
+    const t = setTimeout(() => setSaveStatus("idle"), 2000);
+    return () => clearTimeout(t);
+  }, [saveStatus]);
 
   // ── Create org ──
 
@@ -1562,6 +1573,7 @@ export function OrgEditorView({
     try {
       await safeFetch(`${apiBaseUrl}/api/orgs/${orgId}`, { method: "DELETE" });
       if (selectedOrgId === orgId) {
+        if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
         setSelectedOrgId(null);
         setCurrentOrg(null);
         setNodes([]);
@@ -1658,31 +1670,26 @@ export function OrgEditorView({
   // ── Node click ──
 
   const onNodeClick = useCallback((_: any, node: Node) => {
-    if (selectedNodeId && selectedNodeId !== node.id) autoSave();
     setSelectedNodeId(node.id);
     setSelectedEdgeId(null);
     setPropsTab("overview");
     setFullPromptPreview(null);
     setShowRightPanel(true);
-  }, [selectedNodeId, autoSave]);
+  }, []);
 
   const onEdgeClick = useCallback((_: any, edge: Edge) => {
-    if (selectedNodeId || selectedEdgeId) autoSave();
     setSelectedEdgeId(edge.id);
     setSelectedNodeId(null);
     setShowRightPanel(true);
-  }, [selectedNodeId, selectedEdgeId, autoSave]);
+  }, []);
 
   const onPaneClick = useCallback(() => {
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
     setContextMenu(null);
-    autoSave();
-  }, [autoSave]);
+  }, []);
 
-  const onNodeDragStop = useCallback(() => {
-    autoSave();
-  }, [autoSave]);
+  const onNodeDragStop = useCallback(() => {}, []);
 
   // ── Fetch node detail when selected in live mode ──
   useEffect(() => {
@@ -1991,7 +1998,7 @@ export function OrgEditorView({
               <button
                 key={v.key}
                 className={`org-view-tab${viewMode === v.key ? " org-view-tab--active" : ""}`}
-                onClick={() => { if (viewMode !== v.key) { autoSave(); setViewMode(v.key); } }}
+                onClick={() => { if (viewMode !== v.key) { flushSave(); setViewMode(v.key); } }}
               >
                 {v.icon} {v.label}
               </button>
@@ -2011,12 +2018,16 @@ export function OrgEditorView({
                 <IconStop size={13} /> {!isMobile && "停止"}
               </button>
             )}
-            <button className="org-tb-btn" onClick={handleSave} disabled={saving} title="保存">
-              <IconSave size={13} /> {saving ? "..." : (!isMobile && "保存")}
-            </button>
+            {saveStatus === "saving" ? (
+              <span className="org-save-status org-save-status--saving">保存中...</span>
+            ) : saveStatus === "saved" ? (
+              <span className="org-save-status org-save-status--saved"><IconCheck size={12} /> 已保存</span>
+            ) : saveStatus === "error" ? (
+              <span className="org-save-status org-save-status--error" onClick={() => doSaveRef.current()} style={{ cursor: "pointer" }}>保存失败 · 重试</span>
+            ) : null}
             <button
               className={`org-tb-btn${(showRightPanel && !selectedNode && !selectedEdge) ? " org-tb-btn--active" : ""}`}
-              onClick={() => { if (showRightPanel) autoSave(); setShowRightPanel(!showRightPanel); setSelectedNodeId(null); setSelectedEdgeId(null); }}
+              onClick={() => { setShowRightPanel(!showRightPanel); setSelectedNodeId(null); setSelectedEdgeId(null); }}
               title="组织设置"
             >
               <IconLayoutGrid size={13} />
@@ -2266,7 +2277,7 @@ export function OrgEditorView({
           {orgList.map((org) => (
             <div
               key={org.id}
-              onClick={() => { if (selectedOrgId && selectedOrgId !== org.id) autoSave(); setSelectedOrgId(org.id); setShowLeftPanel(false); }}
+              onClick={() => { if (selectedOrgId && selectedOrgId !== org.id) flushSave(); setSelectedOrgId(org.id); setShowLeftPanel(false); }}
               className={`navItem ${selectedOrgId === org.id ? "navItemActive" : ""}`}
               style={{
                 padding: "8px 10px",
@@ -2821,6 +2832,16 @@ export function OrgEditorView({
               background: rgba(99,102,241,0.12);
               border-color: rgba(99,102,241,0.35);
             }
+            .org-save-status {
+              display: inline-flex; align-items: center; gap: 3px;
+              font-size: 11px; padding: 0 6px; height: 24px;
+              border-radius: 4px; white-space: nowrap;
+              animation: orgSaveIn 0.2s ease;
+            }
+            @keyframes orgSaveIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
+            .org-save-status--saving { color: var(--muted, #94a3b8); }
+            .org-save-status--saved { color: #22c55e; }
+            .org-save-status--error { color: #ef4444; font-weight: 500; }
             .org-tb-btn--ok { color: #22c55e; border-color: rgba(34,197,94,0.3); }
             .org-tb-btn--ok:hover { background: rgba(34,197,94,0.12); }
             .org-tb-btn--danger { color: #ef4444; border-color: rgba(239,68,68,0.3); }
@@ -2996,7 +3017,7 @@ export function OrgEditorView({
       {/* ── Right Panel: Node Properties ── */}
       {isMobile && selectedNode && showRightPanel && (
         <div
-          onClick={() => { autoSave(); setSelectedNodeId(null); }}
+          onClick={() => { setSelectedNodeId(null); }}
           style={{
             position: "absolute", inset: 0, zIndex: 49,
             background: "rgba(0,0,0,0.3)",
@@ -3043,7 +3064,7 @@ export function OrgEditorView({
                 </button>
               )}
               {isMobile && (
-                <button className="btnSmall" onClick={() => { autoSave(); setSelectedNodeId(null); }} style={{ minWidth: 36, minHeight: 36 }}><IconX size={14} /></button>
+                <button className="btnSmall" onClick={() => { setSelectedNodeId(null); }} style={{ minWidth: 36, minHeight: 36 }}><IconX size={14} /></button>
               )}
             </div>
           </div>

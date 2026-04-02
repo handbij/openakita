@@ -166,7 +166,7 @@ export function AgentStoreView({ apiBaseUrl, visible }: AgentStoreViewProps) {
                   </span>
                 )}
               </div>
-              {a.tags && a.tags.length > 0 && (
+              {Array.isArray(a.tags) && a.tags.length > 0 && (
                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
                   {a.tags.slice(0, 4).map((tag) => (
                     <span key={tag} style={{

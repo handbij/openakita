@@ -592,7 +592,7 @@ export function MemoryView({ serviceRunning, apiBaseUrl = "" }: Props) {
                   )}
 
                   {/* Meta: subject + predicate + tags */}
-                  {(m.subject || m.predicate || (m.tags && m.tags.length > 0)) && editingId !== m.id && (
+                  {(m.subject || m.predicate || (Array.isArray(m.tags) && m.tags.length > 0)) && editingId !== m.id && (
                     <div style={{ marginTop: 6 }}>
                       {(m.subject || m.predicate) && (
                         <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>
@@ -601,7 +601,7 @@ export function MemoryView({ serviceRunning, apiBaseUrl = "" }: Props) {
                           {m.predicate && <span>属性: {m.predicate}</span>}
                         </div>
                       )}
-                      {m.tags && m.tags.length > 0 && (
+                      {Array.isArray(m.tags) && m.tags.length > 0 && (
                         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                           {m.tags.map(tag => (
                             <span key={tag} style={{
@@ -721,7 +721,7 @@ export function MemoryView({ serviceRunning, apiBaseUrl = "" }: Props) {
                             {m.predicate && <span>属性: {m.predicate}</span>}
                           </div>
                         )}
-                        {m.tags && m.tags.length > 0 && (
+                        {Array.isArray(m.tags) && m.tags.length > 0 && (
                           <div className="mt-1 flex gap-1 flex-wrap">
                             {m.tags.map(tag => (
                               <span key={tag} className="px-1.5 py-px rounded-lg text-[10px] bg-indigo-500/10 text-indigo-500 whitespace-nowrap">

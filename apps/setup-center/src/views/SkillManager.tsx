@@ -550,7 +550,7 @@ function MarketplaceSkillCard({
           <div style={{ fontSize: 11, opacity: 0.4, marginTop: 2 }}>
             {skill.url && <span style={{ fontFamily: "monospace" }}>{skill.url}</span>}
           </div>
-          {skill.tags && skill.tags.length > 0 && (
+          {Array.isArray(skill.tags) && skill.tags.length > 0 && (
             <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>
               {skill.tags.map((tag) => (
                 <span key={tag} style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: "rgba(37,99,235,0.08)", color: "var(--brand)" }}>
@@ -1748,7 +1748,7 @@ export function SkillManager({
                     )}
 
                     {/* Tags */}
-                    {marketDetailSkill.tags && marketDetailSkill.tags.length > 0 && (
+                    {Array.isArray(marketDetailSkill.tags) && marketDetailSkill.tags.length > 0 && (
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 12 }}>
                         {marketDetailSkill.tags.map((tag) => (
                           <span key={tag} style={{

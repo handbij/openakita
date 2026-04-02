@@ -489,6 +489,14 @@ const STATUS_COLORS: Record<string, string> = {
   archived: "var(--muted)",
 };
 
+const ORG_STATUS_LABELS: Record<string, string> = {
+  dormant: "休眠",
+  active: "运行中",
+  running: "运行中",
+  paused: "已暂停",
+  archived: "已归档",
+};
+
 const DEPT_COLORS: Record<string, string> = {
   "管理层": "#6366f1",
   "技术部": "#0ea5e9",
@@ -1957,7 +1965,7 @@ export function OrgEditorView({
                 color: STATUS_COLORS[currentOrg.status] || "var(--muted)",
               }}
             >
-              {currentOrg.status}
+              {ORG_STATUS_LABELS[currentOrg.status] || currentOrg.status}
             </span>
             {liveMode && orgStats && !isMobile && (
               <div className="org-topbar-stats">
@@ -2095,15 +2103,32 @@ export function OrgEditorView({
         <div style={{ padding: "12px 12px 8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontWeight: 600, fontSize: 14 }}>组织编排</span>
           <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-            <button type="button" className="btnSmall" onClick={() => setShowTemplates(!showTemplates)} title="从模板创建" style={{ fontSize: 11 }} disabled={creatingOrg}>
-              <IconClipboard size={12} />
-            </button>
-            <button type="button" className="btnSmall" onClick={() => void handleCreateOrg()} title="新建空白组织" disabled={creatingOrg}>
-              <IconPlus size={12} />
-            </button>
-            <button type="button" className="btnSmall" onClick={() => orgImportRef.current?.click()} title="导入组织" disabled={creatingOrg}>
-              <IconUpload size={12} />
-            </button>
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="link" size="sm" onClick={() => setShowTemplates(!showTemplates)} disabled={creatingOrg} className="h-7 px-2 text-xs text-primary cursor-pointer">
+                    模板
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">从模板创建组织</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="link" size="sm" onClick={() => void handleCreateOrg()} disabled={creatingOrg} className="h-7 px-2 text-xs text-primary cursor-pointer">
+                    新建
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">新建空白组织</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="link" size="sm" onClick={() => orgImportRef.current?.click()} disabled={creatingOrg} className="h-7 px-2 text-xs text-primary cursor-pointer">
+                    导入
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">从文件导入组织</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <input
               ref={orgImportRef}
               type="file"
@@ -2180,7 +2205,7 @@ export function OrgEditorView({
                     {org.name}
                   </div>
                   <div style={{ fontSize: 10, color: "var(--muted)" }}>
-                    {org.node_count} 节点 · {org.status}
+                    {org.node_count} 节点 · {ORG_STATUS_LABELS[org.status] || org.status}
                   </div>
                 </div>
               </div>

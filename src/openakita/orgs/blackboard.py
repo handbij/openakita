@@ -342,7 +342,7 @@ class OrgBlackboard:
                 if self._is_expired(entry):
                     expired_count += 1
                     continue
-                live_entries.append((d.get("importance", 0.5), line))
+                live_entries.append((entry.importance, line))
             except Exception:
                 continue
 

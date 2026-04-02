@@ -582,6 +582,16 @@ class OrgMemoryEntry:
 
     def __post_init__(self):
         self.tags = normalize_tags(self.tags)
+        try:
+            self.importance = float(self.importance)
+        except (ValueError, TypeError):
+            self.importance = 0.5
+        self.importance = max(0.0, min(1.0, self.importance))
+        if self.ttl_hours is not None:
+            try:
+                self.ttl_hours = int(self.ttl_hours)
+            except (ValueError, TypeError):
+                self.ttl_hours = None
 
     def to_dict(self) -> dict:
         return {

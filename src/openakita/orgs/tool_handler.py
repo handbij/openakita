@@ -48,6 +48,23 @@ class OrgToolHandler:
                 args["bandwidth_limit"] = int(args["bandwidth_limit"])
             except (ValueError, TypeError):
                 args["bandwidth_limit"] = 60
+        if "importance" in args:
+            try:
+                args["importance"] = float(args["importance"])
+            except (ValueError, TypeError):
+                args["importance"] = 0.5
+        if "tags" in args and isinstance(args["tags"], str):
+            import json as _json
+            try:
+                parsed = _json.loads(args["tags"])
+                if isinstance(parsed, list):
+                    args["tags"] = parsed
+            except Exception:
+                args["tags"] = [
+                    t.strip()
+                    for t in args["tags"].replace("\u3001", ",").split(",")
+                    if t.strip()
+                ]
         return args
 
     @staticmethod

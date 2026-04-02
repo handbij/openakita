@@ -112,3 +112,54 @@ class TestEviction:
             blackboard.write_org(f"mem_{i}", "n1", importance=i / (MAX_ORG_MEMORIES + 10))
         entries = blackboard.read_org(limit=999)
         assert len(entries) <= MAX_ORG_MEMORIES
+
+
+class TestTypeCoercion:
+    """Regression: LLM may send importance as str, tags as mangled data (#335)."""
+
+    def test_mixed_importance_types_no_crash(self, blackboard: OrgBlackboard):
+        """Sort must not crash when JSONL has mixed float/str importance."""
+        import json
+
+        bb_path = blackboard._memory_dir / "blackboard.jsonl"
+        bb_path.parent.mkdir(parents=True, exist_ok=True)
+        bb_path.write_text(
+            json.dumps({
+                "id": "mem_aaa", "org_id": "o", "scope": "org",
+                "scope_owner": "o", "memory_type": "fact",
+                "content": "good entry", "source_node": "n1",
+                "tags": ["ok"], "importance": 0.8,
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "last_accessed_at": "2026-01-01T00:00:00+00:00",
+                "access_count": 0,
+            }, ensure_ascii=False) + "\n" +
+            json.dumps({
+                "id": "mem_bbb", "org_id": "o", "scope": "org",
+                "scope_owner": "o", "memory_type": "fact",
+                "content": "bad entry", "source_node": "n1",
+                "tags": [], "importance": "0.5",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "last_accessed_at": "2026-01-01T00:00:00+00:00",
+                "access_count": 0,
+            }, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        entries = blackboard.read_org()
+        assert len(entries) == 2
+        assert all(isinstance(e.importance, float) for e in entries)
+        assert entries[0].importance >= entries[1].importance
+
+    def test_importance_string_coerced(self, blackboard: OrgBlackboard):
+        entry = blackboard.write_org("test", "n1", importance="0.7")
+        assert isinstance(entry.importance, float)
+        assert entry.importance == pytest.approx(0.7)
+
+    def test_importance_invalid_falls_back(self, blackboard: OrgBlackboard):
+        entry = blackboard.write_org("test", "n1", importance="not_a_number")
+        assert entry.importance == 0.5
+
+    def test_importance_clamped(self, blackboard: OrgBlackboard):
+        e1 = blackboard.write_org("high", "n1", importance=999.0)
+        e2 = blackboard.write_org("low", "n1", importance=-5.0)
+        assert e1.importance == 1.0
+        assert e2.importance == 0.0

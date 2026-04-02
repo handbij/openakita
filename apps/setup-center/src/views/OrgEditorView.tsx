@@ -43,15 +43,15 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconRadar,
-  IconInbox,
   IconSnowflake,
-  IconLayoutGrid,
+  IconGear,
   IconBuilding,
   IconClipboard,
   IconMenu,
   IconSitemap,
   IconAlertCircle,
   IconUpload,
+  IconMessageCircle,
 } from "../icons";
 import { safeFetch } from "../providers";
 import { IS_CAPACITOR, saveFileDialog, IS_TAURI, writeTextFile } from "../platform";
@@ -64,6 +64,7 @@ import { OrgProjectBoard } from "../components/OrgProjectBoard";
 import { ZoomIn, ZoomOut, Maximize, Map as MapIcon, X as XIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "../components/ui/tooltip";
+import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group";
 import agentOrgImg from "../assets/agent_org.png";
 
 // ── Custom Canvas Controls (shadcn UI) ──
@@ -1982,45 +1983,56 @@ export function OrgEditorView({
                 </span>
               )
             )}
-            <span
-              className="org-topbar-status"
-              style={{
-                background: `${STATUS_COLORS[currentOrg.status] || "var(--muted)"}20`,
-                color: STATUS_COLORS[currentOrg.status] || "var(--muted)",
-              }}
-            >
-              {ORG_STATUS_LABELS[currentOrg.status] || currentOrg.status}
-            </span>
-            {liveMode && orgStats && !isMobile && (
-              <div className="org-topbar-stats">
-                <span className="org-health-dot" style={{
-                  background: orgStats.health === "critical" ? "#ef4444" : orgStats.health === "warning" ? "#f59e0b" : orgStats.health === "attention" ? "#3b82f6" : "#22c55e",
-                  animation: orgStats.health !== "healthy" ? "orgDotPulse 1.5s ease-in-out infinite" : undefined,
+            <TooltipProvider>
+              <div
+                className="org-topbar-status"
+                style={{
+                  borderColor: `${STATUS_COLORS[currentOrg.status] || "var(--muted)"}40`,
+                  color: STATUS_COLORS[currentOrg.status] || "var(--muted)",
+                }}
+              >
+                <span className="org-status-dot" style={{
+                  background: STATUS_COLORS[currentOrg.status] || "var(--muted)",
+                  animation: liveMode ? "orgDotPulse 1.5s ease-in-out infinite" : undefined,
                 }} />
-                <span>✓{orgStats.total_tasks_completed ?? 0}</span>
-                <span>✉{orgStats.total_messages_exchanged ?? 0}</span>
-                {orgStats.pending_messages > 0 && <span style={{ color: "#f59e0b" }}>▪{orgStats.pending_messages}</span>}
-                {orgStats.anomalies?.length > 0 && <span style={{ color: "#ef4444", fontWeight: 600 }}>!{orgStats.anomalies.length}</span>}
+                <span className="org-status-label">{ORG_STATUS_LABELS[currentOrg.status] || currentOrg.status}</span>
+                {liveMode && orgStats && !isMobile && (
+                  <>
+                    <span className="org-status-sep" />
+                    <Tooltip><TooltipTrigger asChild>
+                      <span className="org-status-stat"><IconClipboard size={11} /> {orgStats.total_tasks_completed ?? 0}</span>
+                    </TooltipTrigger><TooltipContent>已完成任务数</TooltipContent></Tooltip>
+                    <Tooltip><TooltipTrigger asChild>
+                      <span className="org-status-stat"><IconMessageCircle size={11} /> {orgStats.total_messages_exchanged ?? 0}</span>
+                    </TooltipTrigger><TooltipContent>消息交换总数</TooltipContent></Tooltip>
+                    {orgStats.pending_messages > 0 && (
+                      <Tooltip><TooltipTrigger asChild>
+                        <span className="org-status-stat" style={{ color: "#f59e0b" }}>▪ {orgStats.pending_messages}</span>
+                      </TooltipTrigger><TooltipContent>待处理消息</TooltipContent></Tooltip>
+                    )}
+                    {orgStats.anomalies?.length > 0 && (
+                      <Tooltip><TooltipTrigger asChild>
+                        <span className="org-status-stat" style={{ color: "#ef4444", fontWeight: 600 }}>! {orgStats.anomalies.length}</span>
+                      </TooltipTrigger><TooltipContent>异常数量</TooltipContent></Tooltip>
+                    )}
+                  </>
+                )}
               </div>
-            )}
+            </TooltipProvider>
           </div>
 
           {/* ── Center: View tabs ── */}
-          <div className="org-topbar-tabs">
-            {([
-              { key: "canvas" as const, label: "编排", icon: <IconSitemap size={13} /> },
-              { key: "projects" as const, label: "项目", icon: <IconClipboard size={13} /> },
-              { key: "dashboard" as const, label: "看板", icon: <IconRadar size={13} /> },
-            ]).map(v => (
-              <button
-                key={v.key}
-                className={`org-view-tab${viewMode === v.key ? " org-view-tab--active" : ""}`}
-                onClick={() => { if (viewMode !== v.key) { flushSave(); setViewMode(v.key); } }}
-              >
-                {v.icon} {v.label}
-              </button>
-            ))}
-          </div>
+          <ToggleGroup
+            type="single"
+            value={viewMode}
+            onValueChange={(v) => { if (v && v !== viewMode) { flushSave(); setViewMode(v as typeof viewMode); } }}
+            variant="outline"
+            className="flex-shrink-0"
+          >
+            <ToggleGroupItem value="canvas" className="text-xs h-7 px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary">编排</ToggleGroupItem>
+            <ToggleGroupItem value="projects" className="text-xs h-7 px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary">项目</ToggleGroupItem>
+            <ToggleGroupItem value="dashboard" className="text-xs h-7 px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary">看板</ToggleGroupItem>
+          </ToggleGroup>
 
           {/* ── Right: Actions ── */}
           <div className="org-topbar-right">
@@ -2035,26 +2047,19 @@ export function OrgEditorView({
                 <IconStop size={13} /> {!isMobile && "停止"}
               </button>
             )}
-            {saveStatus === "saving" ? (
-              <span className="org-save-status org-save-status--saving">保存中...</span>
-            ) : saveStatus === "saved" ? (
-              <span className="org-save-status org-save-status--saved"><IconCheck size={12} /> 已保存</span>
-            ) : saveStatus === "error" ? (
-              <span className="org-save-status org-save-status--error" onClick={() => doSaveRef.current()} style={{ cursor: "pointer" }}>保存失败 · 重试</span>
-            ) : null}
             <button
               className={`org-tb-btn${(showRightPanel && !selectedNode && !selectedEdge) ? " org-tb-btn--active" : ""}`}
               onClick={() => { setShowRightPanel(!showRightPanel); setSelectedNodeId(null); setSelectedEdgeId(null); }}
               title="组织设置"
             >
-              <IconLayoutGrid size={13} />
+              <IconGear size={13} />
             </button>
             <button
               className="org-tb-btn"
               onClick={() => setInboxOpen(!inboxOpen)}
               style={{ position: "relative" }}
             >
-              <IconInbox size={13} />
+              <IconMessageCircle size={13} />
               {activityFeed.length > 0 && (
                 <span className="org-notif-dot" />
               )}
@@ -2529,7 +2534,13 @@ export function OrgEditorView({
                 </div>
               </Panel>
               {!isMobile && <CollapsibleMiniMap edgeColors={EDGE_COLORS} />}
-
+              {saveStatus !== "idle" && (
+                <Panel position="bottom-center">
+                  <div className={`org-save-indicator org-save-indicator--${saveStatus}`}>
+                    {saveStatus === "saving" ? "保存中..." : saveStatus === "saved" ? <><IconCheck size={12} /> 已自动保存~</> : <span onClick={() => doSaveRef.current()} style={{ cursor: "pointer" }}>保存失败 · 重试</span>}
+                  </div>
+                </Panel>
+              )}
             </ReactFlow>
             {/* ── Context menu (portal to body to avoid clipping) ── */}
             {contextMenu && createPortal(
@@ -2769,15 +2780,16 @@ export function OrgEditorView({
 
             /* ── Top bar layout ── */
             .org-topbar {
-              height: 44px;
-              border-bottom: 1px solid var(--line, rgba(51,65,85,0.5));
+              height: 40px;
+              padding-bottom: 12px;
               display: flex;
               align-items: center;
               justify-content: space-between;
-              padding: 0 10px;
-              background: var(--bg-app);
+
+              background: var(--card-bg, #fff);
               flex-shrink: 0;
-              gap: 8px;
+              container-type: inline-size;
+              container-name: org-topbar;
             }
             .org-topbar-left {
               display: flex; align-items: center; gap: 6px;
@@ -2801,38 +2813,24 @@ export function OrgEditorView({
             }
             .org-topbar-name--editing:hover { background: var(--card-bg, #fff); }
             .org-topbar-status {
-              font-size: 10px; padding: 2px 6px; border-radius: 4px;
-              font-weight: 600; white-space: nowrap; flex-shrink: 0;
+              display: inline-flex; align-items: center; gap: 5px;
+              font-size: 11px; padding: 3px 10px; border-radius: 20px;
+              border: 1px solid; font-weight: 500;
+              white-space: nowrap; flex-shrink: 0;
+              user-select: none;
             }
-            .org-topbar-stats {
-              display: flex; gap: 5px; align-items: center;
-              font-size: 10px; color: var(--muted, #6b7280);
-              flex-shrink: 0;
-            }
-            .org-health-dot {
+            .org-status-dot {
               width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
             }
-
-            /* ── View tabs (center) ── */
-            .org-topbar-tabs {
-              display: flex; align-items: center; gap: 0;
-              border-bottom: 2px solid transparent;
-              flex-shrink: 0;
+            .org-status-sep {
+              width: 1px; height: 10px; background: currentColor; opacity: 0.25; flex-shrink: 0;
             }
-            .org-view-tab {
-              display: inline-flex; align-items: center; gap: 5px;
-              height: 32px; padding: 0 16px;
-              border: none; background: transparent;
-              border-bottom: 2px solid transparent;
-              margin-bottom: -1px;
-              color: var(--muted, #94a3b8); font-size: 13px; font-weight: 500;
-              cursor: pointer; white-space: nowrap;
-              transition: color 0.15s, border-color 0.15s;
+            .org-status-stat {
+              display: inline-flex; align-items: center; gap: 2px;
+              font-weight: 400; opacity: 0.85; cursor: default;
             }
-            .org-view-tab:hover { color: var(--text); }
-            .org-view-tab--active {
-              color: var(--primary, #6366f1) !important; font-weight: 600;
-              border-bottom-color: var(--primary, #6366f1) !important;
+            @container org-topbar (max-width: 700px) {
+              .org-status-label { display: none; }
             }
 
             /* ── Right actions ── */
@@ -2860,16 +2858,21 @@ export function OrgEditorView({
               background: rgba(99,102,241,0.12);
               border-color: rgba(99,102,241,0.35);
             }
-            .org-save-status {
-              display: inline-flex; align-items: center; gap: 3px;
-              font-size: 11px; padding: 0 6px; height: 24px;
-              border-radius: 4px; white-space: nowrap;
+            .org-save-indicator {
+              display: inline-flex; align-items: center; gap: 4px;
+              font-size: 11px; padding: 4px 12px;
+              border-radius: 16px; white-space: nowrap;
+              background: var(--card-bg, rgba(30,41,59,0.9));
+              border: 1px solid var(--line, rgba(51,65,85,0.5));
+              box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+              backdrop-filter: blur(8px);
               animation: orgSaveIn 0.2s ease;
+              user-select: none;
             }
-            @keyframes orgSaveIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
-            .org-save-status--saving { color: var(--muted, #94a3b8); }
-            .org-save-status--saved { color: #22c55e; }
-            .org-save-status--error { color: #ef4444; font-weight: 500; }
+            @keyframes orgSaveIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+            .org-save-indicator--saving { color: var(--muted, #94a3b8); }
+            .org-save-indicator--saved { color: #22c55e; }
+            .org-save-indicator--error { color: #ef4444; font-weight: 500; }
             .org-tb-btn--ok { color: #22c55e; border-color: rgba(34,197,94,0.3); }
             .org-tb-btn--ok:hover { background: rgba(34,197,94,0.12); }
             .org-tb-btn--danger { color: #ef4444; border-color: rgba(239,68,68,0.3); }

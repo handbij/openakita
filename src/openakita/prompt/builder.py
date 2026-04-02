@@ -589,8 +589,17 @@ def _build_python_info(
         ]
         if in_venv:
             lines.append(f"- **虚拟环境**: {_sys.prefix}")
-        lines.append("- **pip**: 可用")
-        lines.append("- **注意**: 执行 Python 脚本时使用上述解释器路径，pip install 会安装到当前环境中")
+            lines.append("- **pip**: 可用")
+            lines.append("- **注意**: 执行 Python 脚本时使用上述解释器路径，pip install 会安装到当前环境中")
+        else:
+            lines.append("- **pip**: 可用")
+            if platform.system() == "Windows":
+                lines.append(
+                    "- **注意**: 当前为系统 Python（非虚拟环境），Windows 下 `pip install` 必须加 "
+                    "`--user` 标志（如 `pip install --user 包名`），否则写入系统目录会触发权限错误"
+                )
+            else:
+                lines.append("- **注意**: 执行 Python 脚本时使用上述解释器路径，pip install 会安装到当前环境中")
         return "\n".join(lines)
 
     # 打包模式
@@ -601,8 +610,17 @@ def _build_python_info(
         ]
         if venv_path:
             lines.append(f"- **虚拟环境**: {venv_path}")
-        lines.append(f"- **pip**: {'可用' if pip_ok else '不可用'}")
-        lines.append("- **注意**: 执行 Python 脚本时请使用上述解释器路径，pip install 会安装到该虚拟环境中")
+            lines.append(f"- **pip**: {'可用' if pip_ok else '不可用'}")
+            lines.append("- **注意**: 执行 Python 脚本时请使用上述解释器路径，pip install 会安装到该虚拟环境中")
+        else:
+            lines.append(f"- **pip**: {'可用' if pip_ok else '不可用'}")
+            if platform.system() == "Windows":
+                lines.append(
+                    "- **注意**: 当前 Python 非虚拟环境，Windows 下 `pip install` 必须加 "
+                    "`--user` 标志（如 `pip install --user 包名`），否则写入系统目录会触发权限错误"
+                )
+            else:
+                lines.append("- **注意**: 执行 Python 脚本时请使用上述解释器路径，pip install 会安装到该环境中")
         return "\n".join(lines)
 
     # 打包模式 + 无外置 Python

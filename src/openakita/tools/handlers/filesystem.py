@@ -256,6 +256,25 @@ class FilesystemHandler:
                         "请检查该程序是否已安装，或使用完整路径。"
                     )
 
+            # Windows [WinError 5] = 拒绝访问，给出可操作的诊断
+            combined = f"{result.stdout}\n{result.stderr}"
+            if "WinError 5]" in combined or "拒绝访问" in combined:
+                cmd_lower = command.strip().lower()
+                if "pip install" in cmd_lower and "--user" not in cmd_lower:
+                    output_parts.append(
+                        "⚠️ [WinError 5] 拒绝访问：pip 试图写入系统目录但权限不足。\n"
+                        "请改用 `pip install --user <包名>` 安装到用户目录，"
+                        "或在虚拟环境中执行 pip install。"
+                    )
+                else:
+                    output_parts.append(
+                        "⚠️ [WinError 5] 拒绝访问：当前进程没有足够的权限执行此操作。\n"
+                        "可能原因：1) 目标文件/目录需要管理员权限 "
+                        "2) 文件被其他程序占用 "
+                        "3) 杀毒软件拦截。\n"
+                        "建议：尝试换一个目录执行，或检查文件是否被占用。"
+                    )
+
             if result.stdout:
                 output_parts.append(f"[stdout-tail]:\n{_tail(result.stdout)}")
             if result.stderr:

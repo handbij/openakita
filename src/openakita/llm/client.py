@@ -72,7 +72,20 @@ def _friendly_error_hint(failed_providers: list | None = None, last_error: str =
         else:
             hints.append("🌐 检测到网络超时/连接失败，请检查网络连接和代理设置。")
     if "structural" in categories:
-        hints.append("⚙️ 检测到请求格式错误，这通常是模型兼容性问题，请尝试切换其他模型。")
+        _model_not_found = failed_providers and any(
+            any(kw in (getattr(p, "_last_error", "") or "").lower()
+                for kw in ["model_not_found", "model not found",
+                           "no available channel", "model_not_available"])
+            for p in failed_providers
+            if getattr(p, "error_category", "") == "structural"
+        )
+        if _model_not_found:
+            hints.append(
+                "🤖 检测到所配置的模型不可用（模型通道不存在或已下线），"
+                "请检查模型名称是否正确，或在 API 代理平台确认模型是否已开通。"
+            )
+        else:
+            hints.append("⚙️ 检测到请求格式错误，这通常是模型兼容性问题，请尝试切换其他模型。")
 
     if not hints:
         # 无法分类时的通用提示
@@ -682,10 +695,10 @@ class LLMClient:
                     and (not require_vision or p.config.has_capability("vision"))
                 ]
 
-        # 如果降级了 thinking，更新 request
+        # thinking 降级标记 — 不立即修改 request，等确认确实需要降级时再改
+        _thinking_downgraded = False
         if require_thinking:
-            request.enable_thinking = False
-            logger.info("[LLM] All endpoints in cooldown. Disabling thinking for fallback attempt.")
+            logger.info("[LLM] All endpoints in cooldown, attempting recovery before disabling thinking.")
 
         if base_capability_matched:
             unhealthy = [p for p in base_capability_matched if not p.is_healthy]
@@ -728,7 +741,26 @@ class LLMClient:
                                 pass
                         else:
                             await asyncio.sleep(wait_seconds)
-                        # 等待后重新筛选
+                        # 等待后重新筛选 — 先尝试保留 thinking
+                        if require_thinking:
+                            eligible = self._filter_eligible_endpoints(
+                                require_tools=require_tools,
+                                require_vision=require_vision,
+                                require_video=require_video,
+                                require_thinking=True,
+                                require_audio=require_audio,
+                                require_pdf=require_pdf,
+                                conversation_id=conversation_id,
+                                prefer_endpoint=prefer_endpoint,
+                            )
+                            if eligible:
+                                logger.info(
+                                    f"[LLM] Recovery detected: "
+                                    f"{len(eligible)} endpoints available after wait "
+                                    f"(thinking preserved)"
+                                )
+                                return eligible
+                        # 降级 thinking 再试
                         eligible = self._filter_eligible_endpoints(
                             require_tools=require_tools,
                             require_vision=require_vision,
@@ -740,9 +772,13 @@ class LLMClient:
                             prefer_endpoint=prefer_endpoint,
                         )
                         if eligible:
+                            if require_thinking:
+                                request.enable_thinking = False
+                                _thinking_downgraded = True
                             logger.info(
                                 f"[LLM] Recovery detected: "
                                 f"{len(eligible)} endpoints available after wait"
+                                + (" (thinking disabled)" if _thinking_downgraded else "")
                             )
                             return eligible
 
@@ -1203,6 +1239,11 @@ class LLMClient:
                         "must be a response to a preceeding message",
                         "does not support",  # Ollama: "model does not support thinking" 等
                         "not supported",     # 通用的"不支持"格式
+                        "model_not_found",   # API 代理模型通道不存在
+                        "model not found",
+                        "no available channel",  # 分发型代理（如 new_api）无可用通道
+                        "model_decommissioned",
+                        "model_not_available",
                         "reasoning_content is missing",  # 自愈失败后仍作为结构性错误
                         "missing reasoning_content",
                         "missing 'reasoning_content'",

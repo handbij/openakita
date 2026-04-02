@@ -3742,7 +3742,7 @@ fn workspace_write_file(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("create parent dir failed: {e}"))?;
     }
-    fs::write(&path, content).map_err(|e| format!("write failed: {e}"))
+    atomic_write_with_backup(&path, content.as_bytes())
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -3817,7 +3817,64 @@ fn workspace_update_env(workspace_id: String, entries: Vec<EnvEntry>) -> Result<
     let env_path = dir.join(".env");
     let existing = read_text_lossy(&env_path);
     let updated = update_env_content(&existing, &entries);
-    fs::write(&env_path, updated).map_err(|e| format!("write .env failed: {e}"))
+    atomic_write_with_backup(&env_path, updated.as_bytes())
+}
+
+/// Append a suffix to a file path, handling dotfiles like `.env` correctly.
+/// e.g. `.env` + `.bak` → `.env.bak`, `foo.json` + `.tmp` → `foo.json.tmp`
+fn path_with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    match path.extension() {
+        Some(ext) => {
+            let mut new_ext = ext.to_os_string();
+            new_ext.push(suffix);
+            path.with_extension(new_ext)
+        }
+        None => {
+            let mut name = path.file_name().unwrap_or_default().to_os_string();
+            name.push(suffix);
+            path.with_file_name(name)
+        }
+    }
+}
+
+/// Atomic write with .bak backup.
+///
+/// 1. If `path` exists, copy to `path.bak` (best-effort).
+/// 2. Write content to `path.tmp`.
+/// 3. Rename `path.tmp` → `path` (atomic on most FS).
+/// 4. On rename failure (Windows lock), retry up to 3 times, then fall back to direct write.
+fn atomic_write_with_backup(path: &Path, content: &[u8]) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("create parent dir failed: {e}"))?;
+    }
+
+    if path.exists() {
+        let bak = path_with_suffix(path, ".bak");
+        let _ = fs::copy(path, &bak);
+    }
+
+    let tmp = path_with_suffix(path, ".tmp");
+    fs::write(&tmp, content).map_err(|e| format!("write tmp failed: {e}"))?;
+
+    for attempt in 0..3u64 {
+        match fs::rename(&tmp, path) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                if attempt < 2 {
+                    std::thread::sleep(std::time::Duration::from_millis(100 * (attempt + 1)));
+                } else {
+                    eprintln!("atomic rename failed after 3 retries ({e}), falling back to direct write");
+                    if let Err(e2) = fs::write(path, content) {
+                        let _ = fs::remove_file(&tmp);
+                        return Err(format!("write failed: {e2}"));
+                    }
+                    let _ = fs::remove_file(&tmp);
+                    return Ok(());
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Read a text file as UTF-8; fall back to lossy conversion for non-UTF-8 files

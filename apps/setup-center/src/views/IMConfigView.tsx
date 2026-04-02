@@ -117,8 +117,7 @@ export function IMConfigView(props: IMConfigViewProps) {
         <div className="flex flex-wrap gap-3">
           {PLATFORMS.map((p) => {
             const Logo = p.logo;
-            const needsTranslation = p.title.startsWith("config.");
-            const title = needsTranslation ? t(p.title) : p.title;
+            const title = t(p.title);
             return (
               <div
                 key={p.id}

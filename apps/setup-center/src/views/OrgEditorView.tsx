@@ -954,8 +954,8 @@ export function OrgEditorView({
   const [propsTab, setPropsTab] = useState<"overview" | "identity" | "capabilities" | "tasks">("overview");
   const [fullPromptPreview, setFullPromptPreview] = useState<string | null>(null);
   const [promptPreviewLoading, setPromptPreviewLoading] = useState(false);
-  const [liveMode, setLiveMode] = useState(true);
   const [layoutLocked, setLayoutLocked] = useState(false);
+  const liveMode = currentOrg?.status === "active" || currentOrg?.status === "running";
   const [nodeStatuses, setNodeStatuses] = useState<Record<string, string>>({});
   const [inboxOpen, setInboxOpen] = useState(false);
   const [nodeEvents, setNodeEvents] = useState<any[]>([]);
@@ -1103,7 +1103,6 @@ export function OrgEditorView({
       setEdges(flowEdges);
       setSelectedNodeId(null);
       const running = data.status === "active" || data.status === "running";
-      setLiveMode(running);
       setLayoutLocked(running);
     } catch (e) {
       console.error("Failed to fetch org:", e);
@@ -1323,7 +1322,6 @@ export function OrgEditorView({
       await safeFetch(`${apiBaseUrl}/api/orgs/${currentOrg.id}/start`, { method: "POST" });
       setCurrentOrg({ ...currentOrg, status: "active" });
       setOrgList((prev) => prev.map((o) => o.id === currentOrg.id ? { ...o, status: "active" } : o));
-      setLiveMode(true);
       setLayoutLocked(true);
       const mode = (currentOrg as any).operation_mode || "command";
       showToast(
@@ -1341,7 +1339,6 @@ export function OrgEditorView({
       await safeFetch(`${apiBaseUrl}/api/orgs/${currentOrg.id}/stop`, { method: "POST" });
       setCurrentOrg({ ...currentOrg, status: "dormant" });
       setOrgList((prev) => prev.map((o) => o.id === currentOrg.id ? { ...o, status: "dormant" } : o));
-      setLiveMode(false);
       setLayoutLocked(false);
     } catch (e) { console.error("Failed to stop org:", e); }
   }, [currentOrg, apiBaseUrl]);
@@ -1408,7 +1405,6 @@ export function OrgEditorView({
       const res = await safeFetch(`${apiBaseUrl}/api/orgs/${currentOrg.id}/reset`, { method: "POST" });
       const data = await res.json();
       setCurrentOrg(data);
-      setLiveMode(false);
       setLayoutLocked(false);
       setActivityFeed([]);
       setBbEntries([]);
@@ -1668,7 +1664,7 @@ export function OrgEditorView({
     setPropsTab("overview");
     setFullPromptPreview(null);
     setShowRightPanel(true);
-  }, [liveMode, selectedNodeId, autoSave]);
+  }, [selectedNodeId, autoSave]);
 
   const onEdgeClick = useCallback((_: any, edge: Edge) => {
     if (selectedNodeId || selectedEdgeId) autoSave();
@@ -2015,17 +2011,6 @@ export function OrgEditorView({
                 <IconStop size={13} /> {!isMobile && "停止"}
               </button>
             )}
-            <button
-              className={`org-tb-btn${liveMode ? " org-tb-btn--active" : ""}`}
-              onClick={() => {
-                const next = !liveMode;
-                setLiveMode(next);
-                if (!next) setLayoutLocked(false);
-              }}
-              title="实时模式"
-            >
-              <IconRadar size={13} /> {!isMobile && "实况"}
-            </button>
             <button className="org-tb-btn" onClick={handleSave} disabled={saving} title="保存">
               <IconSave size={13} /> {saving ? "..." : (!isMobile && "保存")}
             </button>

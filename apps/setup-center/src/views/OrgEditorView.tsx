@@ -1026,6 +1026,8 @@ export function OrgEditorView({
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768 || IS_CAPACITOR);
   const [showLeftPanel, setShowLeftPanel] = useState(() => !(window.innerWidth < 768 || IS_CAPACITOR));
   const [showRightPanel, setShowRightPanel] = useState(false);
+  const [creatingOrg, setCreatingOrg] = useState(false);
+  const orgCreateBusyRef = useRef(false);
   const wasRunningRef = useRef(false);
 
   useLayoutEffect(() => {
@@ -1055,13 +1057,16 @@ export function OrgEditorView({
 
   // ── Data fetching ──
 
-  const fetchOrgList = useCallback(async () => {
+  const fetchOrgList = useCallback(async (): Promise<OrgSummary[]> => {
     try {
       const res = await safeFetch(`${apiBaseUrl}/api/orgs`);
       const data = await res.json();
-      setOrgList(data);
+      const list = Array.isArray(data) ? (data as OrgSummary[]) : [];
+      setOrgList(list);
+      return list;
     } catch (e) {
       console.error("Failed to fetch orgs:", e);
+      return [];
     }
   }, [apiBaseUrl]);
 
@@ -1482,35 +1487,66 @@ export function OrgEditorView({
   // ── Create org ──
 
   const handleCreateOrg = useCallback(async () => {
+    if (orgCreateBusyRef.current) return;
+    orgCreateBusyRef.current = true;
+    setCreatingOrg(true);
+    const defaultName = "新组织";
     try {
       const res = await safeFetch(`${apiBaseUrl}/api/orgs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "新组织", description: "" }),
+        body: JSON.stringify({ name: defaultName, description: "" }),
       });
-      const data = await res.json();
-      await fetchOrgList();
-      setSelectedOrgId(data.id);
-    } catch (e) {
+      const data = (await res.json()) as { id?: string };
+      const list = await fetchOrgList();
+      let newId = typeof data?.id === "string" && data.id ? data.id : "";
+      if (!newId && list.length > 0) {
+        const byName = list.filter((o) => o.name === defaultName);
+        const pool = byName.length > 0 ? byName : list;
+        pool.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+        newId = pool[0]?.id ?? "";
+      }
+      if (newId) setSelectedOrgId(newId);
+      showToast(newId ? `已创建「${defaultName}」` : "已创建组织，但未在列表中定位到条目，请刷新或检查后端日志", newId ? "ok" : "error");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
       console.error("Failed to create org:", e);
+      showToast(msg.includes("401") || msg.includes("Authentication") ? "创建失败：需要登录或访问令牌（远程访问请检查 Web 访问密码）" : `创建组织失败：${msg}`, "error");
+    } finally {
+      orgCreateBusyRef.current = false;
+      setCreatingOrg(false);
     }
-  }, [apiBaseUrl, fetchOrgList]);
+  }, [apiBaseUrl, fetchOrgList, showToast]);
 
   const handleCreateFromTemplate = useCallback(async (templateId: string) => {
+    if (orgCreateBusyRef.current) return;
+    orgCreateBusyRef.current = true;
+    setCreatingOrg(true);
     try {
       const res = await safeFetch(`${apiBaseUrl}/api/orgs/from-template`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ template_id: templateId }),
       });
-      const data = await res.json();
-      await fetchOrgList();
-      setSelectedOrgId(data.id);
+      const data = (await res.json()) as { id?: string; name?: string };
+      const list = await fetchOrgList();
+      let newId = typeof data?.id === "string" && data.id ? data.id : "";
+      if (!newId && list.length > 0) {
+        const sorted = [...list].sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+        newId = sorted[0]?.id ?? "";
+      }
+      if (newId) setSelectedOrgId(newId);
       setShowTemplates(false);
-    } catch (e) {
+      showToast(newId ? `已从模板创建组织${data?.name ? `「${data.name}」` : ""}` : "已从模板创建，但未定位到新组织", newId ? "ok" : "error");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
       console.error("Failed to create from template:", e);
+      showToast(`从模板创建失败：${msg}`, "error");
+    } finally {
+      orgCreateBusyRef.current = false;
+      setCreatingOrg(false);
     }
-  }, [apiBaseUrl, fetchOrgList]);
+  }, [apiBaseUrl, fetchOrgList, showToast]);
 
   const [confirmDeleteOrgId, setConfirmDeleteOrgId] = useState<string | null>(null);
 
@@ -2059,13 +2095,13 @@ export function OrgEditorView({
         <div style={{ padding: "12px 12px 8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontWeight: 600, fontSize: 14 }}>组织编排</span>
           <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-            <button className="btnSmall" onClick={() => setShowTemplates(!showTemplates)} title="从模板创建" style={{ fontSize: 11 }}>
+            <button type="button" className="btnSmall" onClick={() => setShowTemplates(!showTemplates)} title="从模板创建" style={{ fontSize: 11 }} disabled={creatingOrg}>
               <IconClipboard size={12} />
             </button>
-            <button className="btnSmall" onClick={handleCreateOrg} title="新建空白组织">
+            <button type="button" className="btnSmall" onClick={() => void handleCreateOrg()} title="新建空白组织" disabled={creatingOrg}>
               <IconPlus size={12} />
             </button>
-            <button className="btnSmall" onClick={() => orgImportRef.current?.click()} title="导入组织">
+            <button type="button" className="btnSmall" onClick={() => orgImportRef.current?.click()} title="导入组织" disabled={creatingOrg}>
               <IconUpload size={12} />
             </button>
             <input

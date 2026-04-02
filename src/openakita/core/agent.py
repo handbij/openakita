@@ -319,7 +319,7 @@ class Agent:
         )
 
         # 初始化基础工具
-        self.shell_tool = ShellTool()
+        self.shell_tool = ShellTool(default_cwd=str(settings.project_root))
         self.file_tool = FileTool()
         self.web_tool = WebTool()
 

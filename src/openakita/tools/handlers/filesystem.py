@@ -147,6 +147,51 @@ class FilesystemHandler:
         )
         return f'python "{tmp.name}"'
 
+    @staticmethod
+    def _fix_windows_pip_user(command: str) -> str:
+        """Windows 非 venv 环境下自动为 pip install 添加 --user 标志。
+
+        系统 Python 的 site-packages 位于 C:\\PythonXX\\ 等系统目录，
+        非管理员进程写入时会触发 [WinError 5] 拒绝访问。
+        """
+        import sys
+
+        stripped = command.strip()
+        # 匹配 pip install / python -m pip install 等模式
+        pip_patterns = [
+            r"^pip\d?\s+install\b",
+            r"^python\S*\s+-m\s+pip\s+install\b",
+        ]
+        is_pip_install = any(re.match(p, stripped, re.IGNORECASE) for p in pip_patterns)
+        if not is_pip_install:
+            return command
+
+        if "--user" in command or "--target" in command or "-t " in command:
+            return command
+
+        # venv 内不需要 --user
+        if sys.prefix != sys.base_prefix:
+            return command
+
+        from ...runtime_env import IS_FROZEN, get_python_executable
+        if IS_FROZEN:
+            py = get_python_executable()
+            if py:
+                from pathlib import Path
+                p = Path(py).resolve()
+                if p.parent.name in ("Scripts", "bin"):
+                    cfg = p.parent.parent / "pyvenv.cfg"
+                    if cfg.exists():
+                        return command
+
+        return re.sub(
+            r"(pip\d?\s+install)\b",
+            r"\1 --user",
+            command,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+
     # run_shell 成功输出最大行数
     SHELL_MAX_LINES = 200
 
@@ -175,6 +220,7 @@ class FilesystemHandler:
         import platform
         if platform.system() == "Windows":
             command = self._fix_windows_python_c(command)
+            command = self._fix_windows_pip_user(command)
 
         result = await self.agent.shell_tool.run(
             command,
@@ -238,6 +284,25 @@ class FilesystemHandler:
                     output_parts.append(
                         f"⚠️ '{first_word}' 不在系统 PATH 中（Windows 9009 = 命令未找到）。\n"
                         "请检查该程序是否已安装，或使用完整路径。"
+                    )
+
+            # Windows [WinError 5] = 拒绝访问，给出可操作的诊断
+            combined = f"{result.stdout}\n{result.stderr}"
+            if "WinError 5" in combined or "拒绝访问" in combined:
+                cmd_lower = command.strip().lower()
+                if "pip install" in cmd_lower and "--user" not in cmd_lower:
+                    output_parts.append(
+                        "⚠️ [WinError 5] 拒绝访问：pip 试图写入系统目录但权限不足。\n"
+                        "请改用 `pip install --user <包名>` 安装到用户目录，"
+                        "或在虚拟环境中执行 pip install。"
+                    )
+                else:
+                    output_parts.append(
+                        "⚠️ [WinError 5] 拒绝访问：当前进程没有足够的权限执行此操作。\n"
+                        "可能原因：1) 目标文件/目录需要管理员权限 "
+                        "2) 文件被其他程序占用 "
+                        "3) 杀毒软件拦截。\n"
+                        "建议：尝试换一个目录执行，或检查文件是否被占用。"
                     )
 
             if result.stdout:

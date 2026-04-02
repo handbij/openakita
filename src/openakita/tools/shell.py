@@ -93,6 +93,39 @@ class ShellTool:
         self._oem_encoding: str | None = None
 
     # ------------------------------------------------------------------
+    # CWD 验证
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _validate_cwd(work_dir: str) -> str:
+        """验证工作目录可用，不可用时降级到安全目录。
+
+        Windows 上若 CWD 不存在或无权访问，create_subprocess_shell 会抛出
+        [WinError 5] 拒绝访问 或 FileNotFoundError，导致所有 shell 命令失败。
+        """
+        import tempfile
+        from pathlib import Path
+
+        p = Path(work_dir)
+        try:
+            if p.is_dir():
+                return work_dir
+        except OSError:
+            pass
+
+        for fallback in (Path.home(), Path(tempfile.gettempdir())):
+            try:
+                if fallback.is_dir():
+                    logger.warning(
+                        "Shell CWD 不可用 (%s)，降级到 %s", work_dir, fallback
+                    )
+                    return str(fallback)
+            except OSError:
+                continue
+
+        return work_dir
+
+    # ------------------------------------------------------------------
     # 进程清理（Windows 安全杀死进程树）
     # ------------------------------------------------------------------
 
@@ -296,6 +329,7 @@ class ShellTool:
             CommandResult
         """
         work_dir = cwd or self.default_cwd
+        work_dir = self._validate_cwd(work_dir)
         cmd_timeout = timeout or self.timeout
 
         # 合并环境变量
@@ -398,6 +432,7 @@ class ShellTool:
     ) -> AsyncIterator[str]:
         """交互式执行命令，实时输出"""
         work_dir = cwd or self.default_cwd
+        work_dir = self._validate_cwd(work_dir)
 
         cmd_env = os.environ.copy()
         try:
@@ -449,10 +484,13 @@ class ShellTool:
 
     async def pip_install(self, package: str) -> CommandResult:
         """使用 pip 安装包（PyInstaller 兼容：使用 runtime_env 获取正确的 Python 解释器）"""
+        import sys as _sys
+
         from openakita.runtime_env import IS_FROZEN, get_python_executable
         py = get_python_executable()
         if py:
-            return await self.run(f'"{py}" -m pip install {package}')
+            user_flag = self._pip_needs_user_flag(py)
+            return await self.run(f'"{py}" -m pip install {user_flag}{package}')
         if IS_FROZEN:
             return CommandResult(
                 returncode=-1,
@@ -460,7 +498,28 @@ class ShellTool:
                 stderr="未找到可用的 Python 解释器，无法执行 pip install。"
                        "请前往「设置中心 → Python 环境」使用「一键修复」。",
             )
-        return await self.run(f"pip install {package}")
+        user_flag = self._pip_needs_user_flag(_sys.executable)
+        return await self.run(f"pip install {user_flag}{package}")
+
+    @staticmethod
+    def _pip_needs_user_flag(python_path: str) -> str:
+        """判断是否需要 --user 标志避免 Windows 权限问题。
+
+        非 venv 环境中的系统 Python 写入 site-packages 可能需要管理员权限，
+        返回 "--user " 前缀来规避 [WinError 5] 拒绝访问。
+        """
+        import sys as _sys
+        if _sys.platform != "win32":
+            return ""
+        from pathlib import Path
+        p = Path(python_path).resolve()
+        # venv 内的 Python 不需要 --user
+        for venv_marker in ("Scripts", "bin"):
+            if p.parent.name == venv_marker:
+                cfg = p.parent.parent / "pyvenv.cfg"
+                if cfg.exists():
+                    return ""
+        return "--user "
 
     async def npm_install(self, package: str, global_: bool = False) -> CommandResult:
         """使用 npm 安装包"""

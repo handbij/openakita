@@ -2148,7 +2148,7 @@ function BotCreationWizard({
   const credFields = CREDENTIAL_FIELDS[bot.type] || [];
   const platformInfo = WIZARD_PLATFORMS.find((wp) => wp.botType === bot.type || wp.id === bot.type);
   const platformTitle = platformInfo
-    ? (platformInfo.title.startsWith("config.") ? t(platformInfo.title) : platformInfo.title)
+    ? t(platformInfo.title)
     : bot.type;
   const streamingEnabled = bot.credentials.streaming_enabled === "true" || bot.credentials.streaming_enabled === true;
   const groupStreamingEnabled = bot.credentials.group_streaming === "true" || bot.credentials.group_streaming === true;
@@ -2229,7 +2229,7 @@ function BotCreationWizard({
                 <div className="grid grid-cols-4 gap-3 p-1.5 -m-1.5">
                   {WIZARD_PLATFORMS.map((p) => {
                     const selected = bot.type === p.botType;
-                    const label = p.title.startsWith("config.") ? t(p.title) : p.title;
+                    const label = t(p.title);
                     return (
                       <button
                         key={p.id}

@@ -2017,17 +2017,19 @@ export function OrgEditorView({
           </div>
 
           {/* ── Center: View tabs ── */}
-          <ToggleGroup
-            type="single"
-            value={viewMode}
-            onValueChange={(v) => { if (v && v !== viewMode) { flushSave(); setViewMode(v as typeof viewMode); } }}
-            variant="outline"
-            className="flex-shrink-0"
-          >
-            <ToggleGroupItem value="canvas" className="text-xs h-7 px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary">编排</ToggleGroupItem>
-            <ToggleGroupItem value="projects" className="text-xs h-7 px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary">项目</ToggleGroupItem>
-            <ToggleGroupItem value="dashboard" className="text-xs h-7 px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary">看板</ToggleGroupItem>
-          </ToggleGroup>
+          <div className="org-topbar-center">
+            <ToggleGroup
+              type="single"
+              value={viewMode}
+              onValueChange={(v) => { if (v && v !== viewMode) { flushSave(); setViewMode(v as typeof viewMode); } }}
+              variant="outline"
+              className="org-topbar-tabs flex-shrink-0"
+            >
+              <ToggleGroupItem value="canvas" className="text-xs h-7 px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary">编排</ToggleGroupItem>
+              <ToggleGroupItem value="projects" className="text-xs h-7 px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary">项目</ToggleGroupItem>
+              <ToggleGroupItem value="dashboard" className="text-xs h-7 px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary">看板</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
 
           {/* ── Right: Actions ── */}
           <div className="org-topbar-right">
@@ -2821,20 +2823,42 @@ export function OrgEditorView({
 
             /* ── Top bar layout ── */
             .org-topbar {
-              height: 40px;
-              padding-bottom: 12px;
+              min-height: 36px;
+              padding: 2px 0;
               display: flex;
               align-items: center;
               justify-content: space-between;
+              gap: 8px;
 
               background: var(--card-bg, #fff);
+              border-bottom: 1px solid color-mix(in srgb, var(--line, rgba(15,23,42,0.08)) 82%, transparent);
               flex-shrink: 0;
               container-type: inline-size;
               container-name: org-topbar;
             }
+            :root[data-theme="light"] .org-topbar {
+              background:
+                linear-gradient(
+                  180deg,
+                  color-mix(in srgb, var(--card-bg, #fff) 80%, var(--bg-app, #f4f5f7) 20%),
+                  color-mix(in srgb, var(--card-bg, #fff) 94%, var(--bg-subtle, #f1f5f9) 6%)
+                );
+            }
             .org-topbar-left {
               display: flex; align-items: center; gap: 6px;
               flex-shrink: 1; min-width: 0; overflow: hidden;
+            }
+            .org-topbar-center {
+              display: flex; align-items: center; justify-content: center;
+              align-self: stretch; flex: 0 0 auto;
+            }
+            .org-topbar-tabs {
+              align-self: center;
+            }
+            :root[data-theme="dark"] .org-topbar {
+              background: color-mix(in srgb, var(--card-bg, #27272a) 94%, var(--bg-app, #09090b) 6%);
+              min-height: 38px;
+              padding-block: 3px;
             }
             .org-topbar-name {
               font-weight: 600; font-size: 14px;
@@ -2872,6 +2896,18 @@ export function OrgEditorView({
             }
             @container org-topbar (max-width: 700px) {
               .org-status-label { display: none; }
+            }
+            @container org-topbar (max-width: 880px) {
+              .org-topbar {
+                padding-block: 1px;
+              }
+              .org-topbar-center {
+                flex: 1 1 auto;
+                min-width: 0;
+              }
+              .org-topbar-tabs {
+                max-width: 100%;
+              }
             }
 
             /* ── Right actions ── */

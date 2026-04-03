@@ -5001,7 +5001,15 @@ export function App() {
               }}
             />
           </div>
-          <div className="content" style={{ display: view !== "chat" ? undefined : "none", flex: 1, minHeight: 0 }}>
+          <div
+            className="content"
+            style={{
+              display: view !== "chat" ? undefined : "none",
+              flex: 1,
+              minHeight: 0,
+              paddingTop: view === "org_editor" ? 0 : undefined,
+            }}
+          >
             {renderStepContent()}
           </div>
         </div>

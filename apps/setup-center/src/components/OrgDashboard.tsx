@@ -183,7 +183,7 @@ export function OrgDashboard({ orgId, apiBaseUrl, orgName, onNodeClick }: OrgDas
 
   if (loading && !stats) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", background: "#040a18", color: "#64748b" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", background: "var(--bg-app)", color: "var(--muted)" }}>
         <div style={{ textAlign: "center" }}>
           <div className="db-spinner" />
           <div style={{ marginTop: 12, fontSize: 13 }}>正在连接组织...</div>
@@ -191,7 +191,7 @@ export function OrgDashboard({ orgId, apiBaseUrl, orgName, onNodeClick }: OrgDas
       </div>
     );
   }
-  if (!stats) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", background: "#040a18", color: "#64748b" }}>无法加载</div>;
+  if (!stats) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", background: "var(--bg-app)", color: "var(--muted)" }}>无法加载</div>;
 
   const hl = HEALTH_MAP[stats.health] || HEALTH_MAP.healthy;
   const nodeStats = stats.node_stats || {};
@@ -202,7 +202,7 @@ export function OrgDashboard({ orgId, apiBaseUrl, orgName, onNodeClick }: OrgDas
   const recentTasks: any[] = stats.recent_tasks || [];
   const deptWorkload: Record<string, { total: number; busy: number }> = stats.department_workload || {};
   const nodeName = (id: string) => {
-    if (!id) return "?";
+    if (!id) return "";
     const n = perNode.find((n: any) => n.id === id);
     return n?.role_title || id;
   };
@@ -236,7 +236,7 @@ export function OrgDashboard({ orgId, apiBaseUrl, orgName, onNodeClick }: OrgDas
         <div className="db-header-center">
           <div className="db-health-ring" data-pct={healthPct} style={{ "--ring-color": hl[1] } as any}>
             <svg viewBox="0 0 80 80" width={64} height={64}>
-              <circle cx="40" cy="40" r="34" fill="none" stroke="#1e293b" strokeWidth="5" />
+              <circle cx="40" cy="40" r="34" fill="none" stroke="var(--line)" strokeWidth="5" />
               <circle cx="40" cy="40" r="34" fill="none" stroke={hl[1]} strokeWidth="5"
                 strokeDasharray={`${healthPct * 2.14} 214`} strokeLinecap="round"
                 transform="rotate(-90 40 40)" className="db-ring-anim" />
@@ -253,9 +253,6 @@ export function OrgDashboard({ orgId, apiBaseUrl, orgName, onNodeClick }: OrgDas
         </div>
         <div className="db-header-right">
           <div className="db-clock">{now}</div>
-          <div className="db-refresh-indicator" key={tick}>
-            <span className="db-refresh-bar" />
-          </div>
         </div>
       </div>
 
@@ -272,7 +269,7 @@ export function OrgDashboard({ orgId, apiBaseUrl, orgName, onNodeClick }: OrgDas
           <div key={kpi.label} className="db-kpi-card">
             <div className="db-kpi-icon" style={{ background: kpi.gradient }}>{kpi.icon}</div>
             <div className="db-kpi-value">
-              <AnimatedNumber value={typeof kpi.value === "number" ? kpi.value : 0} color="#f1f5f9" />
+              <AnimatedNumber value={typeof kpi.value === "number" ? kpi.value : 0} color="var(--text)" />
               {kpi.sub && <span className="db-kpi-sub">{kpi.sub}</span>}
             </div>
             <div className="db-kpi-label">{kpi.label}</div>
@@ -302,7 +299,7 @@ export function OrgDashboard({ orgId, apiBaseUrl, orgName, onNodeClick }: OrgDas
 
         <GlassCard title="部门工作量" className="db-col-1">
           {Object.entries(deptWorkload).length === 0 ? (
-            <div style={{ color: "#475569", fontSize: 12 }}>暂无数据</div>
+            <div style={{ color: "var(--muted)", fontSize: 12 }}>暂无数据</div>
           ) : (
             Object.entries(deptWorkload).sort((a, b) => b[1].total - a[1].total).map(([dept, wl]) => {
               const pct = stats.node_count > 0 ? Math.round((wl.total / stats.node_count) * 100) : 0;
@@ -467,24 +464,26 @@ const DASHBOARD_CSS = `
 /* ─── Root ──────────────────────────────────── */
 .db-root {
   height: 100%; overflow: auto; position: relative;
-  background: #040a18;
-  color: #e2e8f0; font-family: "Noto Sans SC", system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  background: var(--bg-app, #040a18);
+  color: var(--text, #e2e8f0);
+  font-family: "Noto Sans SC", system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
   padding: 16px 20px 24px;
 }
 .db-grid-bg {
   position: absolute; inset: 0; pointer-events: none; z-index: 0;
   background-image:
-    linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px);
+    linear-gradient(var(--primary, #3b82f6)06 1px, transparent 1px),
+    linear-gradient(90deg, var(--primary, #3b82f6)06 1px, transparent 1px);
   background-size: 40px 40px;
   mask-image: radial-gradient(ellipse 60% 50% at 50% 0%, black, transparent);
 }
+:root[data-theme="light"] .db-grid-bg { display: none; }
 .db-root > *:not(.db-grid-bg) { position: relative; z-index: 1; }
 
 /* ─── Spinner ───────────────────────────────── */
 .db-spinner {
   width: 32px; height: 32px; margin: 0 auto;
-  border: 3px solid #1e293b; border-top-color: #3b82f6;
+  border: 3px solid var(--line, #1e293b); border-top-color: var(--primary, #3b82f6);
   border-radius: 50%; animation: db-spin 0.8s linear infinite;
 }
 @keyframes db-spin { to { transform: rotate(360deg); } }
@@ -499,20 +498,22 @@ const DASHBOARD_CSS = `
   font-size: 22px; font-weight: 800; letter-spacing: 1px;
   background: linear-gradient(135deg, #60a5fa, #a78bfa, #f472b6);
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0 10px rgba(99,102,241,0.4));
+}
+:root[data-theme="dark"] .db-title-glow { filter: drop-shadow(0 0 10px rgba(99,102,241,0.4)); }
+:root[data-theme="light"] .db-title-glow {
+  background: linear-gradient(135deg, #2563eb, #7c3aed, #db2777);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
 }
 .db-subtitle {
-  font-size: 11px; color: #64748b; margin-top: 2px;
+  font-size: 11px; color: var(--muted, #64748b); margin-top: 2px;
   letter-spacing: 3px; text-transform: uppercase;
 }
 .db-header-center { display: flex; align-items: center; gap: 12px; }
 .db-health-ring { position: relative; display: flex; align-items: center; justify-content: center; }
 .db-health-pct {
-  position: absolute; font-size: 14px; font-weight: 700; color: #f1f5f9;
+  position: absolute; font-size: 14px; font-weight: 700; color: var(--text, #f1f5f9);
 }
-.db-ring-anim {
-  transition: stroke-dasharray 1s ease;
-}
+.db-ring-anim { transition: stroke-dasharray 1s ease; }
 .db-health-label {
   font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px;
 }
@@ -521,19 +522,12 @@ const DASHBOARD_CSS = `
   animation: db-pulse 2s ease-in-out infinite;
 }
 @keyframes db-pulse { 0%,100% { opacity: 1; box-shadow: 0 0 4px currentColor; } 50% { opacity: 0.4; box-shadow: 0 0 12px currentColor; } }
-.db-uptime { font-size: 11px; color: #64748b; margin-top: 2px; }
+.db-uptime { font-size: 11px; color: var(--muted, #64748b); margin-top: 2px; }
 .db-header-right { text-align: right; }
 .db-clock {
-  font-size: 20px; font-weight: 300; color: #94a3b8;
+  font-size: 20px; font-weight: 300; color: var(--muted, #94a3b8);
   font-variant-numeric: tabular-nums; font-family: "SF Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
 }
-.db-refresh-indicator { height: 2px; width: 80px; background: #1e293b; border-radius: 1px; margin-top: 4px; overflow: hidden; margin-left: auto; }
-.db-refresh-bar {
-  display: block; height: 100%; width: 100%; border-radius: 1px;
-  background: linear-gradient(90deg, #3b82f6, #8b5cf6);
-  animation: db-refresh 8s linear;
-}
-@keyframes db-refresh { from { transform: translateX(-100%); } to { transform: translateX(0); } }
 
 /* ─── KPI Cards ─────────────────────────────── */
 .db-kpi-row {
@@ -542,39 +536,45 @@ const DASHBOARD_CSS = `
 @media (max-width: 960px) { .db-kpi-row { grid-template-columns: repeat(3, 1fr); } }
 .db-kpi-card {
   position: relative; overflow: hidden;
-  background: rgba(15,23,42,0.7); border: 1px solid rgba(51,65,85,0.5);
+  background: var(--card-bg, rgba(15,23,42,0.7));
+  border: 1px solid var(--line, rgba(51,65,85,0.5));
   border-radius: 12px; padding: 14px 16px;
-  backdrop-filter: blur(8px);
-  transition: transform 0.2s, border-color 0.3s;
+  transition: transform 0.2s, border-color 0.3s, box-shadow 0.3s;
 }
-.db-kpi-card:hover { transform: translateY(-2px); border-color: rgba(99,102,241,0.4); }
+:root[data-theme="dark"] .db-kpi-card { backdrop-filter: blur(8px); }
+:root[data-theme="light"] .db-kpi-card { box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+.db-kpi-card:hover { transform: translateY(-2px); border-color: var(--primary, rgba(99,102,241,0.4)); }
+:root[data-theme="light"] .db-kpi-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
 .db-kpi-glow {
   position: absolute; top: -20px; right: -20px; width: 60px; height: 60px;
   border-radius: 50%; opacity: 0.12; filter: blur(20px); pointer-events: none;
 }
+:root[data-theme="light"] .db-kpi-glow { opacity: 0.06; }
 .db-kpi-icon {
   width: 28px; height: 28px; border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
   font-size: 13px; color: #fff; margin-bottom: 8px;
 }
 .db-kpi-value { font-size: 26px; font-weight: 700; line-height: 1.1; }
-.db-kpi-sub { font-size: 14px; color: #64748b; font-weight: 400; margin-left: 2px; }
-.db-kpi-label { font-size: 11px; color: #64748b; margin-top: 4px; }
+.db-kpi-sub { font-size: 14px; color: var(--muted, #64748b); font-weight: 400; margin-left: 2px; }
+.db-kpi-label { font-size: 11px; color: var(--muted, #64748b); margin-top: 4px; }
 
 /* ─── Glass Card ────────────────────────────── */
 .db-glass {
-  background: rgba(15,23,42,0.6);
-  border: 1px solid rgba(51,65,85,0.5);
+  background: var(--card-bg, rgba(15,23,42,0.6));
+  border: 1px solid var(--line, rgba(51,65,85,0.5));
   border-radius: 12px; padding: 14px 16px;
-  backdrop-filter: blur(8px);
   position: relative; overflow: hidden;
 }
+:root[data-theme="dark"] .db-glass { backdrop-filter: blur(8px); }
+:root[data-theme="light"] .db-glass { box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
 .db-glass::before {
   content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px;
   background: linear-gradient(90deg, transparent, var(--card-accent, rgba(99,102,241,0.3)), transparent);
 }
+:root[data-theme="light"] .db-glass::before { opacity: 0.5; }
 .db-glass-title {
-  font-size: 12px; font-weight: 600; color: #94a3b8;
+  font-size: 12px; font-weight: 600; color: var(--muted, #94a3b8);
   display: flex; align-items: center; gap: 6px; margin-bottom: 10px;
   text-transform: uppercase; letter-spacing: 1px;
 }
@@ -586,10 +586,10 @@ const DASHBOARD_CSS = `
 }
 .db-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .db-bar-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.db-bar-label { width: 36px; font-size: 11px; color: #94a3b8; flex-shrink: 0; }
+.db-bar-label { width: 36px; font-size: 11px; color: var(--muted, #94a3b8); flex-shrink: 0; }
 .db-bar-track {
   flex: 1; height: 6px; border-radius: 3px;
-  background: rgba(51,65,85,0.5); overflow: hidden; position: relative;
+  background: var(--bg-subtle, rgba(51,65,85,0.5)); overflow: hidden; position: relative;
 }
 .db-bar-fill {
   height: 100%; border-radius: 3px; transition: width 0.8s ease;
@@ -600,7 +600,7 @@ const DASHBOARD_CSS = `
   position: absolute; top: 0; left: 0; height: 100%;
   background: #3b82f6; border-radius: 3px; animation: db-pulse 2s infinite;
 }
-.db-bar-count { width: 24px; font-size: 11px; color: #64748b; text-align: right; flex-shrink: 0; }
+.db-bar-count { width: 24px; font-size: 11px; color: var(--muted, #64748b); text-align: right; flex-shrink: 0; }
 .db-busy-badge {
   font-size: 9px; padding: 1px 5px; border-radius: 4px;
   background: rgba(59,130,246,0.15); color: #60a5fa; flex-shrink: 0;
@@ -613,20 +613,20 @@ const DASHBOARD_CSS = `
 @media (max-width: 960px) { .db-data-row { grid-template-columns: 1fr; } }
 .db-scroll-area { max-height: 180px; overflow-y: auto; }
 .db-scroll-area::-webkit-scrollbar { width: 3px; }
-.db-scroll-area::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
-.db-empty { color: #475569; font-size: 12px; padding: 8px 0; }
+.db-scroll-area::-webkit-scrollbar-thumb { background: var(--line, #334155); border-radius: 2px; }
+.db-empty { color: var(--muted, #475569); font-size: 12px; padding: 8px 0; }
 .db-all-good { color: #22c55e; font-size: 12px; padding: 8px 0; display: flex; align-items: center; gap: 4px; }
 
 /* Task items — mirroring org editor feed style */
 .db-task-item {
   display: flex; align-items: center; gap: 7px; padding: 4px 0;
-  border-bottom: 1px solid rgba(51,65,85,0.15); font-size: 12px;
+  border-bottom: 1px solid var(--line, rgba(51,65,85,0.15)); font-size: 12px;
   white-space: nowrap; line-height: 1.5; transition: background 0.15s;
 }
 .db-task-item:last-child { border-bottom: none; }
-.db-task-item:hover { background: rgba(30,41,59,0.3); }
+.db-task-item:hover { background: var(--bg-subtle, rgba(30,41,59,0.3)); }
 .db-task-time {
-  font-size: 11px; color: #64748b;
+  font-size: 11px; color: var(--muted, #64748b);
   font-family: "SF Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
   font-variant-numeric: tabular-nums; flex-shrink: 0; min-width: 56px; opacity: 0.75;
 }
@@ -647,34 +647,34 @@ const DASHBOARD_CSS = `
 .db-ev-delegated  { background: rgba(99,102,241,0.12); color: #818cf8; }
 .db-ev-delivered  { background: rgba(6,182,212,0.12); color: #06b6d4; }
 .db-task-who {
-  font-weight: 600; color: #e2e8f0; flex-shrink: 0;
+  font-weight: 600; color: var(--text, #e2e8f0); flex-shrink: 0;
   max-width: 100px; overflow: hidden; text-overflow: ellipsis;
   font-size: 12px;
 }
-.db-task-arrow { color: #475569; flex-shrink: 0; }
+.db-task-arrow { color: var(--muted, #475569); flex-shrink: 0; }
 .db-task-desc {
-  color: #94a3b8; flex: 1; overflow: hidden; text-overflow: ellipsis;
+  color: var(--muted, #94a3b8); flex: 1; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; cursor: pointer; min-width: 0;
 }
 
 /* Alert items */
 .db-alert-item {
   display: flex; align-items: center; gap: 7px; padding: 4px 0;
-  border-bottom: 1px solid rgba(51,65,85,0.15); font-size: 12px;
+  border-bottom: 1px solid var(--line, rgba(51,65,85,0.15)); font-size: 12px;
   white-space: nowrap; line-height: 1.5;
 }
 .db-alert-item:last-child { border-bottom: none; }
 .db-alert-icon { font-weight: 700; flex-shrink: 0; font-size: 10px; }
-.db-alert-who { flex-shrink: 0; color: #e2e8f0; font-size: 12px; }
+.db-alert-who { flex-shrink: 0; color: var(--text, #e2e8f0); font-size: 12px; }
 .db-alert-desc {
-  color: #94a3b8; flex: 1; overflow: hidden; text-overflow: ellipsis;
+  color: var(--muted, #94a3b8); flex: 1; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; cursor: pointer; min-width: 0;
 }
 
 /* Blackboard items */
 .db-bb-item {
   display: flex; align-items: center; gap: 7px; padding: 4px 0;
-  border-bottom: 1px solid rgba(51,65,85,0.15); font-size: 12px;
+  border-bottom: 1px solid var(--line, rgba(51,65,85,0.15)); font-size: 12px;
   white-space: nowrap; line-height: 1.5;
 }
 .db-bb-item:last-child { border-bottom: none; }
@@ -685,9 +685,9 @@ const DASHBOARD_CSS = `
 .db-bb-decision { background: rgba(139,92,246,0.12); color: #a78bfa; }
 .db-bb-progress { background: rgba(59,130,246,0.12); color: #60a5fa; }
 .db-bb-fact { background: rgba(245,158,11,0.12); color: #fbbf24; }
-.db-bb-source { color: #94a3b8; font-weight: 500; flex-shrink: 0; font-size: 12px; }
+.db-bb-source { color: var(--muted, #94a3b8); font-weight: 500; flex-shrink: 0; font-size: 12px; }
 .db-bb-content {
-  color: #94a3b8; flex: 1; overflow: hidden; text-overflow: ellipsis;
+  color: var(--muted, #94a3b8); flex: 1; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; cursor: pointer; min-width: 0;
 }
 
@@ -713,11 +713,11 @@ const DASHBOARD_CSS = `
   font-size: 11px; padding: 1px 4px; border-radius: 3px;
   background: rgba(99,102,241,0.1); font-family: "SF Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
 }
-.db-tip-content pre { margin: 4px 0; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.3); overflow-x: auto; }
+.db-tip-content pre { margin: 4px 0; padding: 8px; border-radius: 6px; background: var(--bg-subtle, rgba(0,0,0,0.3)); overflow-x: auto; }
 .db-tip-content pre code { padding: 0; background: none; }
 .db-tip-content blockquote { margin: 4px 0; padding-left: 10px; border-left: 3px solid rgba(99,102,241,0.3); color: inherit; opacity: 0.8; }
 .db-tip-content table { border-collapse: collapse; margin: 4px 0; font-size: 11px; }
-.db-tip-content th, .db-tip-content td { padding: 3px 8px; border: 1px solid rgba(100,116,139,0.3); }
+.db-tip-content th, .db-tip-content td { padding: 3px 8px; border: 1px solid var(--line, rgba(100,116,139,0.3)); }
 
 /* ─── Node Grid ─────────────────────────────── */
 .db-node-grid {
@@ -726,11 +726,12 @@ const DASHBOARD_CSS = `
 .db-node-card {
   display: flex; flex-direction: column; gap: 6px;
   padding: 10px 12px; border-radius: 10px;
-  background: rgba(15,23,42,0.5);
-  border: 1px solid rgba(51,65,85,0.4);
+  background: var(--card-bg, rgba(15,23,42,0.5));
+  border: 1px solid var(--line, rgba(51,65,85,0.4));
   cursor: pointer; transition: all 0.25s;
   position: relative; overflow: hidden;
 }
+:root[data-theme="light"] .db-node-card { box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
 .db-node-card::after {
   content: ""; position: absolute; inset: 0; border-radius: 10px;
   opacity: 0; transition: opacity 0.3s;
@@ -747,14 +748,14 @@ const DASHBOARD_CSS = `
 @keyframes db-scan { 0% { opacity: 0.3; } 50% { opacity: 1; } 100% { opacity: 0.3; } }
 .db-node-top { display: flex; align-items: center; gap: 8px; }
 .db-node-info { flex: 1; min-width: 0; }
-.db-node-name { font-size: 12px; font-weight: 600; color: #f1f5f9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.db-node-dept { font-size: 10px; color: #64748b; }
+.db-node-name { font-size: 12px; font-weight: 600; color: var(--text, #f1f5f9); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-node-dept { font-size: 10px; color: var(--muted, #64748b); }
 .db-node-status-dot {
   width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-  box-shadow: 0 0 6px currentColor;
 }
+:root[data-theme="dark"] .db-node-status-dot { box-shadow: 0 0 6px currentColor; }
 .db-node-bottom { display: flex; justify-content: space-between; align-items: center; }
 .db-node-status-text { font-size: 10px; font-weight: 600; }
-.db-node-task { font-size: 10px; color: #64748b; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.db-node-idle { font-size: 10px; color: #334155; }
+.db-node-task { font-size: 10px; color: var(--muted, #64748b); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-node-idle { font-size: 10px; color: var(--muted2, #334155); }
 `;

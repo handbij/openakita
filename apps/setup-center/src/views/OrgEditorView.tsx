@@ -8,6 +8,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
+import { useMdModules } from "../hooks/useMdModules";
 import {
   ReactFlow,
   Background,
@@ -126,6 +127,22 @@ function fmtShortDate(v: string | number | undefined | null): string {
   const d = new Date(typeof v === "number" ? v : v);
   if (isNaN(d.getTime())) return "";
   return d.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function stripMd(s: string): string {
+  return s
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/\*(.+?)\*/g, "$1")
+    .replace(/__(.+?)__/g, "$1")
+    .replace(/_(.+?)_/g, "$1")
+    .replace(/~~(.+?)~~/g, "$1")
+    .replace(/`(.+?)`/g, "$1")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\n+/g, " ")
+    .trim();
 }
 
 const TASK_STATUS_LABELS: Record<string, string> = {
@@ -872,6 +889,7 @@ export function OrgEditorView({
   visible?: boolean;
 }) {
   useTranslation();
+  const mdModules = useMdModules();
 
   // State
   const [orgList, setOrgList] = useState<OrgSummary[]>([]);
@@ -2536,16 +2554,16 @@ export function OrgEditorView({
                 const nd = nodes.find(n => n.id === id);
                 return (nd?.data as any)?.role_title || id?.slice(0, 6) || "";
               };
-              const typeMeta: Record<string, { icon: string; label: string; cls: string }> = {
-                task_delegated:  { icon: "↗", label: "分配任务",   cls: "feed-delegated" },
-                task_delivered:  { icon: "↙", label: "交付成果",   cls: "feed-delivered" },
-                task_accepted:   { icon: "✓", label: "验收通过",   cls: "feed-accepted" },
-                task_rejected:   { icon: "✗", label: "打回",       cls: "feed-rejected" },
-                task_timeout:    { icon: "⏱", label: "超时",       cls: "feed-timeout" },
-                task_completed:  { icon: "✓", label: "节点执行完成", cls: "feed-completed" },
-                node_activated:  { icon: "▶", label: "开始执行",    cls: "feed-activated" },
+              const typeMeta: Record<string, { icon: string; label: string; tip: string; cls: string }> = {
+                task_delegated:  { icon: "↗", label: "分配", tip: "分配任务给下级节点",       cls: "feed-delegated" },
+                task_delivered:  { icon: "↙", label: "交付", tip: "向上级交付任务成果",       cls: "feed-delivered" },
+                task_accepted:   { icon: "✓", label: "通过", tip: "上级验收通过",             cls: "feed-accepted" },
+                task_rejected:   { icon: "✗", label: "打回", tip: "上级打回，需要重新处理",   cls: "feed-rejected" },
+                task_timeout:    { icon: "⏱", label: "超时", tip: "任务执行超时",             cls: "feed-timeout" },
+                task_completed:  { icon: "✓", label: "完成", tip: "节点执行完成",             cls: "feed-completed" },
+                node_activated:  { icon: "▶", label: "执行", tip: "节点开始执行任务",         cls: "feed-activated" },
               };
-              const defaultMeta = { icon: "•", label: "", cls: "" };
+              const defaultMeta = { icon: "•", label: "", tip: "", cls: "" };
 
               const busyLines: { key: string; node: string; text: string; pct: number }[] = [];
               for (const n of perNode) {
@@ -2558,49 +2576,93 @@ export function OrgEditorView({
 
               if (busyLines.length === 0 && recentTasks.length === 0 && anomalies.length === 0) return null;
 
+              const FeedTip = ({ text }: { text: string }) => (
+                <div className="org-feed-tip-content">
+                  {mdModules ? (
+                    <mdModules.ReactMarkdown remarkPlugins={[mdModules.remarkGfm]}>
+                      {text}
+                    </mdModules.ReactMarkdown>
+                  ) : (
+                    <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit" }}>{text}</pre>
+                  )}
+                </div>
+              );
+
+              const tipCls = "org-feed-tip-wrap bg-popover text-popover-foreground border border-border shadow-lg";
+
               return (
                 <div className="org-live-feed">
                   {busyLines.map(b => (
-                    <div key={b.key} className="org-feed-item org-feed-busy" title={b.text} onClick={() => {
-                      setSelectedNodeId(b.key); setSelectedEdgeId(null); setShowRightPanel(true); setPropsTab("tasks");
-                    }}>
-                      <span className="org-feed-dot" />
-                      <span className="org-feed-who">{b.node}</span>
-                      <span className="org-feed-text">{b.text}</span>
-                      {b.pct >= 0 && (
-                        <span className="org-feed-progress">
-                          <span className="org-feed-bar"><span className="org-feed-bar-fill" style={{ width: `${b.pct}%` }} /></span>
-                          <span className="org-feed-pct">{b.pct}%</span>
-                        </span>
-                      )}
-                    </div>
+                    <Tooltip key={b.key}>
+                      <TooltipTrigger asChild>
+                        <div className="org-feed-item org-feed-busy"
+                          onClick={() => { setSelectedNodeId(b.key); setSelectedEdgeId(null); setShowRightPanel(true); setPropsTab("tasks"); }}
+                        >
+                          <span className="org-feed-dot" />
+                          <span className="org-feed-who">{b.node}</span>
+                          <span className="org-feed-text">{stripMd(b.text)}</span>
+                          {b.pct >= 0 && (
+                            <span className="org-feed-progress">
+                              <span className="org-feed-bar"><span className="org-feed-bar-fill" style={{ width: `${b.pct}%` }} /></span>
+                              <span className="org-feed-pct">{b.pct}%</span>
+                            </span>
+                          )}
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" align="start" className={tipCls}>
+                        <FeedTip text={b.text} />
+                      </TooltipContent>
+                    </Tooltip>
                   ))}
                   {recentTasks.slice(0, 6).map((t: any, i: number) => {
                     const ts = t.t ? new Date(typeof t.t === "number" && t.t < 1e12 ? t.t * 1000 : t.t) : null;
-                    const timeStr = ts ? `${String(ts.getHours()).padStart(2, "0")}:${String(ts.getMinutes()).padStart(2, "0")}` : "";
+                    const timeStr = ts ? fmtTime(ts.getTime()) : "";
+                    const fullTimeStr = ts ? fmtDateTime(ts.getTime()) : "";
                     const meta = typeMeta[t.type] || defaultMeta;
                     const fromLabel = nodeLabel(t.from);
                     const toLabel = nodeLabel(t.to);
+                    const tipText = t.task
+                      ? `**${fullTimeStr}** · ${meta.label} · ${fromLabel}${toLabel ? ` → ${toLabel}` : ""}\n\n${t.task}`
+                      : `**${fullTimeStr}** · ${meta.label} · ${fromLabel}${toLabel ? ` → ${toLabel}` : ""}`;
                     return (
-                      <div key={`rt-${i}`} className={`org-feed-item ${meta.cls}`} title={t.task || ""}>
-                        <span className="org-feed-time">{timeStr}</span>
-                        <span className={`org-feed-icon ${meta.cls}`}>{meta.icon}</span>
-                        <span className="org-feed-who">{fromLabel}</span>
-                        {toLabel && <>
-                          <span className="org-feed-arrow">→</span>
-                          <span className="org-feed-who">{toLabel}</span>
-                        </>}
-                        <span className={`org-feed-label ${meta.cls}`}>{meta.label || t.type}</span>
-                        {t.task && <span className="org-feed-text">{t.task}</span>}
-                      </div>
+                      <Tooltip key={`rt-${i}`}>
+                        <TooltipTrigger asChild>
+                          <div className={`org-feed-item ${meta.cls}`}>
+                            <span className="org-feed-time">{timeStr}</span>
+                            <span className={`org-feed-badge ${meta.cls}`} title={meta.tip}>
+                              <span className="org-feed-badge-icon">{meta.icon}</span>
+                              {meta.label || t.type}
+                            </span>
+                            <span className="org-feed-who">{fromLabel}</span>
+                            {toLabel && <>
+                              <span className="org-feed-arrow">→</span>
+                              <span className="org-feed-who">{toLabel}</span>
+                            </>}
+                            {t.task && <span className="org-feed-text">{stripMd(t.task)}</span>}
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" align="start" className={tipCls}>
+                          <FeedTip text={tipText} />
+                        </TooltipContent>
+                      </Tooltip>
                     );
                   })}
                   {anomalies.map((a: any, i: number) => (
-                    <div key={`an-${i}`} className="org-feed-item feed-warn" title={String(a.message)}>
-                      <span className="org-feed-icon feed-warn">!</span>
-                      <span className="org-feed-who">{a.role_title || nodeLabel(a.node_id)}</span>
-                      <span className="org-feed-text">{String(a.message)}</span>
-                    </div>
+                    <Tooltip key={`an-${i}`}>
+                      <TooltipTrigger asChild>
+                        <div className="org-feed-item feed-warn">
+                          <span className="org-feed-badge feed-warn">
+                            <span className="org-feed-badge-icon">!</span>
+                            异常
+                          </span>
+                          <span className="org-feed-who">{a.role_title || nodeLabel(a.node_id)}</span>
+                          <span className="org-feed-text">{stripMd(String(a.message))}</span>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" align="start" className={tipCls}>
+                        <FeedTip text={String(a.message)} />
+                      </TooltipContent>
+                    </Tooltip>
                   ))}
                 </div>
               );
@@ -2880,7 +2942,6 @@ export function OrgEditorView({
             }
             .org-feed-item:last-child { border-bottom: none; }
             .org-feed-item:hover .org-feed-text { color: var(--text, #e2e8f0); }
-
             .org-feed-busy:hover .org-feed-who { color: var(--primary, #6366f1); }
 
             .org-feed-dot {
@@ -2890,38 +2951,44 @@ export function OrgEditorView({
             }
 
             .org-feed-time {
-              font-size: 11px; color: var(--muted, #64748b); font-family: monospace;
-              flex-shrink: 0; min-width: 38px; letter-spacing: 0.3px;
+              font-size: 11px; color: var(--muted, #64748b);
+              font-family: "SF Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
+              font-variant-numeric: tabular-nums;
+              flex-shrink: 0; min-width: 38px; letter-spacing: 0.2px;
+              opacity: 0.75;
             }
 
-            .org-feed-icon {
-              flex-shrink: 0; width: 18px; height: 18px;
-              display: inline-flex; align-items: center; justify-content: center;
-              border-radius: 4px; font-size: 11px; font-weight: 700;
-              font-style: normal; font-family: system-ui, sans-serif;
-              background: rgba(99,102,241,0.12); color: var(--primary, #818cf8);
+            .org-feed-badge {
+              display: inline-flex; align-items: center; gap: 3px;
+              flex-shrink: 0; padding: 1px 7px 1px 5px; border-radius: 4px;
+              font-size: 11px; font-weight: 500; white-space: nowrap;
+              background: rgba(99,102,241,0.10); color: var(--primary, #818cf8);
             }
-            .org-feed-icon.feed-completed,
-            .org-feed-icon.feed-accepted {
-              background: rgba(34,197,94,0.12); color: #22c55e;
+            .org-feed-badge-icon {
+              font-weight: 700; font-size: 11px; line-height: 1;
+              font-family: system-ui, sans-serif;
             }
-            .org-feed-icon.feed-activated {
-              background: rgba(59,130,246,0.12); color: #3b82f6;
+            .org-feed-badge.feed-completed,
+            .org-feed-badge.feed-accepted {
+              background: rgba(34,197,94,0.10); color: #22c55e;
             }
-            .org-feed-icon.feed-rejected {
-              background: rgba(239,68,68,0.12); color: #ef4444;
+            .org-feed-badge.feed-activated {
+              background: rgba(59,130,246,0.10); color: #3b82f6;
             }
-            .org-feed-icon.feed-timeout {
+            .org-feed-badge.feed-rejected {
+              background: rgba(239,68,68,0.10); color: #ef4444;
+            }
+            .org-feed-badge.feed-timeout {
+              background: rgba(245,158,11,0.10); color: #f59e0b;
+            }
+            .org-feed-badge.feed-delegated {
+              background: rgba(99,102,241,0.10); color: #818cf8;
+            }
+            .org-feed-badge.feed-delivered {
+              background: rgba(6,182,212,0.10); color: #06b6d4;
+            }
+            .org-feed-badge.feed-warn {
               background: rgba(245,158,11,0.12); color: #f59e0b;
-            }
-            .org-feed-icon.feed-delegated {
-              background: rgba(99,102,241,0.12); color: #818cf8;
-            }
-            .org-feed-icon.feed-delivered {
-              background: rgba(6,182,212,0.12); color: #06b6d4;
-            }
-            .org-feed-icon.feed-warn {
-              background: rgba(245,158,11,0.15); color: #f59e0b;
             }
 
             .org-feed-who {
@@ -2933,28 +3000,6 @@ export function OrgEditorView({
             .org-feed-arrow {
               color: var(--muted, #64748b); flex-shrink: 0;
               font-size: 11px; opacity: 0.6;
-            }
-
-            .org-feed-label {
-              font-size: 11px; padding: 1px 6px; border-radius: 4px;
-              flex-shrink: 0; font-weight: 500;
-              background: rgba(99,102,241,0.10); color: var(--primary, #818cf8);
-            }
-            .org-feed-label.feed-completed,
-            .org-feed-label.feed-accepted {
-              background: rgba(34,197,94,0.10); color: #22c55e;
-            }
-            .org-feed-label.feed-activated {
-              background: rgba(59,130,246,0.10); color: #3b82f6;
-            }
-            .org-feed-label.feed-rejected {
-              background: rgba(239,68,68,0.10); color: #ef4444;
-            }
-            .org-feed-label.feed-timeout {
-              background: rgba(245,158,11,0.10); color: #f59e0b;
-            }
-            .org-feed-label.feed-delivered {
-              background: rgba(6,182,212,0.10); color: #06b6d4;
             }
 
             .feed-warn .org-feed-who { color: #f59e0b; }
@@ -2980,6 +3025,41 @@ export function OrgEditorView({
             }
             .org-feed-pct {
               font-size: 10px; color: var(--muted); font-weight: 600;
+            }
+
+            /* ── Feed tooltip (shadcn + markdown) ── */
+            .org-feed-tip-wrap {
+              max-width: 420px !important; min-width: 200px;
+              padding: 10px 14px !important; text-align: left !important;
+              white-space: normal !important; border-radius: 8px !important;
+            }
+            .org-feed-tip-wrap [data-slot="tooltip-arrow"] {
+              display: none;
+            }
+            .org-feed-tip-content {
+              font-size: 12px; line-height: 1.7;
+              max-height: 300px; overflow-y: auto;
+              scrollbar-width: thin;
+              color: inherit;
+            }
+            .org-feed-tip-content p { margin: 0 0 6px; }
+            .org-feed-tip-content p:last-child { margin-bottom: 0; }
+            .org-feed-tip-content ul, .org-feed-tip-content ol {
+              margin: 4px 0; padding-left: 1.4em;
+            }
+            .org-feed-tip-content li { margin: 2px 0; }
+            .org-feed-tip-content strong { font-weight: 600; }
+            .org-feed-tip-content code {
+              font-size: 11px; padding: 1px 5px; border-radius: 3px;
+              background: hsl(var(--muted));
+            }
+            .org-feed-tip-content pre {
+              margin: 4px 0; padding: 8px 10px; border-radius: 6px;
+              background: hsl(var(--muted)); overflow-x: auto;
+              font-size: 11px;
+            }
+            .org-feed-tip-content pre code {
+              padding: 0; background: none;
             }
 
             /* ── Modal dialog ── */

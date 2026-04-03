@@ -174,11 +174,14 @@ class ContextManager:
             content = msg.get("content", "")
 
             has_tool_calls = False
-            if role == "assistant" and isinstance(content, list):
-                has_tool_calls = any(
-                    isinstance(item, dict) and item.get("type") == "tool_use"
-                    for item in content
-                )
+            if role == "assistant":
+                if isinstance(content, list):
+                    has_tool_calls = any(
+                        isinstance(item, dict) and item.get("type") == "tool_use"
+                        for item in content
+                    )
+                if not has_tool_calls and msg.get("tool_calls"):
+                    has_tool_calls = True
 
             if has_tool_calls:
                 group = [msg]
@@ -953,15 +956,22 @@ class ContextManager:
             f"Applying hard truncation."
         )
 
-        truncated = list(messages)
+        groups = self.group_messages(messages)
         dropped_messages: list[dict] = []
-        while len(truncated) > 2 and self.estimate_messages_tokens(truncated) > hard_limit:
-            removed = truncated.pop(0)
-            dropped_messages.append(removed)
+        while len(groups) > 2:
+            flat = [msg for g in groups for msg in g]
+            if self.estimate_messages_tokens(flat) <= hard_limit:
+                break
+            removed_group = groups.pop(0)
+            dropped_messages.extend(removed_group)
             logger.warning(
-                f"[HardTruncate] Dropped earliest message "
-                f"(role={removed.get('role', '?')})"
+                f"[HardTruncate] Dropped group of {len(removed_group)} messages "
+                f"(roles={[m.get('role', '?') for m in removed_group]})"
             )
+        truncated = [msg for g in groups for msg in g]
+
+        # Defense-in-depth: sanitize any remaining unpaired tool messages
+        truncated = self._sanitize_tool_pairs(truncated, dropped_messages)
 
         if dropped_messages and memory_manager is not None:
             self._enqueue_dropped_for_extraction(dropped_messages, memory_manager)
@@ -1001,6 +1011,78 @@ class ContextManager:
             f"(hard_limit={hard_limit}, messages={len(truncated)})"
         )
         return self._strip_oversized_payload(truncated, overhead_bytes=overhead_bytes)
+
+    @staticmethod
+    def _sanitize_tool_pairs(
+        messages: list[dict], dropped: list[dict] | None = None,
+    ) -> list[dict]:
+        """Remove unpaired tool_calls / tool-result messages to prevent API 400 errors.
+
+        After hard truncation drops messages from the front, orphaned ``tool``
+        role messages (whose ``assistant(tool_calls)`` was removed) or orphaned
+        ``assistant(tool_calls)`` messages (whose ``tool`` results are missing)
+        will cause the LLM API to reject the request.
+
+        This does a single O(n) scan identical to
+        ``ReasoningEngine._sanitize_messages_for_farewell`` but lives in
+        context_manager to avoid a circular import.
+        """
+        if not messages:
+            return messages
+
+        # Collect all tool_call_ids that have a tool-result message
+        answered_ids: set[str] = set()
+        # Collect all tool_call_ids declared by assistant messages
+        declared_ids: set[str] = set()
+
+        for msg in messages:
+            if msg.get("role") == "tool" and msg.get("tool_call_id"):
+                answered_ids.add(msg["tool_call_id"])
+            elif msg.get("role") == "assistant" and msg.get("tool_calls"):
+                for tc in msg["tool_calls"]:
+                    if tc.get("id"):
+                        declared_ids.add(tc["id"])
+
+        result: list[dict] = []
+        skip_ids: set[str] = set()
+
+        for msg in messages:
+            role = msg.get("role", "")
+
+            if role == "assistant" and msg.get("tool_calls"):
+                tc_ids = [
+                    tc.get("id", "") for tc in msg["tool_calls"] if tc.get("id")
+                ]
+                missing = [tid for tid in tc_ids if tid not in answered_ids]
+                if missing:
+                    skip_ids.update(tc_ids)
+                    if dropped is not None:
+                        dropped.append(msg)
+                    logger.warning(
+                        f"[HardTruncate] Stripped assistant(tool_calls) with "
+                        f"{len(missing)} missing results"
+                    )
+                    continue
+                result.append(msg)
+            elif role == "tool":
+                tc_id = msg.get("tool_call_id", "")
+                if tc_id in skip_ids:
+                    if dropped is not None:
+                        dropped.append(msg)
+                    continue
+                if tc_id and tc_id not in declared_ids:
+                    if dropped is not None:
+                        dropped.append(msg)
+                    logger.warning(
+                        "[HardTruncate] Dropped orphaned tool message "
+                        f"(no assistant declares tool_call_id={tc_id[:20]})"
+                    )
+                    continue
+                result.append(msg)
+            else:
+                result.append(msg)
+
+        return result or [{"role": "user", "content": "（对话上下文不可用）"}]
 
     def _strip_oversized_payload(
         self, messages: list[dict], *, overhead_bytes: int = 0,

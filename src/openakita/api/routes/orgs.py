@@ -1519,33 +1519,37 @@ async def get_org_stats(request: Request, org_id: str):
             pending_messages += messenger.get_pending_count(n.id)
 
     now_mono = _time.monotonic()
+    now_wall = _time.time()
     per_node: list[dict] = []
     anomalies: list[dict] = []
-    agent_cache = getattr(rt, "_agent_cache", None) or {}
+    node_last_activity = getattr(rt, "_node_last_activity", {}) or {}
     node_busy_since = getattr(rt, "_node_busy_since", {}) or {}
+    agent_cache = getattr(rt, "_agent_cache", None) or {}
     store = _get_project_store(request, org_id)
     for n in org.nodes:
         cache_key = f"{org_id}:{n.id}"
-        cached = agent_cache.get(cache_key) if isinstance(agent_cache, dict) else None
-        idle_secs = None
-        if cached:
-            try:
-                last = cached.last_used
-                if isinstance(last, (int, float)) and last > 0:
-                    idle_secs = now_mono - last
-            except Exception:
-                pass
 
-        running_since_s: float | None = None
+        idle_secs = None
+        last_act = node_last_activity.get(cache_key)
+        if last_act and last_act > 0:
+            idle_secs = now_mono - last_act
+        else:
+            cached = agent_cache.get(cache_key) if isinstance(agent_cache, dict) else None
+            if cached:
+                try:
+                    last = cached.last_used
+                    if isinstance(last, (int, float)) and last > 0:
+                        idle_secs = now_mono - last
+                except Exception:
+                    pass
+
+        running_since_ms: float | None = None
         active_task_count = 0
-        busy_key = f"{org_id}:{n.id}"
         if n.status.value == "busy":
-            bs = node_busy_since.get(busy_key)
+            bs = node_busy_since.get(cache_key)
             if bs and bs > 0:
-                running_since_s = now_mono - bs
+                running_since_ms = (now_wall - (now_mono - bs)) * 1000
             active_task_count = rt._node_active_count(org_id, n.id)
-            if active_task_count > 0:
-                idle_secs = 0
 
         node_pending = messenger.get_pending_count(n.id) if messenger else 0
 
@@ -1582,7 +1586,9 @@ async def get_org_stats(request: Request, org_id: str):
             "external_tools": external_tools,
             "is_clone": n.is_clone,
             "frozen": n.frozen_by is not None,
-            "running_since": round(running_since_s) if running_since_s is not None else None,
+            "running_since": round(running_since_ms) if running_since_ms is not None else None,
+            "recent_activity_ts": round((now_wall - (now_mono - last_act)) * 1000)
+                if last_act and last_act > 0 else None,
             "active_task_count": active_task_count,
         }
         per_node.append(entry)
@@ -1597,15 +1603,14 @@ async def get_org_stats(request: Request, org_id: str):
                 }
             )
         elif n.status.value == "busy" and idle_secs is not None and idle_secs > 600:
-            if active_task_count == 0:
-                anomalies.append(
-                    {
-                        "node_id": n.id,
-                        "role_title": n.role_title,
-                        "type": "stuck",
-                        "message": f"节点标记为忙碌但已 {round(idle_secs / 60)} 分钟无活动",
-                    }
-                )
+            anomalies.append(
+                {
+                    "node_id": n.id,
+                    "role_title": n.role_title,
+                    "type": "stuck",
+                    "message": f"节点标记为忙碌但已 {round(idle_secs / 60)} 分钟无活动",
+                }
+            )
         elif (
             n.status.value == "idle"
             and idle_secs is not None

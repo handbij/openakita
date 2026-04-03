@@ -5693,7 +5693,11 @@ NEXT: 建议的下一步（如有）"""
                     # 只有在没有工具调用时才保存文本作为最终响应
                     # 如果有工具调用，这个文本可能是 LLM 的思考过程
                     if not tool_calls and cleaned_text:
-                        final_response = cleaned_text
+                        # ForceToolCall 重试时，LLM 常返回短确认（"好的，已完成"），
+                        # 不能用它覆盖前一轮已生成的完整内容（如新闻/热搜等）。
+                        # 仅在新文本更长或 final_response 为空时才更新。
+                        if not final_response or len(cleaned_text) >= len(final_response):
+                            final_response = cleaned_text
 
                 # 如果没有工具调用，检查是否需要强制要求调用工具
                 if not tool_calls:
@@ -5809,15 +5813,24 @@ NEXT: 建议的下一步（如有）"""
                     await self.agent_state.current_task.process_post_tool_signals(messages)
 
                 # 注意：不在工具执行后检查 stop_reason，让循环继续获取 LLM 的最终总结
-            # 循环结束后，如果 final_response 为空，尝试让 LLM 生成一个总结
-            if not final_response or len(final_response.strip()) < 10:
-                logger.info("Task completed but no final response, requesting summary...")
+            # 循环结束后，如果 final_response 内容不够充实，让 LLM 生成详细总结
+            # 阈值 30：中文单字=1 char，大多数"状态确认"型回复 <20 chars，
+            # 大多数有实际内容的回复 >30 chars（如天气、查询结果等）
+            if not final_response or len(final_response.strip()) < 30:
+                logger.info(
+                    f"Task completed but final_response too short "
+                    f"({len(final_response.strip()) if final_response else 0} chars), "
+                    f"requesting detailed summary..."
+                )
                 try:
-                    # 请求 LLM 生成任务完成总结
                     messages.append(
                         {
                             "role": "user",
-                            "content": "任务执行完毕。请简要总结一下执行结果和完成情况。",
+                            "content": (
+                                "任务已执行完毕，但你的回复内容太简短了。"
+                                "请把具体的执行结果完整地告诉用户——"
+                                "用户将直接看到你返回的文字，确保包含关键数据和结论。"
+                            ),
                         }
                     )
                     _tt_sum = set_tracking_context(TokenTrackingContext(

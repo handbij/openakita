@@ -218,8 +218,14 @@ Function PageReinstall
  StrCpy $R2 "$(addOrReinstall)"
  StrCpy $R3 "$(uninstallApp)"
  !insertmacro MUI_HEADER_TEXT "$(alreadyInstalled)" "$(chooseMaintenanceOption)"
- ; Upgrading
+ ; Upgrading — skip reinstall page and overwrite directly, UNLESS migrating
+ ; from WiX (MSI must be uninstalled first since it's a different installer system).
+ ; NSIS_HOOK_PREINSTALL already handles process killing and old env cleanup.
+ ; Abort in a custom Page PRE function = skip this page entirely.
  ${ElseIf} $R0 = 1
+ ${If} $WixMode <> 1
+ Abort
+ ${EndIf}
  StrCpy $R1 "$(olderOrUnknownVersionInstalled)"
  StrCpy $R2 "$(uninstallBeforeInstalling)"
  StrCpy $R3 "$(dontUninstall)"

@@ -1693,7 +1693,7 @@ async def get_org_stats(request: Request, org_id: str):
                 continue
             d = evt.get("data", {})
             _pv = d.get("task") or d.get("content") or d.get("result_preview") or d.get("prompt") or ""
-            preview = str(_pv)[:80]
+            preview = str(_pv)[:800]
             recent_tasks.append(
                 {
                     "t": evt.get("timestamp"),

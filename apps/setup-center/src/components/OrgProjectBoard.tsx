@@ -338,7 +338,7 @@ export function OrgProjectBoard({ orgId, apiBaseUrl, nodes = [], compact = false
         }
         .opb-project-card {
           min-width: 220px; max-width: 260px; cursor: pointer;
-          min-height: 92px; height: 100%;
+          min-height: 82px; height: 100%;
           border: 1px solid var(--line); background: var(--card-bg, var(--bg-app));
           transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
           position: relative; overflow: hidden;
@@ -355,19 +355,39 @@ export function OrgProjectBoard({ orgId, apiBaseUrl, nodes = [], compact = false
           box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 22%, transparent), 0 1px 3px rgba(37, 99, 235, 0.08);
         }
         .opb-project-card__title {
-          font-size: 15px; font-weight: 600; color: var(--text);
+          font-size: 14px; font-weight: 600; color: var(--text);
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          line-height: 1.25;
         }
         .opb-project-card__desc {
-          font-size: 12px; color: var(--muted);
-          line-height: 1.45;
+          font-size: 11px; color: var(--muted);
+          line-height: 1.35;
           display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
         }
+        .opb-project-card__body {
+          display: flex; flex-direction: column; gap: 6px; height: 100%;
+        }
         .opb-project-card__meta {
-          display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+          display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+        }
+        .opb-project-card__summary {
+          display: flex; flex-direction: column; gap: 2px;
+        }
+        .opb-project-card__stats {
+          display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
+          font-size: 10px; color: var(--muted);
+        }
+        .opb-project-card__stats strong {
+          display: block; font-size: 12px; line-height: 1.1; color: var(--text); font-weight: 600;
+          margin-top: 2px;
+        }
+        .opb-project-card__progress {
+          height: 5px; border-radius: 999px; overflow: hidden;
+          background: color-mix(in srgb, var(--bg-subtle) 76%, var(--line) 24%);
+          border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
         }
         .opb-project-card__actions {
-          position: absolute; top: 8px; right: 8px; z-index: 2;
+          position: absolute; top: 6px; right: 6px; z-index: 2;
           display: flex; gap: 4px;
           opacity: 0; pointer-events: none; transform: scale(0.92);
           transition: opacity .15s ease, transform .15s ease;
@@ -382,7 +402,7 @@ export function OrgProjectBoard({ orgId, apiBaseUrl, nodes = [], compact = false
         }
         .opb-project-add-card {
           min-width: 132px; max-width: 132px; cursor: pointer;
-          min-height: 92px; height: 100%;
+          min-height: 82px; height: 100%;
           border: 1px dashed color-mix(in srgb, var(--line) 90%, transparent);
           background: color-mix(in srgb, var(--card-bg) 70%, var(--bg-subtle) 30%);
           color: var(--muted);
@@ -574,22 +594,44 @@ export function OrgProjectBoard({ orgId, apiBaseUrl, nodes = [], compact = false
                         <X />
                       </Button>
                     </div>
-                    <CardContent className="space-y-2 px-3 py-3">
-                      <div className="opb-project-card__meta">
-                        <Badge variant="secondary" className="text-[10px] font-normal gap-1">
-                          <span className="opb-status-dot" style={{ background: PROJECT_STATUS_COLOR[project.status] || "#3b82f6" }} />
-                          {PROJECT_STATUS_LABEL[project.status] || project.status}
-                        </Badge>
-                        <Badge variant="outline" className="text-[10px] font-normal">
-                          {PROJECT_TYPE_LABEL[project.project_type] || project.project_type}
-                        </Badge>
-                      </div>
-                      <div className="opb-project-card__title">{project.name}</div>
-                      <div className="opb-project-card__desc">{project.description || "暂无项目描述"}</div>
-                      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                        <span>任务 {total}</span>
-                        <span>完成 {done}</span>
-                        <span>{total > 0 ? Math.round((done / total) * 100) : 0}%</span>
+                    <CardContent className="px-3 py-3">
+                      <div className="opb-project-card__body">
+                        <div className="opb-project-card__meta">
+                          <Badge variant="secondary" className="h-5 gap-1 px-1.5 text-[10px] font-medium">
+                            <span className="opb-status-dot" style={{ background: PROJECT_STATUS_COLOR[project.status] || "#3b82f6" }} />
+                            {PROJECT_STATUS_LABEL[project.status] || project.status}
+                          </Badge>
+                          <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-medium">
+                            {PROJECT_TYPE_LABEL[project.project_type] || project.project_type}
+                          </Badge>
+                        </div>
+                        <div className="opb-project-card__summary">
+                          <div className="opb-project-card__title">{project.name}</div>
+                          <div className="opb-project-card__desc">{project.description || "暂无项目描述"}</div>
+                        </div>
+                        <div className="opb-project-card__stats">
+                          <div>
+                            任务
+                            <strong>{total}</strong>
+                          </div>
+                          <div>
+                            完成
+                            <strong>{done}</strong>
+                          </div>
+                          <div>
+                            进度
+                            <strong>{total > 0 ? Math.round((done / total) * 100) : 0}%</strong>
+                          </div>
+                        </div>
+                        <div className="opb-project-card__progress">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${total > 0 ? Math.round((done / total) * 100) : 0}%`,
+                              background: "linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 78%, white))",
+                            }}
+                          />
+                        </div>
                       </div>
                     </CardContent>
                   </Card>

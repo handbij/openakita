@@ -2592,26 +2592,26 @@ export function OrgEditorView({
               return (
                 <div className="org-live-feed">
                   {busyLines.map(b => (
-                    <Tooltip key={b.key}>
-                      <TooltipTrigger asChild>
-                        <div className="org-feed-item org-feed-busy"
-                          onClick={() => { setSelectedNodeId(b.key); setSelectedEdgeId(null); setShowRightPanel(true); setPropsTab("tasks"); }}
-                        >
-                          <span className="org-feed-dot" />
-                          <span className="org-feed-who">{b.node}</span>
+                    <div key={b.key} className="org-feed-item org-feed-busy"
+                      onClick={() => { setSelectedNodeId(b.key); setSelectedEdgeId(null); setShowRightPanel(true); setPropsTab("tasks"); }}
+                    >
+                      <span className="org-feed-dot" />
+                      <span className="org-feed-who">{b.node}</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
                           <span className="org-feed-text">{stripMd(b.text)}</span>
-                          {b.pct >= 0 && (
-                            <span className="org-feed-progress">
-                              <span className="org-feed-bar"><span className="org-feed-bar-fill" style={{ width: `${b.pct}%` }} /></span>
-                              <span className="org-feed-pct">{b.pct}%</span>
-                            </span>
-                          )}
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" align="start" className={tipCls}>
-                        <FeedTip text={b.text} />
-                      </TooltipContent>
-                    </Tooltip>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" align="start" className={tipCls}>
+                          <FeedTip text={b.text} />
+                        </TooltipContent>
+                      </Tooltip>
+                      {b.pct >= 0 && (
+                        <span className="org-feed-progress">
+                          <span className="org-feed-bar"><span className="org-feed-bar-fill" style={{ width: `${b.pct}%` }} /></span>
+                          <span className="org-feed-pct">{b.pct}%</span>
+                        </span>
+                      )}
+                    </div>
                   ))}
                   {recentTasks.slice(0, 6).map((t: any, i: number) => {
                     const ts = t.t ? new Date(typeof t.t === "number" && t.t < 1e12 ? t.t * 1000 : t.t) : null;
@@ -2620,48 +2620,47 @@ export function OrgEditorView({
                     const meta = typeMeta[t.type] || defaultMeta;
                     const fromLabel = nodeLabel(t.from);
                     const toLabel = nodeLabel(t.to);
-                    const tipText = t.task
-                      ? `**${fullTimeStr}** · ${meta.label} · ${fromLabel}${toLabel ? ` → ${toLabel}` : ""}\n\n${t.task}`
-                      : `**${fullTimeStr}** · ${meta.label} · ${fromLabel}${toLabel ? ` → ${toLabel}` : ""}`;
                     return (
-                      <Tooltip key={`rt-${i}`}>
-                        <TooltipTrigger asChild>
-                          <div className={`org-feed-item ${meta.cls}`}>
-                            <span className="org-feed-time">{timeStr}</span>
-                            <span className={`org-feed-badge ${meta.cls}`} title={meta.tip}>
-                              <span className="org-feed-badge-icon">{meta.icon}</span>
-                              {meta.label || t.type}
-                            </span>
-                            <span className="org-feed-who">{fromLabel}</span>
-                            {toLabel && <>
-                              <span className="org-feed-arrow">→</span>
-                              <span className="org-feed-who">{toLabel}</span>
-                            </>}
-                            {t.task && <span className="org-feed-text">{stripMd(t.task)}</span>}
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" align="start" className={tipCls}>
-                          <FeedTip text={tipText} />
-                        </TooltipContent>
-                      </Tooltip>
+                      <div key={`rt-${i}`} className={`org-feed-item ${meta.cls}`}>
+                        <span className="org-feed-time" title={fullTimeStr}>{timeStr}</span>
+                        <span className={`org-feed-badge ${meta.cls}`} title={meta.tip}>
+                          <span className="org-feed-badge-icon">{meta.icon}</span>
+                          {meta.label || t.type}
+                        </span>
+                        <span className="org-feed-who">{fromLabel}</span>
+                        {toLabel && <>
+                          <span className="org-feed-arrow">→</span>
+                          <span className="org-feed-who">{toLabel}</span>
+                        </>}
+                        {t.task && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="org-feed-text">{stripMd(t.task)}</span>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" align="start" className={tipCls}>
+                              <FeedTip text={t.task} />
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
                     );
                   })}
                   {anomalies.map((a: any, i: number) => (
-                    <Tooltip key={`an-${i}`}>
-                      <TooltipTrigger asChild>
-                        <div className="org-feed-item feed-warn">
-                          <span className="org-feed-badge feed-warn">
-                            <span className="org-feed-badge-icon">!</span>
-                            异常
-                          </span>
-                          <span className="org-feed-who">{a.role_title || nodeLabel(a.node_id)}</span>
+                    <div key={`an-${i}`} className="org-feed-item feed-warn">
+                      <span className="org-feed-badge feed-warn">
+                        <span className="org-feed-badge-icon">!</span>
+                        异常
+                      </span>
+                      <span className="org-feed-who">{a.role_title || nodeLabel(a.node_id)}</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
                           <span className="org-feed-text">{stripMd(String(a.message))}</span>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" align="start" className={tipCls}>
-                        <FeedTip text={String(a.message)} />
-                      </TooltipContent>
-                    </Tooltip>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" align="start" className={tipCls}>
+                          <FeedTip text={String(a.message)} />
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   ))}
                 </div>
               );

@@ -5311,6 +5311,8 @@ export function App() {
         apiBase={httpApiBase()}
         prefill={feedbackPrefill}
         onNavigateToMyFeedback={() => { setFeedbackRefreshKey((k) => k + 1); setView("my_feedback"); }}
+        serviceRunning={serviceStatus?.running ?? false}
+        currentWorkspaceId={currentWorkspaceId}
       />
     </div>
     </EnvFieldContext.Provider>

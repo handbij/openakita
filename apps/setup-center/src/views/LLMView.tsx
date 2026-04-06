@@ -1102,22 +1102,22 @@ export function LLMView(props: LLMViewProps) {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
+                <TableHead className="w-[28px]"></TableHead>
                 <TableHead>{t("status.endpoint")}</TableHead>
                 <TableHead>{t("status.model")}</TableHead>
-                <TableHead className="w-[50px]">Key</TableHead>
                 <TableHead className="w-[140px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {savedEndpoints.map((e) => (
                 <TableRow key={e.name} className={e.enabled === false ? "opacity-45" : undefined}>
+                  <TableCell className="pr-0">{e.enabled !== false ? <DotGreen /> : <DotGray />}</TableCell>
                   <TableCell className="font-semibold">
                     {e.name}
                     {savedEndpoints[0]?.name === e.name && e.enabled !== false && <span className="ml-1.5 text-[10px] font-extrabold text-primary">{t("llm.primary")}</span>}
                     {e.enabled === false && <span className="ml-1.5 text-[10px] font-bold text-muted-foreground">{t("llm.disabled")}</span>}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{e.model}</TableCell>
-                  <TableCell>{(envDraft[e.api_key_env] || "").trim() ? <DotGreen /> : <DotGray />}</TableCell>
                   <TableCell>
                     <div className="flex gap-1 justify-end">
                       <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" style={savedEndpoints[0]?.name === e.name ? { visibility: "hidden" } : undefined} onClick={() => doSetPrimaryEndpoint(e.name)} disabled={!!busy} title={t("llm.setPrimary")}><IconChevronUp size={14} /></Button>

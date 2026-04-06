@@ -971,9 +971,6 @@ export function OrgEditorView({
   const [agentProfileSearch, setAgentProfileSearch] = useState("");
   const [agentDropdownOpen, setAgentDropdownOpen] = useState(false);
 
-  // Activity feed state
-  type ActivityEvent = { id: string; time: number; event: string; data: any };
-  const [activityFeed, setActivityFeed] = useState<ActivityEvent[]>([]);
   const [viewMode, setViewMode] = useState<"canvas" | "projects" | "dashboard">("canvas");
   const [chatPanelOpen, setChatPanelOpen] = useState(false);
   const [chatPanelNode, setChatPanelNode] = useState<string | null>(null);
@@ -1172,63 +1169,7 @@ export function OrgEditorView({
     }
   }, [currentOrg?.id, selectedNodeId, bbScope, fetchBlackboard]);
 
-  // ── Load historical events on org switch ──
-  const loadHistoricalEvents = useCallback(async (orgId: string) => {
-    try {
-      const res = await safeFetch(`${apiBaseUrl}/api/orgs/${orgId}/events?limit=50`);
-      const events: any[] = await res.json();
-      if (!Array.isArray(events) || events.length === 0) return;
-      const evtTypeMap: Record<string, string> = {
-        node_activated: "org:node_status",
-        node_status_change: "org:node_status",
-        task_completed: "org:task_complete",
-        task_assigned: "org:task_delegated",
-        task_timeout: "org:task_timeout",
-        task_failed: "org:node_status",
-        broadcast: "org:broadcast",
-        blackboard_write: "org:blackboard_update",
-        meeting_completed: "org:meeting_completed",
-        meeting_started: "org:meeting_started",
-        conflict_detected: "org:deadlock",
-        heartbeat_decision: "org:heartbeat_done",
-        tools_granted: "org:node_status",
-        watchdog_recovery: "org:watchdog_recovery",
-      };
-      const mapped: ActivityEvent[] = events
-        .filter(e => e.event_type && evtTypeMap[e.event_type])
-        .map(e => {
-          const evName = evtTypeMap[e.event_type] || `org:${e.event_type}`;
-          const data = { ...(e.data || {}), org_id: orgId, node_id: e.actor };
-          if (e.event_type === "node_activated") data.status = "busy";
-          if (e.event_type === "task_completed") data.status = "idle";
-          if (e.event_type === "task_failed") data.status = "error";
-          return {
-            id: `hist_${e.timestamp || ""}${Math.random().toString(36).slice(2, 6)}`,
-            time: e.timestamp ? new Date(e.timestamp).getTime() : Date.now(),
-            event: evName,
-            data,
-          };
-        })
-        .sort((a, b) => b.time - a.time)
-        .slice(0, 50);
-      if (mapped.length > 0) {
-        setActivityFeed(mapped);
-      }
-    } catch { /* ignore */ }
-  }, [apiBaseUrl]);
-
-  useEffect(() => {
-    if (currentOrg && liveMode) {
-      loadHistoricalEvents(currentOrg.id);
-    }
-  }, [currentOrg?.id, liveMode, loadHistoricalEvents]);
-
   // ── WebSocket for live mode ──
-
-  const pushActivity = useCallback((event: string, data: any) => {
-    const entry: ActivityEvent = { id: `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, time: Date.now(), event, data };
-    setActivityFeed((prev) => [entry, ...prev].slice(0, 200));
-  }, []);
 
   const triggerEdgeAnimation = useCallback((fromNode: string, toNode: string, color: string) => {
     const edgeKey = edges.find(
@@ -1274,46 +1215,26 @@ export function OrgEditorView({
                   : n,
               ),
             );
-            if (status === "busy" || status === "error") pushActivity(ev, d);
-          } else if (ev === "org:task_timeout") {
-            pushActivity(ev, d);
           } else if (ev === "org:task_delegated") {
-            pushActivity(ev, d);
             triggerEdgeAnimation(d.from_node, d.to_node, "var(--primary)");
           } else if (ev === "org:task_delivered") {
-            pushActivity(ev, d);
             triggerEdgeAnimation(d.from_node, d.to_node, "var(--ok)");
           } else if (ev === "org:task_accepted") {
-            pushActivity(ev, d);
             triggerEdgeAnimation(d.accepted_by, d.from_node, "#22c55e");
           } else if (ev === "org:task_rejected") {
-            pushActivity(ev, d);
             triggerEdgeAnimation(d.rejected_by, d.from_node, "var(--danger)");
           } else if (ev === "org:escalation") {
-            pushActivity(ev, d);
             triggerEdgeAnimation(d.from_node, d.to_node, "var(--danger)");
           } else if (ev === "org:message") {
-            pushActivity(ev, d);
             triggerEdgeAnimation(d.from_node, d.to_node, "#a78bfa");
-          } else if (ev === "org:broadcast") {
-            pushActivity(ev, d);
           } else if (ev === "org:blackboard_update") {
-            pushActivity(ev, d);
             if (currentOrg && !selectedNodeId) fetchBlackboard(currentOrg.id, bbScope);
-          } else if (ev === "org:heartbeat_start" || ev === "org:heartbeat_done") {
-            pushActivity(ev, d);
-          } else if (ev === "org:task_complete") {
-            pushActivity(ev, d);
-          } else if (ev === "org:meeting_started" || ev === "org:meeting_round" || ev === "org:meeting_speak" || ev === "org:meeting_completed") {
-            pushActivity(ev, d);
-          } else if (ev === "org:watchdog_recovery") {
-            pushActivity(ev, d);
           }
         } catch { /* ignore parse errors */ }
       };
     } catch { /* WebSocket not available */ }
     return () => { ws?.close(); };
-  }, [liveMode, currentOrg, apiBaseUrl, setNodes, pushActivity, triggerEdgeAnimation, selectedNodeId, bbScope, fetchBlackboard]);
+  }, [liveMode, currentOrg, apiBaseUrl, setNodes, triggerEdgeAnimation, selectedNodeId, bbScope, fetchBlackboard]);
 
   // ── Start/Stop org ──
   const handleStartOrg = useCallback(async () => {
@@ -1406,7 +1327,6 @@ export function OrgEditorView({
       const data = await res.json();
       setCurrentOrg(data);
       setLayoutLocked(false);
-      setActivityFeed([]);
       setBbEntries([]);
       setNodeEvents([]);
       setNodeThinking([]);
@@ -2003,12 +1923,16 @@ export function OrgEditorView({
                     {orgStats.pending_messages > 0 && (
                       <Tooltip><TooltipTrigger asChild>
                         <span className="org-status-stat" style={{ color: "#f59e0b" }}>▪ {orgStats.pending_messages}</span>
-                      </TooltipTrigger><TooltipContent>待处理消息</TooltipContent></Tooltip>
+                      </TooltipTrigger><TooltipContent>节点间待处理内部消息</TooltipContent></Tooltip>
                     )}
                     {orgStats.anomalies?.length > 0 && (
                       <Tooltip><TooltipTrigger asChild>
-                        <span className="org-status-stat" style={{ color: "#ef4444", fontWeight: 600 }}>! {orgStats.anomalies.length}</span>
-                      </TooltipTrigger><TooltipContent>异常数量</TooltipContent></Tooltip>
+                        <span
+                          className="org-status-stat"
+                          style={{ color: "#ef4444", fontWeight: 600, cursor: "pointer" }}
+                          onClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); setShowRightPanel(true); setPropsTab("overview"); }}
+                        >! {orgStats.anomalies.length}</span>
+                      </TooltipTrigger><TooltipContent>点击查看异常详情</TooltipContent></Tooltip>
                     )}
                   </>
                 )}
@@ -2057,7 +1981,7 @@ export function OrgEditorView({
               style={{ position: "relative" }}
             >
               <IconMessageCircle size={13} />
-              {activityFeed.length > 0 && (
+              {(orgStats?.unread_inbox > 0 || orgStats?.pending_approvals > 0) && (
                 <span className="org-notif-dot" />
               )}
             </button>

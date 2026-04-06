@@ -62,6 +62,16 @@ function genId() { return `orgchat-${Date.now()}-${++_seq}`; }
 
 const LS_PREFIX = "orgchat_msgs_";
 
+// Survives component unmount so command results aren't lost when navigating away
+interface PendingCmd {
+  commandId: string;
+  orgId: string;
+  placeholderId: string;
+  progressLines: string[];
+  finalContent: string | null;
+}
+const _pendingCmds = new Map<string, PendingCmd>();
+
 function saveToLocalStorage(cid: string, msgs: ChatMsg[]): void {
   try {
     const slim = msgs
@@ -86,6 +96,7 @@ export function OrgChatPanel({ orgId, nodeId, apiBaseUrl, compact, showHeader, t
   const [loaded, setLoaded] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const mountedRef = useRef(true);
   const convId = sessionId(orgId, nodeId);
 
   const scrollToBottom = useCallback(() => {
@@ -95,6 +106,7 @@ export function OrgChatPanel({ orgId, nodeId, apiBaseUrl, compact, showHeader, t
   }, []);
 
   useEffect(scrollToBottom, [messages, scrollToBottom]);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
   // Load history: backend first, localStorage fallback
   useEffect(() => {
@@ -146,6 +158,76 @@ export function OrgChatPanel({ orgId, nodeId, apiBaseUrl, compact, showHeader, t
     return () => clearTimeout(t);
   }, [messages, convId, loaded]);
 
+  // Recover pending commands that completed (or are still running) while unmounted
+  useEffect(() => {
+    if (!loaded) return;
+    const pending = _pendingCmds.get(convId);
+    if (!pending || !pending.commandId) return;
+
+    if (pending.finalContent !== null) {
+      _pendingCmds.delete(convId);
+      const content = pending.finalContent;
+      const phId = pending.placeholderId;
+      setMessages(prev => {
+        if (prev.some(m => m.id === phId && !m.streaming)) return prev;
+        return [...prev, { id: phId, role: "assistant" as const, content, timestamp: Date.now() }];
+      });
+      return;
+    }
+
+    // Command still running — show progress and resume polling
+    let cancelled = false;
+    const phId = pending.placeholderId;
+    const progress = pending.progressLines.length > 0
+      ? pending.progressLines.slice(-8).map(l => `> ${l}`).join("\n")
+      : "思考中...";
+
+    setMessages(prev => {
+      if (prev.some(m => m.streaming)) return prev;
+      return [...prev, { id: phId, role: "assistant" as const, content: progress, timestamp: Date.now(), streaming: true }];
+    });
+    setSending(true);
+
+    const resumePoll = async () => {
+      while (!cancelled && _pendingCmds.has(convId)) {
+        await new Promise(r => setTimeout(r, 3000));
+        if (cancelled || !_pendingCmds.has(convId)) break;
+
+        if (mountedRef.current && pending.progressLines.length > 0) {
+          const preview = pending.progressLines.slice(-8).map(l => `> ${l}`).join("\n");
+          setMessages(prev => prev.map(m => m.id === phId && m.streaming ? { ...m, content: preview } : m));
+        }
+
+        try {
+          const res = await safeFetch(`${apiBaseUrl}/api/orgs/${pending.orgId}/commands/${pending.commandId}`);
+          const data = await res.json();
+          if (data.status === "done" || data.status === "error") {
+            if (!_pendingCmds.has(convId)) break;
+            _pendingCmds.delete(convId);
+            const resultText = data.result?.result || data.result?.error || data.error || JSON.stringify(data);
+            const progressSummary = pending.progressLines.length > 0
+              ? pending.progressLines.map(l => `> ${l}`).join("\n") + "\n\n---\n\n"
+              : "";
+            const content = progressSummary + resultText;
+            if (mountedRef.current) {
+              setMessages(prev => prev.map(m => m.id === phId ? { ...m, content, streaming: false } : m));
+              setSending(false);
+            }
+            return;
+          }
+        } catch { /* poll retry */ }
+      }
+      // Original handler resolved while we were polling — reload from localStorage
+      if (!cancelled && mountedRef.current && !_pendingCmds.has(convId)) {
+        const saved = loadFromLocalStorage(convId);
+        if (saved.length > 0) setMessages(saved);
+        setSending(false);
+      }
+    };
+    resumePoll();
+    return () => { cancelled = true; };
+  }, [loaded, convId, apiBaseUrl]);
+
   // Flush localStorage immediately on page hide / close
   const messagesRef = useRef<ChatMsg[]>([]);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
@@ -187,6 +269,7 @@ export function OrgChatPanel({ orgId, nodeId, apiBaseUrl, compact, showHeader, t
 
   const handleClear = useCallback(async () => {
     setMessages([]);
+    _pendingCmds.delete(convId);
     try { localStorage.removeItem(LS_PREFIX + convId); } catch {}
     try {
       await safeFetch(`${apiBaseUrl}/api/sessions/${encodeURIComponent(convId)}`, {
@@ -211,6 +294,7 @@ export function OrgChatPanel({ orgId, nodeId, apiBaseUrl, compact, showHeader, t
     const progressLines: string[] = [];
     const pushProgress = (line: string) => {
       progressLines.push(line);
+      if (!mountedRef.current) return;
       const preview = progressLines.slice(-8).map(l => `> ${l}`).join("\n");
       setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: preview } : m));
     };
@@ -236,6 +320,27 @@ export function OrgChatPanel({ orgId, nodeId, apiBaseUrl, compact, showHeader, t
       }
     });
 
+    const finalizeResult = (content: string, role: "assistant" | "system" = "assistant") => {
+      const pending = _pendingCmds.get(convId);
+      if (pending) {
+        if (pending.placeholderId !== placeholderId) return;
+        pending.finalContent = content;
+        _pendingCmds.delete(convId);
+      }
+      if (mountedRef.current) {
+        setMessages(prev => prev.map(m =>
+          m.id === placeholderId ? { ...m, content, streaming: false, role } : m
+        ));
+      } else {
+        const existing = loadFromLocalStorage(convId);
+        const msg: ChatMsg = { id: placeholderId, role, content, timestamp: Date.now() };
+        const hasUser = existing.some(m => m.id === userMsg.id);
+        const toSave = hasUser ? [...existing, msg] : [...existing, userMsg, msg];
+        saveToLocalStorage(convId, toSave);
+        persistToBackend(apiBaseUrl, convId, toSave.map(m => ({ role: m.role, content: m.content })), true);
+      }
+    };
+
     let finalContent = "";
     try {
       const res = await safeFetch(`${apiBaseUrl}/api/orgs/${orgId}/command`, {
@@ -248,14 +353,15 @@ export function OrgChatPanel({ orgId, nodeId, apiBaseUrl, compact, showHeader, t
 
       if (!commandId) {
         finalContent = data.result || data.error || JSON.stringify(data);
-        setMessages(prev => prev.map(m =>
-          m.id === placeholderId ? { ...m, content: finalContent, streaming: false } : m
-        ));
+        finalizeResult(finalContent);
       } else {
+        _pendingCmds.set(convId, { commandId, orgId, placeholderId, progressLines, finalContent: null });
+
         let resolved = false;
         const unsubDone = onWsEvent((evt, raw) => {
           const d = raw as Record<string, unknown> | null;
           if (evt !== "org:command_done" || !d || d.command_id !== commandId) return;
+          if (resolved) return;
           resolved = true;
           const result = d.result as Record<string, unknown> | null;
           const error = d.error as string | undefined;
@@ -264,9 +370,7 @@ export function OrgChatPanel({ orgId, nodeId, apiBaseUrl, compact, showHeader, t
             ? progressLines.map(l => `> ${l}`).join("\n") + "\n\n---\n\n"
             : "";
           finalContent = progressSummary + resultText;
-          setMessages(prev => prev.map(m =>
-            m.id === placeholderId ? { ...m, content: finalContent, streaming: false } : m
-          ));
+          finalizeResult(finalContent);
         });
 
         let lastActivity = Date.now();
@@ -284,9 +388,7 @@ export function OrgChatPanel({ orgId, nodeId, apiBaseUrl, compact, showHeader, t
                   ? progressLines.map(l => `> ${l}`).join("\n") + "\n\n---\n\n"
                   : "";
                 finalContent = progressSummary + resultText;
-                setMessages(prev => prev.map(m =>
-                  m.id === placeholderId ? { ...m, content: finalContent, streaming: false } : m
-                ));
+                finalizeResult(finalContent);
               }
             }
           } catch { /* retry */ }
@@ -299,20 +401,18 @@ export function OrgChatPanel({ orgId, nodeId, apiBaseUrl, compact, showHeader, t
       }
     } catch (e: any) {
       finalContent = `发送失败: ${e.message || e}`;
-      setMessages(prev => prev.map(m =>
-        m.id === placeholderId ? { ...m, content: finalContent, streaming: false, role: "system" } : m
-      ));
+      finalizeResult(finalContent, "system");
     } finally {
       unsubProgress();
       setSending(false);
-      // Sync full conversation to backend (replace mode).
-      // Uses closure-captured apiBaseUrl/convId — immune to stale-ref bugs.
-      const all = messagesRef.current.filter(m => !m.streaming);
-      if (all.length > 0) {
-        persistToBackend(apiBaseUrl, convId, all.map(m => ({ role: m.role, content: m.content })), true);
+      if (mountedRef.current) {
+        const all = messagesRef.current.filter(m => !m.streaming);
+        if (all.length > 0) {
+          persistToBackend(apiBaseUrl, convId, all.map(m => ({ role: m.role, content: m.content })), true);
+        }
       }
     }
-  }, [input, sending, orgId, nodeId, apiBaseUrl, persistToBackend]);
+  }, [input, sending, orgId, nodeId, apiBaseUrl, convId, persistToBackend]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;

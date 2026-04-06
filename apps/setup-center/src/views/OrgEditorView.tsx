@@ -1922,8 +1922,12 @@ export function OrgEditorView({
                     </TooltipTrigger><TooltipContent>消息交换总数</TooltipContent></Tooltip>
                     {orgStats.pending_messages > 0 && (
                       <Tooltip><TooltipTrigger asChild>
-                        <span className="org-status-stat" style={{ color: "#f59e0b" }}>▪ {orgStats.pending_messages}</span>
-                      </TooltipTrigger><TooltipContent>节点间待处理内部消息</TooltipContent></Tooltip>
+                        <span
+                          className="org-status-stat"
+                          style={{ color: "#f59e0b", cursor: "pointer" }}
+                          onClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); setShowRightPanel(true); setPropsTab("overview"); }}
+                        >▪ {orgStats.pending_messages}</span>
+                      </TooltipTrigger><TooltipContent>节点间待处理内部消息 — 点击查看节点负荷</TooltipContent></Tooltip>
                     )}
                     {orgStats.anomalies?.length > 0 && (
                       <Tooltip><TooltipTrigger asChild>

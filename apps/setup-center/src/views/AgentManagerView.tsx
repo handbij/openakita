@@ -754,7 +754,7 @@ export function AgentManagerView({
                 </span>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{agent.name}</div>
-                  <div style={{ fontSize: 11, opacity: 0.45, fontFamily: "monospace" }}>{agent.id}</div>
+                  <div style={{ fontSize: 11, opacity: 0.4, letterSpacing: 0.2 }}>{agent.id}</div>
                 </div>
               </div>
               <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 10, minHeight: 18, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

@@ -557,23 +557,6 @@ export function LLMView(props: LLMViewProps) {
     }
   }
 
-  async function doDeleteCompilerEndpoint(epName: string) {
-    if (!currentWorkspaceId && dataMode !== "remote") return;
-    const _busyId = notifyLoading("删除编译端点...");
-    try {
-      await safeFetch(
-        `${httpApiBase()}/api/config/endpoint/${encodeURIComponent(epName)}?endpoint_type=compiler_endpoints`,
-        { method: "DELETE" },
-      );
-      setSavedCompilerEndpoints((prev) => prev.filter((e) => e.name !== epName));
-      notifySuccess(`编译端点 ${epName} 已删除`);
-      loadSavedEndpoints().catch(() => {});
-    } catch (e) {
-      notifyError(friendlyConfigError(e));
-    } finally {
-      dismissLoading(_busyId);
-    }
-  }
 
   async function doSaveSttEndpoint(): Promise<boolean> {
     if (!currentWorkspaceId && dataMode !== "remote") {
@@ -649,36 +632,19 @@ export function LLMView(props: LLMViewProps) {
     }
   }
 
-  async function doDeleteSttEndpoint(epName: string) {
-    if (!currentWorkspaceId && dataMode !== "remote") return;
-    const _busyId = notifyLoading("删除 STT 端点...");
-    try {
-      await safeFetch(
-        `${httpApiBase()}/api/config/endpoint/${encodeURIComponent(epName)}?endpoint_type=stt_endpoints`,
-        { method: "DELETE" },
-      );
-      setSavedSttEndpoints((prev) => prev.filter((e) => e.name !== epName));
-      notifySuccess(`STT 端点 ${epName} 已删除`);
-      loadSavedEndpoints().catch(() => {});
-    } catch (e) {
-      notifyError(friendlyConfigError(e));
-    } finally {
-      dismissLoading(_busyId);
-    }
-  }
 
-  async function doReorderByNames(orderedNames: string[]) {
+  async function doReorderByNames(orderedNames: string[], endpointType: "endpoints" | "compiler_endpoints" | "stt_endpoints" = "endpoints") {
     if (!currentWorkspaceId && dataMode !== "remote") return;
     const _busyId = notifyLoading("保存排序...");
     try {
       const res = await safeFetch(`${httpApiBase()}/api/config/reorder-endpoints`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ordered_names: orderedNames, endpoint_type: "endpoints" }),
+        body: JSON.stringify({ ordered_names: orderedNames, endpoint_type: endpointType }),
       });
       const json = await res.json();
       if (json.status !== "ok") throw new Error(json.error || "reorder failed");
-      notifySuccess(t("llm.reorderSaved") || "已保存端点顺序");
+      notifySuccess(t("llm.reorderSaved"));
       await loadSavedEndpoints();
     } catch (e) {
       notifyError(String(e));
@@ -687,12 +653,12 @@ export function LLMView(props: LLMViewProps) {
     }
   }
 
-  async function doSetPrimaryEndpoint(name: string) {
-    const names = savedEndpoints.map((e) => e.name);
+  function doMoveUp(name: string, endpoints: EndpointDraft[], endpointType: "endpoints" | "compiler_endpoints" | "stt_endpoints" = "endpoints") {
+    const names = endpoints.map((e) => e.name);
     const idx = names.indexOf(name);
-    if (idx < 0) return;
-    const next = [name, ...names.filter((n) => n !== name)];
-    await doReorderByNames(next);
+    if (idx <= 0) return;
+    [names[idx - 1], names[idx]] = [names[idx], names[idx - 1]];
+    doReorderByNames(names, endpointType);
   }
 
   async function doStartEditEndpoint(name: string) {
@@ -1022,19 +988,18 @@ export function LLMView(props: LLMViewProps) {
     }
   }
 
-  async function doDeleteEndpoint(name: string) {
+  async function doDeleteEndpoint(name: string, endpointType: "endpoints" | "compiler_endpoints" | "stt_endpoints" = "endpoints") {
     if (!currentWorkspaceId && dataMode !== "remote") return;
     const _busyId = notifyLoading("删除端点...");
     try {
       await safeFetch(
-        `${httpApiBase()}/api/config/endpoint/${encodeURIComponent(name)}?endpoint_type=endpoints`,
+        `${httpApiBase()}/api/config/endpoint/${encodeURIComponent(name)}?endpoint_type=${endpointType}`,
         { method: "DELETE" },
       );
-      setSavedEndpoints((prev) => prev.filter((e) => e.name !== name));
       notifySuccess(`已删除端点：${name}`);
       loadSavedEndpoints().catch(() => {});
     } catch (e) {
-      notifyError(String(e));
+      notifyError(friendlyConfigError(e));
     } finally {
       dismissLoading(_busyId);
     }
@@ -1120,7 +1085,7 @@ export function LLMView(props: LLMViewProps) {
                   <TableCell className="text-muted-foreground">{e.model}</TableCell>
                   <TableCell>
                     <div className="flex gap-1 justify-end">
-                      <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" style={savedEndpoints[0]?.name === e.name ? { visibility: "hidden" } : undefined} onClick={() => doSetPrimaryEndpoint(e.name)} disabled={!!busy} title={t("llm.setPrimary")}><IconChevronUp size={14} /></Button>
+                      <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" style={savedEndpoints[0]?.name === e.name ? { visibility: "hidden" } : undefined} onClick={() => doMoveUp(e.name, savedEndpoints)} disabled={!!busy} title={t("llm.moveUp")}><IconChevronUp size={14} /></Button>
                       <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" onClick={() => doToggleEndpointEnabled(e.name)} disabled={!!busy} title={e.enabled === false ? t("llm.enable") : t("llm.disable")}>{e.enabled !== false ? <IconPower size={14} /> : <IconCircle size={14} />}</Button>
                       <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" onClick={() => doStartEditEndpoint(e.name)} disabled={!!busy} title={t("llm.edit")}><IconEdit size={14} /></Button>
                       <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => askConfirm(`${t("common.confirmDeleteMsg")} "${e.name}"?`, () => doDeleteEndpoint(e.name))} disabled={!!busy} title={t("common.delete")}><IconTrash size={14} /></Button>
@@ -1153,14 +1118,16 @@ export function LLMView(props: LLMViewProps) {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
+                <TableHead className="w-[28px]"></TableHead>
                 <TableHead>{t("status.endpoint")}</TableHead>
                 <TableHead>{t("status.model")}</TableHead>
-                <TableHead className="w-[110px]"></TableHead>
+                <TableHead className="w-[140px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {savedCompilerEndpoints.map((e) => (
                 <TableRow key={e.name} className={e.enabled === false ? "opacity-45" : undefined}>
+                  <TableCell className="pr-0">{e.enabled !== false ? <DotGreen /> : <DotGray />}</TableCell>
                   <TableCell className="font-semibold">
                     {e.name}
                     {e.enabled === false && <span className="ml-1.5 text-[10px] font-bold text-muted-foreground">{t("llm.disabled")}</span>}
@@ -1168,9 +1135,10 @@ export function LLMView(props: LLMViewProps) {
                   <TableCell className="text-muted-foreground">{e.model}</TableCell>
                   <TableCell>
                     <div className="flex gap-1 justify-end">
+                      <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" style={savedCompilerEndpoints[0]?.name === e.name ? { visibility: "hidden" } : undefined} onClick={() => doMoveUp(e.name, savedCompilerEndpoints, "compiler_endpoints")} disabled={!!busy} title={t("llm.moveUp")}><IconChevronUp size={14} /></Button>
                       <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" onClick={() => doToggleEndpointEnabled(e.name, "compiler_endpoints")} disabled={!!busy} title={e.enabled === false ? t("llm.enable") : t("llm.disable")}>{e.enabled !== false ? <IconPower size={14} /> : <IconCircle size={14} />}</Button>
                       <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" onClick={() => doStartEditCompilerEndpoint(e.name)} disabled={!!busy} title={t("llm.edit")}><IconEdit size={14} /></Button>
-                      <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => askConfirm(`${t("common.confirmDeleteMsg")} "${e.name}"?`, () => doDeleteCompilerEndpoint(e.name))} disabled={!!busy} title={t("common.delete")}><IconTrash size={14} /></Button>
+                      <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => askConfirm(`${t("common.confirmDeleteMsg")} "${e.name}"?`, () => doDeleteEndpoint(e.name, "compiler_endpoints"))} disabled={!!busy} title={t("common.delete")}><IconTrash size={14} /></Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -1200,14 +1168,16 @@ export function LLMView(props: LLMViewProps) {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
+                <TableHead className="w-[28px]"></TableHead>
                 <TableHead>{t("status.endpoint")}</TableHead>
                 <TableHead>{t("status.model")}</TableHead>
-                <TableHead className="w-[110px]"></TableHead>
+                <TableHead className="w-[140px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {savedSttEndpoints.map((e) => (
                 <TableRow key={e.name} className={e.enabled === false ? "opacity-45" : undefined}>
+                  <TableCell className="pr-0">{e.enabled !== false ? <DotGreen /> : <DotGray />}</TableCell>
                   <TableCell className="font-semibold">
                     {e.name}
                     {e.enabled === false && <span className="ml-1.5 text-[10px] font-bold text-muted-foreground">{t("llm.disabled")}</span>}
@@ -1215,9 +1185,10 @@ export function LLMView(props: LLMViewProps) {
                   <TableCell className="text-muted-foreground">{e.model}</TableCell>
                   <TableCell>
                     <div className="flex gap-1 justify-end">
+                      <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" style={savedSttEndpoints[0]?.name === e.name ? { visibility: "hidden" } : undefined} onClick={() => doMoveUp(e.name, savedSttEndpoints, "stt_endpoints")} disabled={!!busy} title={t("llm.moveUp")}><IconChevronUp size={14} /></Button>
                       <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" onClick={() => doToggleEndpointEnabled(e.name, "stt_endpoints")} disabled={!!busy} title={e.enabled === false ? t("llm.enable") : t("llm.disable")}>{e.enabled !== false ? <IconPower size={14} /> : <IconCircle size={14} />}</Button>
                       <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" onClick={() => doStartEditSttEndpoint(e.name)} disabled={!!busy} title={t("llm.edit")}><IconEdit size={14} /></Button>
-                      <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => askConfirm(`${t("common.confirmDeleteMsg")} "${e.name}"?`, () => doDeleteSttEndpoint(e.name))} disabled={!!busy} title={t("common.delete")}><IconTrash size={14} /></Button>
+                      <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => askConfirm(`${t("common.confirmDeleteMsg")} "${e.name}"?`, () => doDeleteEndpoint(e.name, "stt_endpoints"))} disabled={!!busy} title={t("common.delete")}><IconTrash size={14} /></Button>
                     </div>
                   </TableCell>
                 </TableRow>

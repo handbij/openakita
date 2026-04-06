@@ -187,16 +187,26 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ captcha_verify_param: captchaVerifyParam }),
-                  signal: AbortSignal.timeout(10000),
+                  signal: AbortSignal.timeout(15000),
                 });
                 const data = await resp.json();
                 if (data.verified) {
                   captchaNonceRef.current = data.nonce || "";
                   return { captchaResult: true, bizResult: true };
                 }
+                captchaTokenRef.current = "";
                 return { captchaResult: false, bizResult: false };
-              } catch {
-                return { captchaResult: true, bizResult: true };
+              } catch (err) {
+                if (err instanceof TypeError) {
+                  // Network-level error (backend unreachable): token was never
+                  // sent to the cloud, so it remains valid for the Tauri IPC
+                  // offline submission path which verifies directly via /prepare.
+                  return { captchaResult: true, bizResult: true };
+                }
+                // HTTP error (e.g. 502 from proxy) or timeout: token may have
+                // been consumed server-side — force SDK to retry with a new one.
+                captchaTokenRef.current = "";
+                return { captchaResult: false, bizResult: false };
               }
             },
             onBizResultCallback: () => {

@@ -183,7 +183,7 @@ export function OrgChatPanel({ orgId, nodeId, apiBaseUrl, compact, showHeader, t
     let cancelled = false;
     const phId = pending.placeholderId;
     const progress = pending.progressLines.length > 0
-      ? pending.progressLines.slice(-8).join("\n")
+      ? pending.progressLines.slice(-8).join("\n\n")
       : "思考中...";
 
     setMessages(prev => {
@@ -198,7 +198,7 @@ export function OrgChatPanel({ orgId, nodeId, apiBaseUrl, compact, showHeader, t
         if (cancelled || !_pendingCmds.has(convId)) break;
 
         if (mountedRef.current && pending.progressLines.length > 0) {
-          const preview = pending.progressLines.slice(-8).join("\n");
+          const preview = pending.progressLines.slice(-8).join("\n\n");
           setMessages(prev => prev.map(m => m.id === phId && m.streaming ? { ...m, content: preview } : m));
         }
 
@@ -210,7 +210,7 @@ export function OrgChatPanel({ orgId, nodeId, apiBaseUrl, compact, showHeader, t
             _pendingCmds.delete(convId);
             const resultText = data.result?.result || data.result?.error || data.error || JSON.stringify(data);
             const progressSummary = pending.progressLines.length > 0
-              ? pending.progressLines.join("\n") + "\n\n---\n\n"
+              ? pending.progressLines.join("\n\n") + "\n\n---\n\n"
               : "";
             const content = progressSummary + resultText;
             if (mountedRef.current) {
@@ -301,7 +301,7 @@ export function OrgChatPanel({ orgId, nodeId, apiBaseUrl, compact, showHeader, t
     const pushProgress = (line: string) => {
       progressLines.push(line);
       if (!mountedRef.current) return;
-      const preview = progressLines.slice(-8).join("\n");
+      const preview = progressLines.slice(-8).join("\n\n");
       setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: preview } : m));
     };
 
@@ -376,7 +376,7 @@ export function OrgChatPanel({ orgId, nodeId, apiBaseUrl, compact, showHeader, t
           const error = d.error as string | undefined;
           const resultText = String((result && (result.result || result.error)) || error || JSON.stringify(d));
           const progressSummary = progressLines.length > 0
-            ? progressLines.join("\n") + "\n\n---\n\n"
+            ? progressLines.join("\n\n") + "\n\n---\n\n"
             : "";
           finalContent = progressSummary + resultText;
           finalizeResult(finalContent);
@@ -394,7 +394,7 @@ export function OrgChatPanel({ orgId, nodeId, apiBaseUrl, compact, showHeader, t
                 resolved = true;
                 const resultText = pd.result?.result || pd.result?.error || pd.error || JSON.stringify(pd);
                 const progressSummary = progressLines.length > 0
-                  ? progressLines.join("\n") + "\n\n---\n\n"
+                  ? progressLines.join("\n\n") + "\n\n---\n\n"
                   : "";
                 finalContent = progressSummary + resultText;
                 finalizeResult(finalContent);

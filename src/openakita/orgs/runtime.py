@@ -342,9 +342,17 @@ class OrgRuntime:
         await self._stop_org_services(org_id)
         await self._cancel_org_tasks(org_id)
 
+        reset_nodes = []
         for node in org.nodes:
             if node.status in (NodeStatus.BUSY, NodeStatus.WAITING, NodeStatus.ERROR):
                 self._set_node_status(org, node, NodeStatus.IDLE, "org_stopped")
+                reset_nodes.append(node)
+
+        for node in reset_nodes:
+            await self._broadcast_ws("org:node_status", {
+                "org_id": org_id, "node_id": node.id,
+                "status": "idle", "current_task": None,
+            })
 
         org.status = OrgStatus.DORMANT
         org.updated_at = _now_iso()

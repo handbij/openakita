@@ -904,8 +904,17 @@ export function OrgEditorView({
         const newStatus = (d as any).status as string;
         setCurrentOrg((prev) => prev ? { ...prev, status: newStatus } : prev);
         setOrgList((prev) => prev.map((o) => o.id === orgId ? { ...o, status: newStatus } : o));
-        if (newStatus === "active" || newStatus === "running") setLayoutLocked(true);
-        else if (newStatus === "dormant" || newStatus === "paused") setLayoutLocked(false);
+        if (newStatus === "active" || newStatus === "running") {
+          setLayoutLocked(true);
+        } else if (newStatus === "dormant" || newStatus === "paused") {
+          setLayoutLocked(false);
+          if (newStatus === "dormant") {
+            setNodes((prev) => prev.map((n) => ({
+              ...n,
+              data: { ...n.data, status: "idle", current_task: null, _runtime: null },
+            })));
+          }
+        }
       } else if (ev === "org:task_complete") {
         triggerEdgeAnimation((d as any).node_id, (d as any).node_id, "#22c55e");
       } else if (ev === "org:quota_exhausted") {

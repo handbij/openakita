@@ -4833,14 +4833,8 @@ export function App() {
         />
       );
     }
-    if (view === "org_editor") {
-      return (
-        <OrgEditorView
-          apiBaseUrl={apiBaseUrl}
-          visible={view === "org_editor"}
-        />
-      );
-    }
+    // OrgEditorView 已提升到始终挂载区域，不在 renderStepContent 中渲染
+    if (view === "org_editor") return null;
     if (view === "agent_manager") {
       return (
         <AgentManagerView
@@ -5200,13 +5194,16 @@ export function App() {
               }}
             />
           </div>
+          {/* OrgEditorView 始终挂载，切走时隐藏以保留指挥台聊天记录和编辑状态 */}
+          <div style={{ display: view === "org_editor" ? undefined : "none", flex: 1, minHeight: 0 }}>
+            <OrgEditorView apiBaseUrl={apiBaseUrl} visible={view === "org_editor"} />
+          </div>
           <div
             className="content"
             style={{
-              display: view !== "chat" ? undefined : "none",
+              display: view !== "chat" && view !== "org_editor" ? undefined : "none",
               flex: 1,
               minHeight: 0,
-              paddingTop: view === "org_editor" ? 0 : undefined,
             }}
           >
             {renderStepContent()}

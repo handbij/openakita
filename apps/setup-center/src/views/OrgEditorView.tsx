@@ -1190,7 +1190,7 @@ export function OrgEditorView({
   }, [edges]);
 
   useEffect(() => {
-    if (!liveMode || !currentOrg) return;
+    if (!visible || !liveMode || !currentOrg) return;
     const wsUrl = apiBaseUrl.replace(/^http/, "ws") + "/ws";
     let ws: WebSocket | null = null;
     try {
@@ -1236,7 +1236,7 @@ export function OrgEditorView({
       };
     } catch { /* WebSocket not available */ }
     return () => { ws?.close(); };
-  }, [liveMode, currentOrg, apiBaseUrl, setNodes, triggerEdgeAnimation, selectedNodeId, bbScope, fetchBlackboard]);
+  }, [visible, liveMode, currentOrg, apiBaseUrl, setNodes, triggerEdgeAnimation, selectedNodeId, bbScope, fetchBlackboard]);
 
   // ── Start/Stop org ──
   const handleStartOrg = useCallback(async () => {
@@ -1615,11 +1615,13 @@ export function OrgEditorView({
 
   // ── Fetch node detail when selected in live mode ──
   useEffect(() => {
-    if (!selectedNodeId || !currentOrg || !liveMode) {
-      setNodeEvents([]);
-      setNodeSchedules([]);
-      setNodeMessages([]);
-      setNodeThinking([]);
+    if (!visible || !selectedNodeId || !currentOrg || !liveMode) {
+      if (!selectedNodeId || !currentOrg || !liveMode) {
+        setNodeEvents([]);
+        setNodeSchedules([]);
+        setNodeMessages([]);
+        setNodeThinking([]);
+      }
       return;
     }
     const fetchNodeDetail = async () => {
@@ -1647,11 +1649,14 @@ export function OrgEditorView({
     fetchNodeDetail();
     const interval = setInterval(fetchNodeDetail, 8000);
     return () => clearInterval(interval);
-  }, [selectedNodeId, currentOrg, liveMode, apiBaseUrl]);
+  }, [visible, selectedNodeId, currentOrg, liveMode, apiBaseUrl]);
 
   // ── Fetch org stats in live mode ──
   useEffect(() => {
-    if (!currentOrg || !liveMode) { setOrgStats(null); return; }
+    if (!visible || !currentOrg || !liveMode) {
+      if (!currentOrg || !liveMode) setOrgStats(null);
+      return;
+    }
     const fetchStats = async () => {
       try {
         const res = await safeFetch(`${apiBaseUrl}/api/orgs/${currentOrg.id}/stats`);
@@ -1661,7 +1666,7 @@ export function OrgEditorView({
     fetchStats();
     const interval = setInterval(fetchStats, 8000);
     return () => clearInterval(interval);
-  }, [currentOrg, liveMode, apiBaseUrl]);
+  }, [visible, currentOrg, liveMode, apiBaseUrl]);
 
   // ── Fetch node tasks when tasks tab is active ──
   useEffect(() => {
@@ -1864,10 +1869,8 @@ export function OrgEditorView({
 
   // ── Render ──
 
-  if (!visible) return null;
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+    <div style={{ display: visible ? "flex" : "none", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {/* ── Toolbar - 3-section layout ── */}
       {currentOrg && (
         <div className="org-topbar">

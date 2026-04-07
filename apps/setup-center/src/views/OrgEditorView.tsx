@@ -60,6 +60,8 @@ import { OrgInboxSidebar } from "../components/OrgInboxSidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { OrgAvatar, AVATAR_PRESETS, AVATAR_MAP } from "../components/OrgAvatars";
 import { OrgChatPanel } from "../components/OrgChatPanel";
+import { OrgBlackboardPanel, type OrgBlackboardPanelHandle } from "../components/OrgBlackboardPanel";
+import { OrgMonitorPanel } from "../components/OrgMonitorPanel";
 import { OrgDashboard } from "../components/OrgDashboard";
 import { OrgProjectBoard } from "../components/OrgProjectBoard";
 import { ZoomIn, ZoomOut, Maximize, X as XIcon } from "lucide-react";
@@ -74,6 +76,14 @@ import { Badge } from "../components/ui/badge";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "../components/ui/tooltip";
 import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group";
 import agentOrgImg from "../assets/agent_org.png";
+import {
+  fmtTime, fmtDateTime, fmtShortDate, stripMd,
+  STATUS_LABELS, STATUS_COLORS, ORG_STATUS_LABELS,
+  EDGE_COLORS, DEPT_COLORS, getDeptColor,
+  BB_TYPE_COLORS, BB_TYPE_LABELS,
+  type OrgNodeData, type OrgEdgeData, type OrgSummary,
+  type OrgFull, type TemplateSummary,
+} from "./orgEditorConstants";
 
 // ── Custom Canvas Controls (shadcn UI) ──
 
@@ -114,549 +124,7 @@ function OrgCanvasControls() {
   );
 }
 
-// ── Time helpers (always show local timezone) ──
-
-function fmtTime(v: string | number | undefined | null): string {
-  if (!v) return "";
-  const d = new Date(typeof v === "number" ? v : v);
-  if (isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
-
-function fmtDateTime(v: string | number | undefined | null): string {
-  if (!v) return "";
-  const d = new Date(typeof v === "number" ? v : v);
-  if (isNaN(d.getTime())) return "";
-  return d.toLocaleString("zh-CN", { hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
-
-function fmtShortDate(v: string | number | undefined | null): string {
-  if (!v) return "";
-  const d = new Date(typeof v === "number" ? v : v);
-  if (isNaN(d.getTime())) return "";
-  return d.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-
-function stripMd(s: string): string {
-  return s
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/\*(.+?)\*/g, "$1")
-    .replace(/__(.+?)__/g, "$1")
-    .replace(/_(.+?)_/g, "$1")
-    .replace(/~~(.+?)~~/g, "$1")
-    .replace(/`(.+?)`/g, "$1")
-    .replace(/^\s*[-*+]\s+/gm, "")
-    .replace(/^\s*\d+\.\s+/gm, "")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/\n+/g, " ")
-    .trim();
-}
-
-const TASK_STATUS_LABELS: Record<string, string> = {
-  todo: "待办",
-  in_progress: "进行中",
-  delivered: "已交付",
-  rejected: "已打回",
-  accepted: "已验收",
-  blocked: "已阻塞",
-};
-
-const EVENT_TYPE_LABELS: Record<string, string> = {
-  node_status_change: "节点状态变更",
-  llm_usage: "模型调用统计",
-  task_completed: "任务完成",
-  task_assigned: "任务分配",
-  task_delivered: "任务交付",
-  task_accepted: "任务验收",
-  task_rejected: "任务驳回",
-  task_failed: "任务失败",
-  node_activated: "节点激活",
-  node_deactivated: "节点停用",
-  node_dismissed: "节点解散",
-  node_frozen: "节点冻结",
-  node_unfrozen: "节点解冻",
-  org_started: "组织启动",
-  org_stopped: "组织停止",
-  org_paused: "组织暂停",
-  org_resumed: "组织恢复",
-  org_reset: "组织重置",
-  schedule_assigned: "定时任务分配",
-  schedule_completed: "定时任务完成",
-  schedule_triggered: "定时任务触发",
-  schedule_requested: "定时任务请求",
-  broadcast: "广播消息",
-  auto_clone_created: "自动创建副本",
-  clones_reclaimed: "副本回收",
-  auto_kickoff: "自动启动",
-  scaling_requested: "扩容请求",
-  scaling_approved: "扩容批准",
-  scaling_rejected: "扩容拒绝",
-  tools_granted: "工具授权",
-  tools_requested: "工具请求",
-  tools_revoked: "工具撤销",
-  user_command: "用户指令",
-  watchdog_recovery: "看门狗恢复",
-  heartbeat_triggered: "心跳触发",
-  heartbeat_decision: "心跳决策",
-  standup_started: "站会开始",
-  standup_completed: "站会结束",
-  meeting_completed: "会议结束",
-  conflict_detected: "冲突检测",
-  policy_proposed: "策略提议",
-  approval_resolved: "审批完成",
-  tool_call_start: "工具调用",
-  tool_call_end: "工具调用完成",
-  plan_created: "计划创建",
-  plan_completed: "计划完成",
-  plan_cancelled: "计划取消",
-  plan_step_updated: "计划步骤更新",
-  iteration_start: "迭代开始",
-  agent_handoff: "Agent 切换",
-  ask_user: "询问用户",
-  done: "完成",
-  error: "错误",
-};
-
-const MSG_TYPE_LABELS: Record<string, string> = {
-  task_assign: "任务分配",
-  task_result: "任务结果",
-  task_delivered: "任务交付",
-  task_accepted: "任务验收",
-  task_rejected: "任务驳回",
-  report: "工作汇报",
-  question: "提问",
-  answer: "回答",
-  escalate: "上报",
-  escalation: "上报",
-  broadcast: "广播",
-  dept_broadcast: "部门广播",
-  feedback: "反馈",
-  handshake: "握手",
-  deliverable: "交付物",
-};
-
-const DATA_KEY_LABELS: Record<string, string> = {
-  from: "来源",
-  to: "目标",
-  reason: "原因",
-  node_id: "节点",
-  calls: "调用次数",
-  tokens_in: "输入 token",
-  tokens_out: "输出 token",
-  model: "模型",
-  result_preview: "结果预览",
-  deliverable_preview: "交付物预览",
-  error: "错误",
-  content: "内容",
-  task: "任务",
-  title: "标题",
-  role: "角色",
-  name: "名称",
-  tools: "工具",
-  source: "来源",
-  target: "目标",
-  scope: "范围",
-  prompt: "提示词",
-  schedule_id: "定时任务 ID",
-  chain_id: "链路 ID",
-  clone_id: "副本 ID",
-  approval_id: "审批 ID",
-  request_id: "请求 ID",
-  new_node_id: "新节点 ID",
-  superior: "上级",
-  participants: "参与者",
-  pending_count: "待处理数",
-  node_count: "节点数",
-  rounds: "轮次",
-  cycle: "周期",
-  decision: "决策",
-  stuck_secs: "阻塞时长(秒)",
-  threshold: "阈值",
-  dismissed: "已解散",
-  type: "类型",
-  topic: "议题",
-  filename: "文件名",
-  core_business_len: "核心业务数",
-  tool: "工具",
-  args: "参数",
-  result: "结果",
-  duration_ms: "耗时(ms)",
-  status: "状态",
-  question: "问题",
-  message: "消息",
-};
-
-const DATA_VALUE_LABELS: Record<string, string> = {
-  idle: "空闲",
-  busy: "执行中",
-  waiting: "等待中",
-  error: "异常",
-  offline: "离线",
-  frozen: "已冻结",
-  task_started: "任务开始",
-  task_completed: "任务完成",
-  task_failed: "任务失败",
-  task_assigned: "任务分配",
-  task_delivered: "任务交付",
-  task_accepted: "任务验收",
-  task_rejected: "任务驳回",
-  org_stopped: "组织停止",
-  org_reset: "组织重置",
-  org_paused: "组织暂停",
-  org_resumed: "组织恢复",
-  restart_cleanup: "重启清理",
-  watchdog_recovery: "看门狗恢复",
-  health_check_recovery: "健康检查恢复",
-  org_quota_pause: "配额暂停",
-  quota_exhausted: "配额耗尽",
-  auto_recover_before_activate: "激活前自动恢复",
-  unfreeze: "解冻",
-  stuck_busy: "持续繁忙",
-  error_not_recovering: "错误未恢复",
-  idle_no_progress: "空闲无进展",
-  root_busy: "根节点繁忙",
-  root_has_task: "根节点有任务",
-  skip: "跳过",
-  activate: "激活",
-  do_nothing: "无操作",
-  pending: "待处理",
-  approved: "已批准",
-  rejected: "已拒绝",
-  completed: "已完成",
-  in_progress: "进行中",
-  delivered: "已交付",
-  accepted: "已验收",
-  blocked: "已阻塞",
-  healthy: "健康",
-  warning: "警告",
-  critical: "严重",
-  attention: "关注",
-};
-
-function _translateDataValue(
-  key: string, value: unknown,
-  nodeNameMap?: Map<string, string>,
-): string {
-  const s = String(value);
-  if ((key === "node_id" || key === "new_node_id") && nodeNameMap?.has(s)) {
-    return nodeNameMap.get(s)!;
-  }
-  return DATA_VALUE_LABELS[s] || s;
-}
-
-function NodeTasksTabContent({
-  nodeTasks,
-  nodeActivePlan,
-  loading,
-  nodes,
-  apiBaseUrl,
-  orgId,
-  fmtDateTime,
-}: {
-  nodeTasks: { assigned: any[]; delegated: any[] } | null;
-  nodeActivePlan: any;
-  loading: boolean;
-  nodes: Node[];
-  apiBaseUrl: string;
-  orgId: string;
-  fmtDateTime: (v: string | number | undefined | null) => string;
-}) {
-  const nodeMap = new Map(nodes.map((n) => [n.id, (n.data as any)?.role_title || n.id]));
-  const getNodeLabel = (id: string | null) => (id ? nodeMap.get(id) || id : "-");
-
-  if (loading) {
-    return (
-      <div style={{ fontSize: 12, color: "var(--muted)", padding: 12 }}>加载中...</div>
-    );
-  }
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 12 }}>
-      {/* Current Task + Plan */}
-      {nodeActivePlan && (
-        <div className="card" style={{ padding: 10 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, color: "#b45309" }}>
-            当前任务
-          </div>
-          <div style={{ fontWeight: 500, marginBottom: 6 }}>{nodeActivePlan.title}</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <span style={{ fontSize: 10, color: "var(--muted)" }}>进度</span>
-            <div style={{
-              flex: 1,
-              height: 4,
-              borderRadius: 2,
-              background: "var(--line)",
-              overflow: "hidden",
-            }}>
-              <div style={{
-                height: "100%",
-                borderRadius: 2,
-                background: "var(--accent)",
-                width: `${nodeActivePlan.progress_pct ?? 0}%`,
-              }} />
-            </div>
-            <span style={{ fontSize: 10, color: "var(--muted)" }}>{nodeActivePlan.progress_pct ?? 0}%</span>
-          </div>
-          {(nodeActivePlan.plan_steps?.length ?? 0) > 0 && (
-            <div style={{ fontSize: 11 }}>
-              {(nodeActivePlan.plan_steps || []).map((s: any, i: number) => {
-                const st = s.status || "pending";
-                const icon = st === "completed" ? "✓" : st === "in_progress" ? "→" : "○";
-                const color = st === "completed" ? "#22c55e" : st === "in_progress" ? "#3b82f6" : "var(--muted)";
-                return (
-                  <div key={s.id || i} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 4 }}>
-                    <span style={{ color, fontWeight: 600, flexShrink: 0 }}>{icon}</span>
-                    <span style={{ color: "var(--text)" }}>{s.description || s.title || `步骤 ${i + 1}`}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Assigned Tasks */}
-      <div className="card" style={{ padding: 10 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>分配给我的任务</div>
-        {(nodeTasks?.assigned?.length ?? 0) === 0 ? (
-          <div style={{ fontSize: 11, color: "var(--muted)" }}>暂无</div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {(nodeTasks?.assigned || []).map((t: any) => (
-              <div
-                key={t.id}
-                style={{
-                  padding: 8,
-                  borderRadius: 6,
-                  border: "1px solid var(--line)",
-                  background: "var(--bg-subtle, var(--bg-card))",
-                }}
-              >
-                <div style={{ fontWeight: 500, marginBottom: 4 }}>{t.title}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10 }}>
-                  <span style={{
-                    padding: "1px 5px",
-                    borderRadius: 3,
-                    background: "var(--bg-app)",
-                    color: "var(--muted)",
-                  }}>
-                    {TASK_STATUS_LABELS[t.status] || t.status}
-                  </span>
-                  <span style={{ color: "var(--muted)" }}>{(t.progress_pct ?? 0)}%</span>
-                </div>
-                <div style={{
-                  marginTop: 4,
-                  height: 3,
-                  borderRadius: 2,
-                  background: "var(--line)",
-                  overflow: "hidden",
-                }}>
-                  <div style={{
-                    height: "100%",
-                    borderRadius: 2,
-                    background: "var(--accent)",
-                    width: `${Math.min(100, t.progress_pct ?? 0)}%`,
-                  }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Delegated Tasks */}
-      <div className="card" style={{ padding: 10 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>我委派的任务</div>
-        {(nodeTasks?.delegated?.length ?? 0) === 0 ? (
-          <div style={{ fontSize: 11, color: "var(--muted)" }}>暂无</div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {(nodeTasks?.delegated || []).map((t: any) => (
-              <div
-                key={t.id}
-                style={{
-                  padding: 8,
-                  borderRadius: 6,
-                  border: "1px solid var(--line)",
-                  background: "var(--bg-subtle, var(--bg-card))",
-                }}
-              >
-                <div style={{ fontWeight: 500, marginBottom: 4 }}>{t.title}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10 }}>
-                  <span style={{
-                    padding: "1px 5px",
-                    borderRadius: 3,
-                    background: "var(--bg-app)",
-                    color: "var(--muted)",
-                  }}>
-                    {TASK_STATUS_LABELS[t.status] || t.status}
-                  </span>
-                  <span style={{ color: "var(--muted)" }}>{(t.progress_pct ?? 0)}%</span>
-                  <span style={{ color: "var(--muted)", marginLeft: "auto" }}>
-                    执行人: {getNodeLabel(t.assignee_node_id)}
-                  </span>
-                </div>
-                <div style={{
-                  marginTop: 4,
-                  height: 3,
-                  borderRadius: 2,
-                  background: "var(--line)",
-                  overflow: "hidden",
-                }}>
-                  <div style={{
-                    height: "100%",
-                    borderRadius: 2,
-                    background: "var(--accent)",
-                    width: `${Math.min(100, t.progress_pct ?? 0)}%`,
-                  }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Types ──
-
-interface OrgNodeData {
-  id: string;
-  role_title: string;
-  role_goal: string;
-  role_backstory: string;
-  agent_source: string;
-  agent_profile_id: string | null;
-  position: { x: number; y: number };
-  level: number;
-  department: string;
-  custom_prompt: string;
-  identity_dir: string | null;
-  mcp_servers: string[];
-  skills: string[];
-  skills_mode: string;
-  preferred_endpoint: string | null;
-  max_concurrent_tasks: number;
-  timeout_s: number;
-  can_delegate: boolean;
-  can_escalate: boolean;
-  can_request_scaling: boolean;
-  is_clone: boolean;
-  clone_source: string | null;
-  external_tools: string[];
-  ephemeral: boolean;
-  avatar: string | null;
-  frozen_by: string | null;
-  frozen_reason: string | null;
-  frozen_at: string | null;
-  status: string;
-  auto_clone_enabled?: boolean;
-  auto_clone_threshold?: number;
-  auto_clone_max?: number;
-  current_task?: string;
-}
-
-interface OrgEdgeData {
-  id: string;
-  source: string;
-  target: string;
-  edge_type: string;
-  label: string;
-  bidirectional: boolean;
-  priority: number;
-  bandwidth_limit: number;
-}
-
-interface OrgSummary {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  status: string;
-  node_count: number;
-  edge_count: number;
-  tags: string[];
-  created_at: string;
-  updated_at: string;
-}
-
-interface UserPersona {
-  title: string;
-  display_name: string;
-  description: string;
-}
-
-interface OrgFull {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  status: string;
-  nodes: OrgNodeData[];
-  edges: OrgEdgeData[];
-  user_persona?: UserPersona;
-  [key: string]: any;
-}
-
-interface TemplateSummary {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  node_count: number;
-  tags: string[];
-}
-
-// ── Helpers ──
-
-const EDGE_COLORS: Record<string, string> = {
-  hierarchy: "var(--primary)",
-  collaborate: "var(--ok)",
-  escalate: "var(--danger)",
-  consult: "#a78bfa",
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  idle: "var(--ok)",
-  busy: "var(--primary)",
-  waiting: "#f59e0b",
-  error: "var(--danger)",
-  offline: "var(--muted)",
-  frozen: "#93c5fd",
-  dormant: "var(--muted)",
-  active: "var(--ok)",
-  running: "var(--primary)",
-  paused: "#f59e0b",
-  archived: "var(--muted)",
-};
-
-const ORG_STATUS_LABELS: Record<string, string> = {
-  dormant: "休眠",
-  active: "运行中",
-  running: "运行中",
-  paused: "已暂停",
-  archived: "已归档",
-};
-
-const DEPT_COLORS: Record<string, string> = {
-  "管理层": "#6366f1",
-  "技术部": "#0ea5e9",
-  "产品部": "#8b5cf6",
-  "市场部": "#f97316",
-  "行政支持": "#64748b",
-  "工程": "#0ea5e9",
-  "前端组": "#06b6d4",
-  "后端组": "#14b8a6",
-  "编辑部": "#f97316",
-  "创作组": "#ec4899",
-  "运营组": "#84cc16",
-};
-
-function getDeptColor(dept: string): string {
-  return DEPT_COLORS[dept] || "#6b7280";
-}
+// Types and helpers imported from ./orgEditorConstants
 
 function orgNodeToFlowNode(n: OrgNodeData, extra?: Record<string, any>): Node {
   return {
@@ -822,15 +290,6 @@ function OrgConnectionLine({ fromX, fromY, toX, toY }: ConnectionLineComponentPr
 }
 
 // ── Custom Node Component ──
-
-const STATUS_LABELS: Record<string, string> = {
-  idle: "空闲",
-  busy: "执行中",
-  waiting: "等待中",
-  error: "异常",
-  offline: "离线",
-  frozen: "已冻结",
-};
 
 function OrgNodeComponent({ data, selected }: { data: OrgNodeData; selected: boolean }) {
   const [hovered, setHovered] = useState(false);
@@ -1159,15 +618,7 @@ export function OrgEditorView({
   const [layoutLocked, setLayoutLocked] = useState(false);
   const liveMode = currentOrg?.status === "active" || currentOrg?.status === "running";
   const [activeDrawer, setActiveDrawer] = useState<"chat" | "inbox" | null>(null);
-  const [nodeEvents, setNodeEvents] = useState<any[]>([]);
-  const [nodeSchedules, setNodeSchedules] = useState<any[]>([]);
-  const [nodeMessages, setNodeMessages] = useState<any[]>([]);
-  const [nodeThinking, setNodeThinking] = useState<any[]>([]);
   const [orgStats, setOrgStats] = useState<any>(null);
-  const [expandedThinkingIdx, setExpandedThinkingIdx] = useState<number | string | null>(null);
-  const [nodeTasks, setNodeTasks] = useState<{ assigned: any[]; delegated: any[] } | null>(null);
-  const [nodeActivePlan, setNodeActivePlan] = useState<any>(null);
-  const [nodeTasksLoading, setNodeTasksLoading] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [toast, setToast] = useState<{ message: string; type: "ok" | "error" } | null>(null);
@@ -1206,7 +657,6 @@ export function OrgEditorView({
   // React Flow state
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([] as Node[]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([] as Edge[]);
-  const nodeNameMap = useMemo(() => new Map(nodes.map((n) => [n.id, (n.data as any)?.role_title || n.id])), [nodes]);
 
   const showToast = useCallback((message: string, type: "ok" | "error" = "ok") => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -1218,9 +668,8 @@ export function OrgEditorView({
   const [availableMcpServers, setAvailableMcpServers] = useState<{ name: string; status: string }[]>([]);
   const [availableSkills, setAvailableSkills] = useState<{ name: string; description?: string; name_i18n?: string; description_i18n?: string }[]>([]);
 
-  // Blackboard state
-  const [bbEntries, setBbEntries] = useState<any[]>([]);
-  const [bbScope, setBbScope] = useState<"all" | "org" | "department" | "node">("all");
+  // Blackboard panel ref (data managed by OrgBlackboardPanel)
+  const bbPanelRef = useRef<OrgBlackboardPanelHandle>(null);
 
   // Capabilities search
   const [mcpSearch, setMcpSearch] = useState("");
@@ -1229,7 +678,6 @@ export function OrgEditorView({
   // Org settings panel collapse
   const [personaCollapsed, setPersonaCollapsed] = useState(false);
   const [bizCollapsed, setBizCollapsed] = useState(false);
-  const [bbLoading, setBbLoading] = useState(false);
 
   // New node form
   const [newNodeTitle, setNewNodeTitle] = useState("");
@@ -1345,20 +793,6 @@ export function OrgEditorView({
     } catch { /* skills endpoint may not be available */ }
   }, [apiBaseUrl]);
 
-  const fetchBlackboard = useCallback(async (orgId: string, scope?: string) => {
-    setBbLoading(true);
-    try {
-      const params = new URLSearchParams({ limit: "100" });
-      if (scope && scope !== "all") params.set("scope", scope);
-      const res = await safeFetch(`${apiBaseUrl}/api/orgs/${orgId}/memory?${params}`);
-      const data = await res.json();
-      setBbEntries(data || []);
-    } catch {
-      setBbEntries([]);
-    } finally {
-      setBbLoading(false);
-    }
-  }, [apiBaseUrl]);
 
   const fetchAgentProfiles = useCallback(async () => {
     try {
@@ -1384,11 +818,6 @@ export function OrgEditorView({
     }
   }, [selectedOrgId, fetchOrg]);
 
-  useEffect(() => {
-    if (currentOrg && !selectedNodeId) {
-      fetchBlackboard(currentOrg.id, bbScope);
-    }
-  }, [currentOrg?.id, selectedNodeId, bbScope, fetchBlackboard]);
 
   // ── WebSocket for live mode ──
 
@@ -1448,13 +877,13 @@ export function OrgEditorView({
           } else if (ev === "org:message") {
             triggerEdgeAnimation(d.from_node, d.to_node, "#a78bfa");
           } else if (ev === "org:blackboard_update") {
-            if (currentOrg && !selectedNodeId) fetchBlackboard(currentOrg.id, bbScope);
+            bbPanelRef.current?.refresh();
           }
         } catch { /* ignore parse errors */ }
       };
     } catch { /* WebSocket not available */ }
     return () => { ws?.close(); };
-  }, [visible, liveMode, currentOrg, apiBaseUrl, setNodes, triggerEdgeAnimation, selectedNodeId, bbScope, fetchBlackboard]);
+  }, [visible, liveMode, currentOrg, apiBaseUrl, setNodes, triggerEdgeAnimation]);
 
   // ── Start/Stop org ──
   const handleStartOrg = useCallback(async () => {
@@ -1547,10 +976,7 @@ export function OrgEditorView({
       const data = await res.json();
       setCurrentOrg(data);
       setLayoutLocked(false);
-      setBbEntries([]);
-      setNodeEvents([]);
-      setNodeThinking([]);
-      setNodeSchedules([]);
+      bbPanelRef.current?.refresh();
       setOrgStats(null);
       showToast("组织已重置");
     } catch (e) { console.error("Failed to reset org:", e); }
@@ -1832,44 +1258,6 @@ export function OrgEditorView({
 
   const onNodeDragStop = useCallback(() => {}, []);
 
-  // ── Fetch node detail when selected in live mode ──
-  useEffect(() => {
-    if (!visible || !selectedNodeId || !currentOrg || !liveMode) {
-      if (!selectedNodeId || !currentOrg || !liveMode) {
-        setNodeEvents([]);
-        setNodeSchedules([]);
-        setNodeMessages([]);
-        setNodeThinking([]);
-      }
-      return;
-    }
-    const fetchNodeDetail = async () => {
-      try {
-        const [eventsRes, schedulesRes, msgsRes, thinkingRes] = await Promise.all([
-          safeFetch(`${apiBaseUrl}/api/orgs/${currentOrg.id}/events?actor=${selectedNodeId}&limit=20`),
-          safeFetch(`${apiBaseUrl}/api/orgs/${currentOrg.id}/nodes/${selectedNodeId}/schedules`),
-          safeFetch(`${apiBaseUrl}/api/orgs/${currentOrg.id}/messages?from_node=${selectedNodeId}&limit=20`),
-          safeFetch(`${apiBaseUrl}/api/orgs/${currentOrg.id}/nodes/${selectedNodeId}/thinking?limit=30`),
-        ]);
-        if (eventsRes.ok) setNodeEvents(await eventsRes.json());
-        if (schedulesRes.ok) setNodeSchedules(await schedulesRes.json());
-        if (msgsRes.ok) {
-          const data = await msgsRes.json();
-          setNodeMessages(data.messages || data || []);
-        }
-        if (thinkingRes.ok) {
-          const data = await thinkingRes.json();
-          setNodeThinking(data.timeline || []);
-        }
-      } catch (e) {
-        console.error("Failed to fetch node detail:", e);
-      }
-    };
-    fetchNodeDetail();
-    const interval = setInterval(fetchNodeDetail, 8000);
-    return () => clearInterval(interval);
-  }, [visible, selectedNodeId, currentOrg, liveMode, apiBaseUrl]);
-
   // ── Fetch org stats in live mode ──
   useEffect(() => {
     if (!visible || !currentOrg || !liveMode) {
@@ -1887,41 +1275,6 @@ export function OrgEditorView({
     return () => clearInterval(interval);
   }, [visible, currentOrg, liveMode, apiBaseUrl]);
 
-  // ── Fetch node tasks when monitor panel is visible (liveMode) ──
-  useEffect(() => {
-    if (!selectedNodeId || !currentOrg || !liveMode) {
-      setNodeTasks(null);
-      setNodeActivePlan(null);
-      return;
-    }
-    setNodeTasksLoading(true);
-    const fetchNodeTasks = async () => {
-      try {
-        const [tasksRes, planRes] = await Promise.all([
-          safeFetch(`${apiBaseUrl}/api/orgs/${currentOrg.id}/nodes/${selectedNodeId}/tasks`),
-          safeFetch(`${apiBaseUrl}/api/orgs/${currentOrg.id}/nodes/${selectedNodeId}/active-plan`),
-        ]);
-        if (tasksRes.ok) {
-          const data = await tasksRes.json();
-          setNodeTasks({ assigned: data.assigned || [], delegated: data.delegated || [] });
-        } else {
-          setNodeTasks({ assigned: [], delegated: [] });
-        }
-        if (planRes.ok) {
-          const planData = await planRes.json();
-          setNodeActivePlan(planData.task_id ? planData : null);
-        } else {
-          setNodeActivePlan(null);
-        }
-      } catch (e) {
-        setNodeTasks({ assigned: [], delegated: [] });
-        setNodeActivePlan(null);
-      } finally {
-        setNodeTasksLoading(false);
-      }
-    };
-    fetchNodeTasks();
-  }, [selectedNodeId, currentOrg, liveMode, apiBaseUrl]);
 
   // ── Inject runtime metrics into nodes from orgStats ──
   useEffect(() => {
@@ -3513,302 +2866,15 @@ export function OrgEditorView({
       )}
 
       {/* ── Monitor Panel (liveMode, desktop only) ── */}
-      {liveMode && selectedNode && showRightPanel && !isMobile && (
-        <div
-          style={{
-            width: 280, flexShrink: 0,
-            borderLeft: "1px solid var(--line)",
-            overflowY: "auto", scrollbarGutter: "stable",
-            background: "var(--bg-app)",
-            animation: "org-panel-in 0.3s cubic-bezier(0.4,0,0.2,1) 0.05s both",
-          }}
-        >
-          <div style={{ padding: "12px 12px 8px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ fontWeight: 600, fontSize: 13 }}>运行监控</div>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <span style={{
-                fontSize: 10, padding: "1px 6px", borderRadius: 4,
-                background: `${STATUS_COLORS[selectedNode.status] || "var(--muted)"}20`,
-                color: STATUS_COLORS[selectedNode.status] || "var(--muted)",
-                fontWeight: 500,
-              }}>
-                {STATUS_LABELS[selectedNode.status] || selectedNode.status}
-              </span>
-              {selectedNode.is_clone && <span style={{ fontSize: 9, color: "#0369a1" }}>副本</span>}
-              {selectedNode.ephemeral && <span style={{ fontSize: 9, color: "#b45309" }}>临时</span>}
-            </div>
-          </div>
-          <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-
-                {/* Tasks (detailed) */}
-                {selectedNodeId && currentOrg && (
-                  <NodeTasksTabContent
-                    nodeTasks={nodeTasks}
-                    nodeActivePlan={nodeActivePlan}
-                    loading={nodeTasksLoading}
-                    nodes={nodes}
-                    apiBaseUrl={apiBaseUrl}
-                    orgId={currentOrg.id}
-                    fmtDateTime={fmtDateTime}
-                  />
-                )}
-
-                {/* Schedules */}
-                {nodeSchedules.length > 0 && (
-                  <div className="card" style={{ padding: 10 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>定时任务</div>
-                    {nodeSchedules.map((s: any) => (
-                      <div key={s.id} style={{
-                        padding: "4px 0",
-                        borderBottom: "1px solid var(--line)",
-                        fontSize: 11,
-                      }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span style={{ fontWeight: 500 }}>{s.name}</span>
-                          <span style={{
-                            fontSize: 10,
-                            padding: "1px 5px",
-                            borderRadius: 3,
-                            background: s.enabled ? "#dcfce7" : "#f3f4f6",
-                            color: s.enabled ? "#166534" : "#9ca3af",
-                          }}>
-                            {s.enabled ? "启用" : "禁用"}
-                          </span>
-                        </div>
-                        {s.last_run_at && (
-                          <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2 }}>
-                            上次: {fmtDateTime(s.last_run_at)}
-                          </div>
-                        )}
-                        {s.last_result_summary && (
-                          <div style={{
-                            fontSize: 10,
-                            color: "#6b7280",
-                            marginTop: 2,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}>
-                            {s.last_result_summary}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Recent events */}
-                <div className="card" style={{ padding: 10 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
-                    最近活动
-                    {nodeEvents.length > 0 && (
-                      <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 400, marginLeft: 4 }}>
-                        ({nodeEvents.length})
-                      </span>
-                    )}
-                  </div>
-                  {nodeEvents.length === 0 ? (
-                    <div style={{ fontSize: 11, color: "var(--muted)" }}>暂无活动记录</div>
-                  ) : (
-                    <div style={{ maxHeight: 300, overflowY: "auto" }}>
-                      {nodeEvents.slice(0, 15).map((evt: any, i: number) => {
-                        const dataEntries = Object.entries(evt.data || {});
-                        const isEvtExpanded = expandedThinkingIdx === `evt-${i}`;
-                        const fullText = dataEntries.map(([k, v]) => `**${DATA_KEY_LABELS[k] || k}**: ${_translateDataValue(k, v, nodeNameMap)}`).join("\n\n");
-                        return (
-                          <div key={evt.event_id || i}
-                            onClick={() => setExpandedThinkingIdx(isEvtExpanded ? null : `evt-${i}`)}
-                            style={{
-                              padding: "4px 0",
-                              borderBottom: "1px solid var(--line)",
-                              fontSize: 11, cursor: "pointer",
-                              background: isEvtExpanded ? "var(--bg-subtle, transparent)" : undefined,
-                            }}>
-                            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                              <span style={{
-                                width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-                                background: evt.event_type?.includes("fail") || evt.event_type?.includes("error")
-                                  ? "var(--danger)"
-                                  : evt.event_type?.includes("complete")
-                                  ? "var(--ok)"
-                                  : "var(--primary)",
-                              }} />
-                              <span style={{ fontWeight: 500 }}>
-                                {EVENT_TYPE_LABELS[evt.event_type] || evt.event_type?.replace(/_/g, " ")}
-                              </span>
-                              <span style={{ color: "var(--muted)", fontSize: 10, marginLeft: "auto" }}>
-                                {fmtTime(evt.timestamp)}
-                              </span>
-                            </div>
-                            {fullText && (
-                              <div className="bb-entry-content" style={{
-                                marginTop: 2, marginLeft: 12, fontSize: 10,
-                                maxHeight: isEvtExpanded ? "none" : 48,
-                                overflow: isEvtExpanded ? "visible" : "hidden",
-                              }}>
-                                {mdModules ? (
-                                  <mdModules.ReactMarkdown remarkPlugins={[mdModules.remarkGfm]}>
-                                    {fullText}
-                                  </mdModules.ReactMarkdown>
-                                ) : <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit" }}>{fullText}</pre>}
-                              </div>
-                            )}
-                            {!isEvtExpanded && fullText.length > 80 && (
-                              <div style={{ fontSize: 9, color: "var(--primary)", marginTop: 2, marginLeft: 12 }}>
-                                点击展开全文
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* Thought chain (merged timeline) */}
-                <div className="card" style={{ padding: 10 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
-                    思维链
-                    {nodeThinking.length > 0 && (
-                      <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 400, marginLeft: 4 }}>
-                        ({nodeThinking.length})
-                      </span>
-                    )}
-                  </div>
-                  {nodeThinking.length === 0 ? (
-                    <div style={{ fontSize: 11, color: "var(--muted)" }}>暂无思维链记录</div>
-                  ) : (
-                    <div style={{ maxHeight: 400, overflowY: "auto" }}>
-                      {nodeThinking.slice(0, 30).map((item: any, i: number) => {
-                        const isMsg = item.type === "message";
-                        const isEvent = item.type === "event";
-                        const tsLocal = fmtTime(item.timestamp);
-                        const isExpanded = expandedThinkingIdx === i;
-
-                        if (isMsg) {
-                          const isOut = item.direction === "out";
-                          const msgTypeColors: Record<string, string> = {
-                            task_assign: "#7c3aed", task_result: "#059669",
-                            question: "#2563eb", answer: "#0891b2",
-                            escalation: "#dc2626", deliverable: "#d97706",
-                          };
-                          return (
-                            <div key={i}
-                              onClick={() => setExpandedThinkingIdx(isExpanded ? null : i)}
-                              style={{
-                                padding: "6px 0", borderBottom: "1px solid var(--line)", fontSize: 11,
-                                cursor: "pointer", background: isExpanded ? "var(--bg-secondary)" : undefined,
-                              }}
-                            >
-                              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                                <span style={{
-                                  fontSize: 10, padding: "1px 5px", borderRadius: 3,
-                                  background: isOut ? "rgba(59,130,246,0.12)" : "rgba(245,158,11,0.12)",
-                                  color: isOut ? "#3b82f6" : "#f59e0b",
-                                  fontWeight: 500,
-                                }}>
-                                  {isOut ? `→ ${item.peer}` : `← ${item.peer}`}
-                                </span>
-                                {item.msg_type && (
-                                  <span style={{
-                                    fontSize: 9, padding: "1px 4px", borderRadius: 3,
-                                    background: `${msgTypeColors[item.msg_type] || "#6b7280"}18`,
-                                    color: msgTypeColors[item.msg_type] || "#6b7280",
-                                  }}>
-                                    {MSG_TYPE_LABELS[item.msg_type] || item.msg_type.replace(/_/g, " ")}
-                                  </span>
-                                )}
-                                <span style={{ color: "var(--muted)", fontSize: 10, marginLeft: "auto" }}>
-                                  {tsLocal}
-                                </span>
-                              </div>
-                              <div className="bb-entry-content" style={{
-                                marginTop: 3, fontSize: 11,
-                                maxHeight: isExpanded ? "none" : 60,
-                                overflow: isExpanded ? "visible" : "hidden",
-                              }}>
-                                {mdModules ? (
-                                  <mdModules.ReactMarkdown remarkPlugins={[mdModules.remarkGfm]}>
-                                    {isExpanded
-                                      ? (item.content || "")
-                                      : (item.content || "").length > 150
-                                        ? (item.content || "").slice(0, 150) + "…"
-                                        : (item.content || "")}
-                                  </mdModules.ReactMarkdown>
-                                ) : (
-                                  <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit" }}>
-                                    {isExpanded ? (item.content || "") : (item.content || "").length > 150 ? (item.content || "").slice(0, 150) + "…" : (item.content || "")}
-                                  </pre>
-                                )}
-                              </div>
-                              {!isExpanded && (item.content || "").length > 150 && (
-                                <div style={{ fontSize: 9, color: "var(--primary)", marginTop: 2 }}>
-                                  点击展开全文
-                                </div>
-                              )}
-                            </div>
-                          );
-                        }
-
-                        if (isEvent) {
-                          const evtType = item.event_type || "";
-                          const isToolCall = evtType.includes("tool");
-                          const isComplete = evtType.includes("complete");
-                          const isError = evtType.includes("fail") || evtType.includes("error");
-                          return (
-                            <div key={i}
-                              onClick={() => setExpandedThinkingIdx(isExpanded ? null : i)}
-                              style={{
-                                padding: "4px 0", borderBottom: "1px solid var(--line)", fontSize: 11,
-                                cursor: "pointer", background: isExpanded ? "var(--bg-secondary)" : undefined,
-                              }}
-                            >
-                              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                                <span style={{
-                                  width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-                                  background: isError ? "var(--danger)" : isComplete ? "var(--ok)"
-                                    : isToolCall ? "#7c3aed" : "var(--primary)",
-                                }} />
-                                <span style={{
-                                  fontWeight: 500, fontSize: 10,
-                                  color: isToolCall ? "#7c3aed" : undefined,
-                                }}>
-                                  {isToolCall ? "⚙ " : ""}{EVENT_TYPE_LABELS[evtType] || evtType.replace(/_/g, " ")}
-                                </span>
-                                <span style={{ color: "var(--muted)", fontSize: 10, marginLeft: "auto" }}>
-                                  {tsLocal}
-                                </span>
-                              </div>
-                              {item.data && Object.keys(item.data).length > 0 && (() => {
-                                const entries = Object.entries(item.data).slice(0, isExpanded ? 20 : 3);
-                                const mdText = entries.map(([k, v]) => { const tv = _translateDataValue(k, v, nodeNameMap); return `**${DATA_KEY_LABELS[k] || k}**: ${isExpanded ? tv : tv.slice(0, 120)}`; }).join("\n\n");
-                                return (
-                                  <div className="bb-entry-content" style={{ fontSize: 10, marginTop: 2, marginLeft: 12 }}>
-                                    {mdModules ? (
-                                      <mdModules.ReactMarkdown remarkPlugins={[mdModules.remarkGfm]}>
-                                        {mdText}
-                                      </mdModules.ReactMarkdown>
-                                    ) : <span style={{ color: "var(--muted)" }}>{mdText}</span>}
-                                  </div>
-                                );
-                              })()}
-                              {!isExpanded && item.data && Object.keys(item.data).length > 3 && (
-                                <div style={{ fontSize: 9, color: "var(--primary)", marginTop: 2, marginLeft: 12 }}>
-                                  点击查看全部 {Object.keys(item.data).length} 个字段
-                                </div>
-                              )}
-                            </div>
-                          );
-                        }
-
-                        return null;
-                      })}
-                    </div>
-                  )}
-                </div>
-
-          </div>
-        </div>
+      {liveMode && selectedNode && showRightPanel && !isMobile && selectedOrgId && (
+        <OrgMonitorPanel
+          orgId={selectedOrgId}
+          nodeId={selectedNode.id}
+          apiBaseUrl={apiBaseUrl}
+          nodes={nodes}
+          mdModules={mdModules}
+          visible={visible}
+        />
       )}
 
       {selectedNode && showRightPanel && (
@@ -4019,15 +3085,7 @@ export function OrgEditorView({
                     <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>黑板最新动态</div>
                     <div style={{ maxHeight: 160, overflowY: "auto" }}>
                       {orgStats.recent_blackboard.map((bb: any, i: number) => {
-                        const bbTypeColors: Record<string, string> = {
-                          fact: "#3b82f6", decision: "#8b5cf6", lesson: "#10b981",
-                          progress: "#6366f1", todo: "#ef4444",
-                        };
-                        const bbTypeLabels: Record<string, string> = {
-                          fact: "事实", decision: "决策", lesson: "经验",
-                          progress: "进展", todo: "待办",
-                        };
-                        const tc = bbTypeColors[bb.memory_type] || "#6b7280";
+                        const tc = BB_TYPE_COLORS[bb.memory_type] || "#6b7280";
                         return (
                           <div key={i} style={{
                             padding: "5px 0", borderBottom: "1px solid var(--line)", fontSize: 11,
@@ -4037,7 +3095,7 @@ export function OrgEditorView({
                                 fontSize: 11, padding: "1px 5px", borderRadius: 3,
                                 background: tc + "20", color: tc, fontWeight: 600,
                               }}>
-                                {bbTypeLabels[bb.memory_type] || bb.memory_type}
+                                {BB_TYPE_LABELS[bb.memory_type] || bb.memory_type}
                               </span>
                               <span style={{ fontSize: 11, color: "var(--muted)" }}>{(() => { const nd = nodes.find(n => n.id === bb.source_node); return (nd?.data as any)?.role_title || bb.source_node; })()}</span>
                               <span style={{ fontSize: 11, color: "var(--muted)", marginLeft: "auto" }}>
@@ -4974,146 +4032,13 @@ export function OrgEditorView({
 
       {/* ── Right Panel: Org Blackboard (second-layer drawer) ── */}
       {currentOrg && !selectedNode && !selectedEdge && !isMobile && showRightPanel && (
-        <div
-          style={{
-            width: 380, flexShrink: 0,
-            borderLeft: "1px solid var(--line)",
-            overflowY: "auto", scrollbarGutter: "stable",
-            background: "var(--bg-app)",
-            animation: "org-panel-in 0.3s cubic-bezier(0.4,0,0.2,1) 0s both",
-          }}
-        >
-          <div style={{ padding: "12px 14px 8px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ fontWeight: 600, fontSize: 13 }}>组织黑板</div>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <div style={{ display: "flex", gap: 2 }}>
-                {([
-                  { key: "all", label: "全部" },
-                  { key: "org", label: "组织级" },
-                  { key: "department", label: "部门级" },
-                  { key: "node", label: "节点级" },
-                ] as const).map((s) => (
-                  <button
-                    key={s.key}
-                    className="btnSmall"
-                    style={{
-                      fontSize: 11, padding: "2px 7px",
-                      fontWeight: bbScope === s.key ? 600 : 400,
-                      background: bbScope === s.key ? "var(--primary)" : "transparent",
-                      color: bbScope === s.key ? "#fff" : "var(--muted)",
-                      borderRadius: 4,
-                    }}
-                    onClick={() => setBbScope(s.key)}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-              <button
-                className="btnSmall"
-                style={{ fontSize: 11, padding: "2px 8px" }}
-                onClick={() => fetchBlackboard(currentOrg.id, bbScope)}
-                disabled={bbLoading}
-              >
-                {bbLoading ? "..." : "刷新"}
-              </button>
-            </div>
-          </div>
-
-          <div style={{ padding: 12 }}>
-            {bbEntries.length === 0 ? (
-              <div style={{
-                fontSize: 12, color: "var(--muted)", padding: "32px 16px",
-                textAlign: "center", border: "1px dashed var(--line)", borderRadius: 8,
-              }}>
-                {bbLoading ? "加载中..." : "暂无黑板记录"}
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {bbEntries.map((entry: any) => {
-                  const bbNodeName = (id: string) => {
-                    if (!id) return "";
-                    const nd = nodes.find(n => n.id === id);
-                    return (nd?.data as any)?.role_title || id;
-                  };
-                  const scopeLabel = entry.scope === "org" ? "组织" : entry.scope === "department" ? entry.scope_owner : bbNodeName(entry.source_node) || "节点";
-                  const typeColors: Record<string, string> = {
-                    fact: "#3b82f6", decision: "#f59e0b", lesson: "#10b981",
-                    progress: "#8b5cf6", todo: "#ef4444",
-                  };
-                  const typeLabels: Record<string, string> = {
-                    fact: "事实", decision: "决策", lesson: "经验",
-                    progress: "进展", todo: "待办",
-                  };
-                  return (
-                    <div
-                      key={entry.id}
-                      style={{
-                        border: "1px solid var(--line)", borderRadius: 6,
-                        padding: "8px 10px", background: "var(--card-bg)",
-                        fontSize: 12,
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                        <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-                          <span style={{
-                            fontSize: 11, padding: "1px 6px", borderRadius: 3,
-                            background: (typeColors[entry.memory_type] || "#6b7280") + "20",
-                            color: typeColors[entry.memory_type] || "var(--muted)",
-                            fontWeight: 600,
-                          }}>
-                            {typeLabels[entry.memory_type] || entry.memory_type}
-                          </span>
-                          <span style={{ fontSize: 11, color: "var(--muted)" }}>{scopeLabel}</span>
-                        </div>
-                        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                          <span style={{ fontSize: 11, color: "var(--muted)" }}>{fmtShortDate(entry.created_at)}</span>
-                          <button
-                            className="btnSmall"
-                            style={{ fontSize: 11, padding: "0 4px", color: "var(--muted)" }}
-                            title="删除此条"
-                            onClick={async () => {
-                              try {
-                                await safeFetch(`${apiBaseUrl}/api/orgs/${currentOrg.id}/memory/${entry.id}`, { method: "DELETE" });
-                                setBbEntries((prev) => prev.filter((e: any) => e.id !== entry.id));
-                              } catch { /* ignore */ }
-                            }}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      </div>
-                      <div className="bb-entry-content">
-                        {mdModules ? (
-                          <mdModules.ReactMarkdown remarkPlugins={[mdModules.remarkGfm]}>
-                            {entry.content}
-                          </mdModules.ReactMarkdown>
-                        ) : (
-                          <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit" }}>{entry.content}</pre>
-                        )}
-                      </div>
-                      {Array.isArray(entry.tags) && entry.tags.length > 0 && (
-                        <div style={{ marginTop: 4, display: "flex", gap: 3, flexWrap: "wrap" }}>
-                          {entry.tags.map((t: string) => (
-                            <span key={t} style={{
-                              fontSize: 11, padding: "0 5px", borderRadius: 3,
-                              background: "var(--hover-bg, rgba(100,100,100,0.1))", color: "var(--muted)",
-                            }}>#{t}</span>
-                          ))}
-                        </div>
-                      )}
-                      {entry.source_node && (
-                        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>
-                          来自 {bbNodeName(entry.source_node)}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
+        <OrgBlackboardPanel
+          ref={bbPanelRef}
+          orgId={currentOrg.id}
+          apiBaseUrl={apiBaseUrl}
+          nodes={nodes}
+          mdModules={mdModules}
+        />
       )}
 
       {/* ── Right Panel: Org Settings (when no node/edge selected) ── */}

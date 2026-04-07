@@ -2735,7 +2735,7 @@ export function OrgEditorView({
                 <div className="org-live-feed">
                   {busyLines.map(b => (
                     <div key={b.key} className="org-feed-item org-feed-busy"
-                      onClick={() => { setSelectedNodeId(b.key); setSelectedEdgeId(null); setShowRightPanel(true); setPropsTab("tasks"); }}
+                      onClick={() => { setSelectedNodeId(b.key); setSelectedEdgeId(null); setShowRightPanel(true); setPropsTab("overview"); }}
                     >
                       <span className="org-feed-dot" />
                       <span className="org-feed-who">{b.node}</span>

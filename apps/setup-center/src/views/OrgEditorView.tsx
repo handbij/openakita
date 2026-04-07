@@ -55,7 +55,7 @@ import {
   IconMessageCircle,
 } from "../icons";
 import { safeFetch } from "../providers";
-import { IS_CAPACITOR, saveFileDialog, IS_TAURI, writeTextFile, downloadFile, openFileDialog } from "../platform";
+import { IS_CAPACITOR, saveFileDialog, IS_TAURI, writeTextFile, downloadFile, openFileDialog, onWsEvent } from "../platform";
 import { OrgInboxSidebar } from "../components/OrgInboxSidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { OrgAvatar, AVATAR_PRESETS, AVATAR_MAP } from "../components/OrgAvatars";
@@ -84,6 +84,26 @@ import {
   type OrgNodeData, type OrgEdgeData, type OrgSummary,
   type OrgFull, type TemplateSummary,
 } from "./orgEditorConstants";
+
+// ── Task text helpers ──
+
+/** Replace node IDs with human-readable role titles in task display text. */
+function humanizeTask(text: string, nodes: { id: string; data: any }[]): string {
+  if (!text) return "";
+  const nameOf = (id: string): string => {
+    const nd = nodes.find((n) => n.id === id);
+    return nd?.data?.role_title || id;
+  };
+  let s = text
+    // "来自 editor-in-chief" → "来自 主编"
+    .replace(/来自\s+([a-zA-Z][a-zA-Z0-9_-]*)/g, (_, id) => `来自 ${nameOf(id)}`)
+    // "to_node=editor-in-chief" or "to_node 可省略" — don't touch the latter
+    .replace(/to_node\s*=\s*([a-zA-Z][a-zA-Z0-9_-]*)/g, (_, id) => `to_node=${nameOf(id)}`);
+  // Strip verbose task_chain_id values (long ISO timestamps)
+  s = s.replace(/\[任务链:\s*[^\]]*\]/g, "");
+  s = s.replace(/,?\s*task_chain_id=[^\s,)}\]]+/g, "");
+  return s.trim();
+}
 
 // ── Custom Canvas Controls (shadcn UI) ──
 
@@ -492,7 +512,7 @@ function OrgNodeComponent({ data, selected }: { data: OrgNodeData; selected: boo
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             maxWidth: 180, fontStyle: "italic", opacity: 0.85,
           }}>
-            {data.current_task}
+            {stripMd(data.current_task)}
           </div>
         )}
 
@@ -562,7 +582,11 @@ function OrgNodeComponent({ data, selected }: { data: OrgNodeData; selected: boo
                 {recentTs != null && <div>最近活动: {fmtShortDate(recentTs)}</div>}
                 {watchdog && <div>看门狗: {watchdog}</div>}
                 {(data.current_task || isAnomaly) && <Sep />}
-                {data.current_task && <div style={{ marginTop: 2, color: "#b45309" }}>任务: {data.current_task}</div>}
+                {data.current_task && (
+                  <div style={{ marginTop: 2, color: "#b45309", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 200, overflow: "auto", lineHeight: 1.5 }}>
+                    {data.current_task}
+                  </div>
+                )}
                 {isAnomaly && <div style={{ marginTop: 2, color: "#f59e0b", fontWeight: 500 }}>{typeof isAnomaly === "string" ? isAnomaly : "异常"}</div>}
               </div>
             </div>
@@ -762,7 +786,13 @@ export function OrgEditorView({
       lastSavedRef.current = "";
       const running = data.status === "active" || data.status === "running";
       const liveExtra = { _liveMode: running };
-      const flowNodes = data.nodes.map((n) => orgNodeToFlowNode(n, liveExtra));
+      const flowNodes = data.nodes.map((n) => {
+        const fn = orgNodeToFlowNode(n, liveExtra);
+        if ((fn.data as any).current_task) {
+          (fn.data as any).current_task = humanizeTask((fn.data as any).current_task, data.nodes.map((nd) => ({ id: nd.id, data: nd })));
+        }
+        return fn;
+      });
       const flowEdges = data.edges.map(orgEdgeToFlowEdge);
       const hasOverlap = detectOverlap(flowNodes);
       setNodes(hasOverlap ? computeTreeLayout(flowNodes, flowEdges) : flowNodes);
@@ -813,10 +843,10 @@ export function OrgEditorView({
   }, [visible, fetchOrgList, fetchTemplates, fetchMcpServers, fetchAvailableSkills, fetchAgentProfiles]);
 
   useEffect(() => {
-    if (selectedOrgId) {
+    if (selectedOrgId && visible) {
       fetchOrg(selectedOrgId);
     }
-  }, [selectedOrgId, fetchOrg]);
+  }, [selectedOrgId, visible, fetchOrg]);
 
 
   // ── WebSocket for real-time org events ──
@@ -840,86 +870,55 @@ export function OrgEditorView({
   const currentOrgId = currentOrg?.id;
   useEffect(() => {
     if (!visible || !currentOrgId) return;
-    const wsUrl = apiBaseUrl.replace(/^http/, "ws") + "/ws";
     const orgId = currentOrgId;
-    let ws: WebSocket | null = null;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    let retryDelay = 1000;
-    let disposed = false;
 
-    const onMessage = (evt: MessageEvent) => {
-      try {
-        const parsed = JSON.parse(evt.data);
-        const ev = parsed.event as string;
-        const d = parsed.data;
-        if (!d || d.org_id !== orgId) return;
+    return onWsEvent((ev, raw) => {
+      const d = raw as Record<string, unknown> | null;
+      if (!d || d.org_id !== orgId) return;
 
-        if (ev === "org:node_status") {
-          const { node_id, status, current_task } = d;
-          setNodes((prev) =>
-            prev.map((n) =>
-              n.id === node_id
-                ? { ...n, data: { ...n.data, status, current_task: current_task || n.data.current_task } }
-                : n,
-            ),
+      if (ev === "org:node_status") {
+        const { node_id, status, current_task } = d as any;
+        setNodes((prev) => {
+          const display = current_task ? humanizeTask(current_task, prev) : "";
+          return prev.map((n) =>
+            n.id === node_id
+              ? { ...n, data: { ...n.data, status, current_task: display || n.data.current_task } }
+              : n,
           );
-        } else if (ev === "org:task_delegated") {
-          triggerEdgeAnimation(d.from_node, d.to_node, "var(--primary)");
-        } else if (ev === "org:task_delivered") {
-          triggerEdgeAnimation(d.from_node, d.to_node, "var(--ok)");
-        } else if (ev === "org:task_accepted") {
-          triggerEdgeAnimation(d.accepted_by, d.from_node, "#22c55e");
-        } else if (ev === "org:task_rejected") {
-          triggerEdgeAnimation(d.rejected_by, d.from_node, "var(--danger)");
-        } else if (ev === "org:escalation") {
-          triggerEdgeAnimation(d.from_node, d.to_node, "var(--danger)");
-        } else if (ev === "org:message") {
-          triggerEdgeAnimation(d.from_node, d.to_node, "#a78bfa");
-        } else if (ev === "org:blackboard_update") {
-          bbPanelRef.current?.refresh();
-        } else if (ev === "org:status_change") {
-          const newStatus = d.status;
-          setCurrentOrg((prev) => prev ? { ...prev, status: newStatus } : prev);
-          setOrgList((prev) => prev.map((o) => o.id === orgId ? { ...o, status: newStatus } : o));
-          if (newStatus === "active" || newStatus === "running") setLayoutLocked(true);
-          else if (newStatus === "dormant" || newStatus === "paused") setLayoutLocked(false);
-        } else if (ev === "org:task_complete") {
-          triggerEdgeAnimation(d.node_id, d.node_id, "#22c55e");
-        } else if (ev === "org:quota_exhausted") {
-          showToast(`配额耗尽：${d.message || "LLM 调用次数已用完"}`, "error");
-        } else if (ev === "org:watchdog_recovery") {
-          showToast(`看门狗恢复：节点 ${d.node_id} 已自动恢复`, "error");
-        } else if (ev === "org:broadcast") {
-          triggerEdgeAnimation(d.from_node, d.from_node, "#a78bfa");
-        } else if (ev === "org:meeting_started" || ev === "org:meeting_completed") {
-          bbPanelRef.current?.refresh();
-        }
-      } catch { /* ignore parse errors */ }
-    };
-
-    const connect = () => {
-      if (disposed) return;
-      try {
-        ws = new WebSocket(wsUrl);
-        ws.onopen = () => { retryDelay = 1000; };
-        ws.onmessage = onMessage;
-        ws.onclose = () => {
-          if (!disposed) {
-            retryTimer = setTimeout(connect, retryDelay);
-            retryDelay = Math.min(retryDelay * 2, 30000);
-          }
-        };
-        ws.onerror = () => { ws?.close(); };
-      } catch { /* WebSocket not available */ }
-    };
-    connect();
-
-    return () => {
-      disposed = true;
-      if (retryTimer) clearTimeout(retryTimer);
-      ws?.close();
-    };
-  }, [visible, currentOrgId, apiBaseUrl, setNodes, triggerEdgeAnimation, showToast, setLayoutLocked]);
+        });
+      } else if (ev === "org:task_delegated") {
+        triggerEdgeAnimation((d as any).from_node, (d as any).to_node, "var(--primary)");
+      } else if (ev === "org:task_delivered") {
+        triggerEdgeAnimation((d as any).from_node, (d as any).to_node, "var(--ok)");
+      } else if (ev === "org:task_accepted") {
+        triggerEdgeAnimation((d as any).accepted_by, (d as any).from_node, "#22c55e");
+      } else if (ev === "org:task_rejected") {
+        triggerEdgeAnimation((d as any).rejected_by, (d as any).from_node, "var(--danger)");
+      } else if (ev === "org:escalation") {
+        triggerEdgeAnimation((d as any).from_node, (d as any).to_node, "var(--danger)");
+      } else if (ev === "org:message") {
+        triggerEdgeAnimation((d as any).from_node, (d as any).to_node, "#a78bfa");
+      } else if (ev === "org:blackboard_update") {
+        bbPanelRef.current?.refresh();
+      } else if (ev === "org:status_change") {
+        const newStatus = (d as any).status as string;
+        setCurrentOrg((prev) => prev ? { ...prev, status: newStatus } : prev);
+        setOrgList((prev) => prev.map((o) => o.id === orgId ? { ...o, status: newStatus } : o));
+        if (newStatus === "active" || newStatus === "running") setLayoutLocked(true);
+        else if (newStatus === "dormant" || newStatus === "paused") setLayoutLocked(false);
+      } else if (ev === "org:task_complete") {
+        triggerEdgeAnimation((d as any).node_id, (d as any).node_id, "#22c55e");
+      } else if (ev === "org:quota_exhausted") {
+        showToast(`配额耗尽：${(d as any).message || "LLM 调用次数已用完"}`, "error");
+      } else if (ev === "org:watchdog_recovery") {
+        showToast(`看门狗恢复：节点 ${(d as any).node_id} 已自动恢复`, "error");
+      } else if (ev === "org:broadcast") {
+        triggerEdgeAnimation((d as any).from_node, (d as any).from_node, "#a78bfa");
+      } else if (ev === "org:meeting_started" || ev === "org:meeting_completed") {
+        bbPanelRef.current?.refresh();
+      }
+    });
+  }, [visible, currentOrgId, setNodes, triggerEdgeAnimation, showToast, setLayoutLocked]);
 
   // ── Start/Stop org ──
   const handleStartOrg = useCallback(async () => {
@@ -2178,7 +2177,8 @@ export function OrgEditorView({
                 if (n.status !== "busy" && !n.current_task_title) continue;
                 const pp = n.plan_progress || {};
                 const pct = pp.total > 0 ? Math.round((pp.completed / pp.total) * 100) : -1;
-                const taskDesc = n.current_task_title || (n.current_task ? String(n.current_task) : "执行中…");
+                const rawTask = n.current_task_title || (n.current_task ? String(n.current_task) : "执行中…");
+                const taskDesc = humanizeTask(rawTask, nodes);
                 busyLines.push({ key: n.id, node: n.role_title || nodeLabel(n.id), text: taskDesc, pct });
               }
 
@@ -3140,7 +3140,7 @@ export function OrgEditorView({
                           )}
                           {nd.current_task && (
                             <span style={{ fontSize: 9, color: "#6b7280", maxWidth: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {nd.current_task}
+                              {stripMd(humanizeTask(nd.current_task, nodes))}
                             </span>
                           )}
                         </div>

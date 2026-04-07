@@ -218,6 +218,8 @@ export function OrgMonitorPanel({ orgId, nodeId, apiBaseUrl, nodes, mdModules, v
       }
     };
     fetchNodeTasks();
+    const interval = setInterval(fetchNodeTasks, 10000);
+    return () => clearInterval(interval);
   }, [nodeId, orgId, apiBaseUrl]);
 
   if (!selectedNode) return null;

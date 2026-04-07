@@ -252,14 +252,27 @@ class OrgRuntime:
 
         self._check_transition(org, OrgStatus.ACTIVE)
 
+        prev_status = org.status
         org.status = OrgStatus.ACTIVE
         org.updated_at = _now_iso()
         self._manager.update(org_id, {"status": org.status.value})
-        self._activate_org(org)
-        await self._recover_pending_tasks(org)
 
-        await self._heartbeat.start_for_org(org)
-        await self._scheduler.start_for_org(org)
+        try:
+            self._activate_org(org)
+            await self._recover_pending_tasks(org)
+            await self._heartbeat.start_for_org(org)
+            await self._scheduler.start_for_org(org)
+        except Exception:
+            logger.error("[OrgRuntime] start_org failed, rolling back", exc_info=True)
+            org.status = prev_status
+            self._manager.update(org_id, {"status": prev_status.value})
+            try:
+                await self._stop_org_services(org_id)
+                await self._cancel_org_tasks(org_id)
+                await self._deactivate_org(org_id)
+            except Exception:
+                logger.debug("[OrgRuntime] rollback cleanup error", exc_info=True)
+            raise
 
         policies = self.get_policies(org_id)
         if policies:
@@ -1213,6 +1226,8 @@ class OrgRuntime:
                 task_prompt = self._format_incoming_message(msg)
                 chain_id = msg.metadata.get("task_chain_id") or None
                 await self._activate_and_run(org, target_clone, task_prompt, chain_id=chain_id)
+                if messenger:
+                    messenger.mark_processed(msg.id)
                 return
 
             if node.auto_clone_enabled and pending >= node.auto_clone_threshold:
@@ -1223,6 +1238,8 @@ class OrgRuntime:
                     task_prompt = self._format_incoming_message(msg)
                     chain_id = msg.metadata.get("task_chain_id") or None
                     await self._activate_and_run(org, new_clone, task_prompt, chain_id=chain_id)
+                    if messenger:
+                        messenger.mark_processed(msg.id)
                     return
 
             logger.info(
@@ -1235,6 +1252,8 @@ class OrgRuntime:
         task_prompt = self._format_incoming_message(msg)
         chain_id = msg.metadata.get("task_chain_id") or ""
         await self._activate_and_run(org, node, task_prompt, chain_id=chain_id or None)
+        if messenger:
+            messenger.mark_processed(msg.id)
 
     def _try_route_to_clone(
         self, org: Organization, node: OrgNode, msg: OrgMessage, pending: int
@@ -1263,8 +1282,12 @@ class OrgRuntime:
 
     def _make_message_handler(self, org_id: str, node_id: str) -> Any:
         async def _handler(msg: OrgMessage, _nid=node_id, _oid=org_id):
+            task_key = f"{_nid}:{msg.id}"
             task = asyncio.create_task(self._on_node_message(_oid, _nid, msg))
-            self._running_tasks.setdefault(_oid, {})[f"{_nid}:{msg.id}"] = task
+            self._running_tasks.setdefault(_oid, {})[task_key] = task
+            task.add_done_callback(
+                lambda _t, _o=_oid, _k=task_key: self._running_tasks.get(_o, {}).pop(_k, None)
+            )
         return _handler
 
     def _register_clone_in_messenger(self, org_id: str, clone: OrgNode) -> None:
@@ -1425,10 +1448,7 @@ class OrgRuntime:
 
         messenger = self._messengers[org.id]
         for node in org.nodes:
-            async def _handler(msg: OrgMessage, _nid=node.id, _oid=org.id):
-                task = asyncio.create_task(self._on_node_message(_oid, _nid, msg))
-                self._running_tasks.setdefault(_oid, {})[f"{_nid}:{msg.id}"] = task
-            messenger.register_handler(node.id, _handler)
+            messenger.register_handler(node.id, self._make_message_handler(org.id, node.id))
 
         async def _on_deadlock(cycles: list[list[str]], _oid=org.id) -> None:
             es = self.get_event_store(_oid)
@@ -1964,7 +1984,7 @@ class OrgRuntime:
             from openakita.api.routes.websocket import broadcast_event
             await broadcast_event(event, data)
         except Exception:
-            pass
+            logger.debug("[OrgRuntime] _broadcast_ws failed: %s %s", event, data, exc_info=True)
 
     # ------------------------------------------------------------------
     # Tool call integration

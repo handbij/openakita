@@ -841,49 +841,87 @@ export function OrgEditorView({
     if (!visible || !liveMode || !currentOrg) return;
     const wsUrl = apiBaseUrl.replace(/^http/, "ws") + "/ws";
     let ws: WebSocket | null = null;
-    try {
-      ws = new WebSocket(wsUrl);
-      ws.onmessage = (evt) => {
-        try {
-          const parsed = JSON.parse(evt.data);
-          const ev = parsed.event as string;
-          const d = parsed.data;
-          if (!d || d.org_id !== currentOrg.id) return;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryDelay = 1000;
+    let disposed = false;
 
-          if (currentOrg.status !== "active" && currentOrg.status !== "running") {
-            setCurrentOrg((prev) => prev ? { ...prev, status: "active" } : prev);
-            setOrgList((prev) => prev.map((o) => o.id === currentOrg.id ? { ...o, status: "active" } : o));
-          }
+    const onMessage = (evt: MessageEvent) => {
+      try {
+        const parsed = JSON.parse(evt.data);
+        const ev = parsed.event as string;
+        const d = parsed.data;
+        if (!d || d.org_id !== currentOrg.id) return;
 
-          if (ev === "org:node_status") {
-            const { node_id, status, current_task } = d;
-            setNodes((prev) =>
-              prev.map((n) =>
-                n.id === node_id
-                  ? { ...n, data: { ...n.data, status, current_task: current_task || n.data.current_task } }
-                  : n,
-              ),
-            );
-          } else if (ev === "org:task_delegated") {
-            triggerEdgeAnimation(d.from_node, d.to_node, "var(--primary)");
-          } else if (ev === "org:task_delivered") {
-            triggerEdgeAnimation(d.from_node, d.to_node, "var(--ok)");
-          } else if (ev === "org:task_accepted") {
-            triggerEdgeAnimation(d.accepted_by, d.from_node, "#22c55e");
-          } else if (ev === "org:task_rejected") {
-            triggerEdgeAnimation(d.rejected_by, d.from_node, "var(--danger)");
-          } else if (ev === "org:escalation") {
-            triggerEdgeAnimation(d.from_node, d.to_node, "var(--danger)");
-          } else if (ev === "org:message") {
-            triggerEdgeAnimation(d.from_node, d.to_node, "#a78bfa");
-          } else if (ev === "org:blackboard_update") {
-            bbPanelRef.current?.refresh();
+        if (ev !== "org:status_change" && currentOrg.status !== "active" && currentOrg.status !== "running") {
+          setCurrentOrg((prev) => prev ? { ...prev, status: "active" } : prev);
+          setOrgList((prev) => prev.map((o) => o.id === currentOrg.id ? { ...o, status: "active" } : o));
+        }
+
+        if (ev === "org:node_status") {
+          const { node_id, status, current_task } = d;
+          setNodes((prev) =>
+            prev.map((n) =>
+              n.id === node_id
+                ? { ...n, data: { ...n.data, status, current_task: current_task || n.data.current_task } }
+                : n,
+            ),
+          );
+        } else if (ev === "org:task_delegated") {
+          triggerEdgeAnimation(d.from_node, d.to_node, "var(--primary)");
+        } else if (ev === "org:task_delivered") {
+          triggerEdgeAnimation(d.from_node, d.to_node, "var(--ok)");
+        } else if (ev === "org:task_accepted") {
+          triggerEdgeAnimation(d.accepted_by, d.from_node, "#22c55e");
+        } else if (ev === "org:task_rejected") {
+          triggerEdgeAnimation(d.rejected_by, d.from_node, "var(--danger)");
+        } else if (ev === "org:escalation") {
+          triggerEdgeAnimation(d.from_node, d.to_node, "var(--danger)");
+        } else if (ev === "org:message") {
+          triggerEdgeAnimation(d.from_node, d.to_node, "#a78bfa");
+        } else if (ev === "org:blackboard_update") {
+          bbPanelRef.current?.refresh();
+        } else if (ev === "org:status_change") {
+          const newStatus = d.status;
+          setCurrentOrg((prev) => prev ? { ...prev, status: newStatus } : prev);
+          setOrgList((prev) => prev.map((o) => o.id === currentOrg.id ? { ...o, status: newStatus } : o));
+          if (newStatus === "dormant") setLayoutLocked(false);
+        } else if (ev === "org:task_complete") {
+          triggerEdgeAnimation(d.node_id, d.node_id, "#22c55e");
+        } else if (ev === "org:quota_exhausted") {
+          showToast(`配额耗尽：${d.message || "LLM 调用次数已用完"}`, "error");
+        } else if (ev === "org:watchdog_recovery") {
+          showToast(`看门狗恢复：节点 ${d.node_id} 已自动恢复`, "error");
+        } else if (ev === "org:broadcast") {
+          triggerEdgeAnimation(d.from_node, d.from_node, "#a78bfa");
+        } else if (ev === "org:meeting_started" || ev === "org:meeting_completed") {
+          bbPanelRef.current?.refresh();
+        }
+      } catch { /* ignore parse errors */ }
+    };
+
+    const connect = () => {
+      if (disposed) return;
+      try {
+        ws = new WebSocket(wsUrl);
+        ws.onopen = () => { retryDelay = 1000; };
+        ws.onmessage = onMessage;
+        ws.onclose = () => {
+          if (!disposed) {
+            retryTimer = setTimeout(connect, retryDelay);
+            retryDelay = Math.min(retryDelay * 2, 30000);
           }
-        } catch { /* ignore parse errors */ }
-      };
-    } catch { /* WebSocket not available */ }
-    return () => { ws?.close(); };
-  }, [visible, liveMode, currentOrg, apiBaseUrl, setNodes, triggerEdgeAnimation]);
+        };
+        ws.onerror = () => { ws?.close(); };
+      } catch { /* WebSocket not available */ }
+    };
+    connect();
+
+    return () => {
+      disposed = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      ws?.close();
+    };
+  }, [visible, liveMode, currentOrg, apiBaseUrl, setNodes, triggerEdgeAnimation, showToast, setLayoutLocked]);
 
   // ── Start/Stop org ──
   const handleStartOrg = useCallback(async () => {
@@ -900,7 +938,10 @@ export function OrgEditorView({
           : "组织已启动（命令模式）——可通过聊天或命令面板下达任务",
         "ok",
       );
-    } catch (e) { console.error("Failed to start org:", e); }
+    } catch (e: any) {
+      console.error("Failed to start org:", e);
+      showToast(`启动失败：${e?.message || e}`, "error");
+    }
   }, [currentOrg, apiBaseUrl, showToast]);
 
   const handleStopOrg = useCallback(async () => {
@@ -910,8 +951,11 @@ export function OrgEditorView({
       setCurrentOrg({ ...currentOrg, status: "dormant" });
       setOrgList((prev) => prev.map((o) => o.id === currentOrg.id ? { ...o, status: "dormant" } : o));
       setLayoutLocked(false);
-    } catch (e) { console.error("Failed to stop org:", e); }
-  }, [currentOrg, apiBaseUrl]);
+    } catch (e: any) {
+      console.error("Failed to stop org:", e);
+      showToast(`停止失败：${e?.message || e}`, "error");
+    }
+  }, [currentOrg, apiBaseUrl, showToast]);
 
   // ── Org export/import ──
   const orgImportRef = useRef<HTMLInputElement>(null);

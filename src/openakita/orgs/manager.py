@@ -34,6 +34,8 @@ class OrgManager:
         self._orgs_dir.mkdir(parents=True, exist_ok=True)
         self._templates_dir.mkdir(parents=True, exist_ok=True)
         self._cache: dict[str, Organization] = {}
+        import threading
+        self._write_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Directory helpers
@@ -364,10 +366,12 @@ class OrgManager:
     def _save(self, org: Organization) -> None:
         p = self._org_json(org.id)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(
-            json.dumps(org.to_dict(), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        tmp = p.with_suffix(".tmp")
+        payload = json.dumps(org.to_dict(), ensure_ascii=False, indent=2)
+        import os
+        with self._write_lock:
+            tmp.write_text(payload, encoding="utf-8")
+            os.replace(str(tmp), str(p))
         self._cache[org.id] = org
 
     def _init_dirs(self, org: Organization) -> None:

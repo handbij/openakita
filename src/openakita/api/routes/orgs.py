@@ -1665,17 +1665,18 @@ async def get_org_stats(request: Request, org_id: str):
         try:
             entries = bb.read_org(limit=5)
             for e in entries:
-                recent_bb.append(
-                    {
-                        "content": (e.content[:_LIM_API] + "…") if len(e.content) > _LIM_API else e.content,
-                        "source_node": e.source_node,
-                        "memory_type": e.memory_type.value
-                        if hasattr(e.memory_type, "value")
-                        else str(e.memory_type),
-                        "timestamp": e.created_at,
-                        "tags": e.tags[:3],
-                    }
-                )
+                item: dict = {
+                    "content": (e.content[:_LIM_API] + "…") if len(e.content) > _LIM_API else e.content,
+                    "source_node": e.source_node,
+                    "memory_type": e.memory_type.value
+                    if hasattr(e.memory_type, "value")
+                    else str(e.memory_type),
+                    "timestamp": e.created_at,
+                    "tags": e.tags[:3],
+                }
+                if e.attachments:
+                    item["attachments"] = e.attachments
+                recent_bb.append(item)
         except Exception:
             pass
 

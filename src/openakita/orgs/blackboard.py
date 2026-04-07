@@ -81,6 +81,7 @@ class OrgBlackboard:
         tags: list[str] | None = None,
         importance: float = 0.5,
         source_message_id: str | None = None,
+        attachments: list[dict] | None = None,
     ) -> OrgMemoryEntry | None:
         bb_path = self._memory_dir / "blackboard.jsonl"
         if self._is_duplicate(bb_path, content):
@@ -97,6 +98,7 @@ class OrgBlackboard:
             source_message_id=source_message_id,
             tags=tags or [],
             importance=importance,
+            attachments=attachments or [],
         )
         self._append(bb_path, entry, MAX_ORG_MEMORIES)
         logger.info(

@@ -4,8 +4,27 @@
  */
 import { useState, useEffect, useCallback, useImperativeHandle, forwardRef, type ComponentType } from "react";
 import { safeFetch } from "../providers";
+import { downloadFile } from "../platform";
 import type { Node } from "@xyflow/react";
 import { fmtShortDate, BB_TYPE_COLORS, BB_TYPE_LABELS } from "../views/orgEditorConstants";
+
+function fmtFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const FILE_ICON_MAP: Record<string, string> = {
+  md: "📄", txt: "📄", csv: "📊", json: "📋",
+  py: "🐍", js: "📜", ts: "📜", html: "🌐",
+  png: "🖼️", jpg: "🖼️", jpeg: "🖼️", gif: "🖼️", webp: "🖼️", svg: "🎨",
+  pdf: "📑", xlsx: "📊", docx: "📝", zip: "📦",
+};
+
+function getFileIcon(filename: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase() || "";
+  return FILE_ICON_MAP[ext] || "📎";
+}
 
 type MdModules = {
   ReactMarkdown: ComponentType<{ children: string; remarkPlugins?: any[] }>;
@@ -168,6 +187,47 @@ export const OrgBlackboardPanel = forwardRef<OrgBlackboardPanelHandle, OrgBlackb
                         <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit" }}>{entry.content}</pre>
                       )}
                     </div>
+                    {Array.isArray(entry.attachments) && entry.attachments.length > 0 && (
+                      <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                        {entry.attachments.map((att: any, idx: number) => (
+                          <button
+                            key={att.path || idx}
+                            className="btnSmall"
+                            style={{
+                              display: "flex", alignItems: "center", gap: 6,
+                              padding: "6px 10px", borderRadius: 5,
+                              background: "rgba(8,145,178,0.08)",
+                              border: "1px solid rgba(8,145,178,0.2)",
+                              cursor: "pointer", width: "100%",
+                              textAlign: "left", fontSize: 12,
+                              transition: "background 0.15s",
+                            }}
+                            title={`下载 ${att.filename}`}
+                            onMouseEnter={e => { e.currentTarget.style.background = "rgba(8,145,178,0.16)"; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = "rgba(8,145,178,0.08)"; }}
+                            onClick={() => {
+                              const url = `${apiBaseUrl}/api/files?path=${encodeURIComponent(att.path)}`;
+                              void downloadFile(url, att.filename);
+                            }}
+                          >
+                            <span style={{ fontSize: 16, lineHeight: 1, flexShrink: 0 }}>
+                              {getFileIcon(att.filename)}
+                            </span>
+                            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>
+                              {att.filename}
+                            </span>
+                            {att.size_bytes != null && (
+                              <span style={{ fontSize: 11, color: "var(--muted)", flexShrink: 0 }}>
+                                {fmtFileSize(att.size_bytes)}
+                              </span>
+                            )}
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: "#0891b2" }}>
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {Array.isArray(entry.tags) && entry.tags.length > 0 && (
                       <div style={{ marginTop: 4, display: "flex", gap: 3, flexWrap: "wrap" }}>
                         {entry.tags.map((t: string) => (

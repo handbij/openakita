@@ -20,6 +20,7 @@ from .event_store import OrgEventStore
 from .identity import OrgIdentity
 from .messenger import OrgMessenger
 from .models import (
+    MemoryType,
     MsgType,
     NodeStatus,
     OrgMessage,
@@ -1975,6 +1976,108 @@ class OrgRuntime:
                     tool_handler._bridge_plan_to_task(
                         org_id, node_id, tool_name, tool_input, result, chain_id=chain_id
                     )
+            if tool_name in ("write_file", "generate_image"):
+                try:
+                    self._record_file_output(
+                        org_id, node_id, tool_name, tool_input, result,
+                    )
+                except Exception:
+                    logger.debug(
+                        "[OrgRuntime] failed to record file output", exc_info=True,
+                    )
             return result
 
         executor.execute_tool = _patched_execute
+
+    # ------------------------------------------------------------------
+    # File output tracking → blackboard
+    # ------------------------------------------------------------------
+
+    _FILE_EXT_LABELS: dict[str, str] = {
+        ".md": "Markdown 文档",
+        ".txt": "文本文件",
+        ".csv": "CSV 数据",
+        ".json": "JSON 数据",
+        ".py": "Python 脚本",
+        ".js": "JavaScript 脚本",
+        ".html": "HTML 页面",
+        ".pdf": "PDF 文档",
+        ".png": "PNG 图片",
+        ".jpg": "JPEG 图片",
+        ".jpeg": "JPEG 图片",
+        ".gif": "GIF 图片",
+        ".webp": "WebP 图片",
+        ".svg": "SVG 图形",
+        ".xlsx": "Excel 表格",
+        ".docx": "Word 文档",
+        ".zip": "压缩包",
+    }
+
+    def _record_file_output(
+        self,
+        org_id: str,
+        node_id: str,
+        tool_name: str,
+        tool_input: dict,
+        result: str,
+    ) -> None:
+        """After write_file / generate_image succeeds, write a RESOURCE
+        entry to the org blackboard so users can see and download files."""
+        import json as _json
+
+        file_path: str | None = None
+
+        if tool_name == "write_file":
+            if "❌" in result:
+                return
+            file_path = tool_input.get("path", "")
+        elif tool_name == "generate_image":
+            try:
+                data = _json.loads(result)
+                if not data.get("ok"):
+                    return
+                file_path = data.get("saved_to", "")
+            except Exception:
+                return
+
+        if not file_path:
+            return
+
+        p = Path(file_path)
+        if not p.is_absolute():
+            p = (Path.cwd() / p).resolve()
+        else:
+            p = p.resolve()
+
+        if not p.exists() or not p.is_file():
+            return
+
+        size_bytes = p.stat().st_size
+        filename = p.name
+        ext = p.suffix.lower()
+        ext_label = self._FILE_EXT_LABELS.get(ext, "文件")
+
+        attachment = {
+            "filename": filename,
+            "path": str(p),
+            "size_bytes": size_bytes,
+        }
+
+        bb = self.get_blackboard(org_id)
+        if not bb:
+            return
+
+        entry = bb.write_org(
+            content=f"📎 产出{ext_label}：**{filename}**",
+            source_node=node_id,
+            memory_type=MemoryType.RESOURCE,
+            tags=["file_output", ext.lstrip(".")],
+            importance=0.6,
+            attachments=[attachment],
+        )
+
+        if entry:
+            asyncio.ensure_future(self._broadcast_ws("org:blackboard_update", {
+                "org_id": org_id, "scope": "org", "node_id": node_id,
+                "memory_type": "resource",
+            }))

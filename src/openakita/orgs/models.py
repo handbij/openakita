@@ -581,6 +581,7 @@ class OrgMemoryEntry:
     source_node: str = ""
     source_message_id: str | None = None
     tags: list[str] = field(default_factory=list)
+    attachments: list[dict] = field(default_factory=list)
     importance: float = 0.5
     ttl_hours: int | None = None
     created_at: str = field(default_factory=_now_iso)
@@ -601,7 +602,7 @@ class OrgMemoryEntry:
                 self.ttl_hours = None
 
     def to_dict(self) -> dict:
-        return {
+        d: dict = {
             "id": self.id,
             "org_id": self.org_id,
             "scope": self.scope.value,
@@ -617,6 +618,9 @@ class OrgMemoryEntry:
             "last_accessed_at": self.last_accessed_at,
             "access_count": self.access_count,
         }
+        if self.attachments:
+            d["attachments"] = self.attachments
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> OrgMemoryEntry:

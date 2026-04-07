@@ -55,7 +55,7 @@ import {
   IconMessageCircle,
 } from "../icons";
 import { safeFetch } from "../providers";
-import { IS_CAPACITOR, saveFileDialog, IS_TAURI, writeTextFile } from "../platform";
+import { IS_CAPACITOR, saveFileDialog, IS_TAURI, writeTextFile, downloadFile } from "../platform";
 import { OrgInboxSidebar } from "../components/OrgInboxSidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { OrgAvatar, AVATAR_PRESETS, AVATAR_MAP } from "../components/OrgAvatars";
@@ -3139,6 +3139,32 @@ export function OrgEditorView({
                                 <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit" }}>{bb.content}</pre>
                               )}
                             </div>
+                            {Array.isArray(bb.attachments) && bb.attachments.length > 0 && (
+                              <div style={{ marginTop: 3, display: "flex", flexDirection: "column", gap: 2 }}>
+                                {bb.attachments.map((att: any, ai: number) => (
+                                  <button
+                                    key={att.path || ai}
+                                    className="btnSmall"
+                                    style={{
+                                      display: "inline-flex", alignItems: "center", gap: 4,
+                                      padding: "2px 8px", borderRadius: 4, fontSize: 11,
+                                      background: "rgba(8,145,178,0.08)",
+                                      border: "1px solid rgba(8,145,178,0.2)",
+                                      color: "#0891b2", cursor: "pointer",
+                                    }}
+                                    onClick={() => {
+                                      const url = `${apiBaseUrl}/api/files?path=${encodeURIComponent(att.path)}`;
+                                      void downloadFile(url, att.filename);
+                                    }}
+                                  >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                                    </svg>
+                                    {att.filename}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                             {Array.isArray(bb.tags) && bb.tags.length > 0 && (
                               <div style={{ display: "flex", gap: 3, marginTop: 3, flexWrap: "wrap" }}>
                                 {bb.tags.map((t: string) => (

@@ -288,6 +288,7 @@ export const BB_TYPE_COLORS: Record<string, string> = {
   lesson: "#10b981",
   progress: "#8b5cf6",
   todo: "#ef4444",
+  resource: "#0891b2",
 };
 
 /** Unified blackboard entry type labels — single source of truth. */
@@ -297,6 +298,7 @@ export const BB_TYPE_LABELS: Record<string, string> = {
   lesson: "经验",
   progress: "进展",
   todo: "待办",
+  resource: "产出",
 };
 
 export function translateDataValue(

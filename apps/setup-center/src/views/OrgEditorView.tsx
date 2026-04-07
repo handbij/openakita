@@ -162,6 +162,131 @@ const TASK_STATUS_LABELS: Record<string, string> = {
   blocked: "已阻塞",
 };
 
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  node_status_change: "节点状态变更",
+  llm_usage: "模型调用统计",
+  task_completed: "任务完成",
+  task_assigned: "任务分配",
+  task_delivered: "任务交付",
+  task_accepted: "任务验收",
+  task_rejected: "任务驳回",
+  task_failed: "任务失败",
+  node_activated: "节点激活",
+  node_deactivated: "节点停用",
+  node_dismissed: "节点解散",
+  node_frozen: "节点冻结",
+  node_unfrozen: "节点解冻",
+  org_started: "组织启动",
+  org_stopped: "组织停止",
+  org_paused: "组织暂停",
+  org_resumed: "组织恢复",
+  org_reset: "组织重置",
+  schedule_assigned: "定时任务分配",
+  schedule_completed: "定时任务完成",
+  schedule_triggered: "定时任务触发",
+  schedule_requested: "定时任务请求",
+  broadcast: "广播消息",
+  auto_clone_created: "自动创建副本",
+  clones_reclaimed: "副本回收",
+  auto_kickoff: "自动启动",
+  scaling_requested: "扩容请求",
+  scaling_approved: "扩容批准",
+  scaling_rejected: "扩容拒绝",
+  tools_granted: "工具授权",
+  tools_requested: "工具请求",
+  tools_revoked: "工具撤销",
+  user_command: "用户指令",
+  watchdog_recovery: "看门狗恢复",
+  heartbeat_triggered: "心跳触发",
+  heartbeat_decision: "心跳决策",
+  standup_started: "站会开始",
+  standup_completed: "站会结束",
+  meeting_completed: "会议结束",
+  conflict_detected: "冲突检测",
+  policy_proposed: "策略提议",
+  approval_resolved: "审批完成",
+  tool_call_start: "工具调用",
+  tool_call_end: "工具调用完成",
+  plan_created: "计划创建",
+  plan_completed: "计划完成",
+  plan_cancelled: "计划取消",
+  plan_step_updated: "计划步骤更新",
+  iteration_start: "迭代开始",
+  agent_handoff: "Agent 切换",
+  ask_user: "询问用户",
+  done: "完成",
+  error: "错误",
+};
+
+const MSG_TYPE_LABELS: Record<string, string> = {
+  task_assign: "任务分配",
+  task_result: "任务结果",
+  task_delivered: "任务交付",
+  task_accepted: "任务验收",
+  task_rejected: "任务驳回",
+  report: "工作汇报",
+  question: "提问",
+  answer: "回答",
+  escalate: "上报",
+  escalation: "上报",
+  broadcast: "广播",
+  dept_broadcast: "部门广播",
+  feedback: "反馈",
+  handshake: "握手",
+  deliverable: "交付物",
+};
+
+const DATA_KEY_LABELS: Record<string, string> = {
+  from: "来源",
+  to: "目标",
+  reason: "原因",
+  node_id: "节点",
+  calls: "调用次数",
+  tokens_in: "输入 token",
+  tokens_out: "输出 token",
+  model: "模型",
+  result_preview: "结果预览",
+  deliverable_preview: "交付物预览",
+  error: "错误",
+  content: "内容",
+  task: "任务",
+  title: "标题",
+  role: "角色",
+  name: "名称",
+  tools: "工具",
+  source: "来源",
+  target: "目标",
+  scope: "范围",
+  prompt: "提示词",
+  schedule_id: "定时任务 ID",
+  chain_id: "链路 ID",
+  clone_id: "副本 ID",
+  approval_id: "审批 ID",
+  request_id: "请求 ID",
+  new_node_id: "新节点 ID",
+  superior: "上级",
+  participants: "参与者",
+  pending_count: "待处理数",
+  node_count: "节点数",
+  rounds: "轮次",
+  cycle: "周期",
+  decision: "决策",
+  stuck_secs: "阻塞时长(秒)",
+  threshold: "阈值",
+  dismissed: "已解散",
+  type: "类型",
+  topic: "议题",
+  filename: "文件名",
+  core_business_len: "核心业务数",
+  tool: "工具",
+  args: "参数",
+  result: "结果",
+  duration_ms: "耗时(ms)",
+  status: "状态",
+  question: "问题",
+  message: "消息",
+};
+
 function NodeTasksTabContent({
   nodeTasks,
   nodeActivePlan,
@@ -3406,7 +3531,7 @@ export function OrgEditorView({
                       {nodeEvents.slice(0, 15).map((evt: any, i: number) => {
                         const dataEntries = Object.entries(evt.data || {});
                         const isEvtExpanded = expandedThinkingIdx === `evt-${i}`;
-                        const fullText = dataEntries.map(([k, v]) => `**${k}**: ${String(v)}`).join("\n\n");
+                        const fullText = dataEntries.map(([k, v]) => `**${DATA_KEY_LABELS[k] || k}**: ${String(v)}`).join("\n\n");
                         return (
                           <div key={evt.event_id || i}
                             onClick={() => setExpandedThinkingIdx(isEvtExpanded ? null : `evt-${i}`)}
@@ -3426,7 +3551,7 @@ export function OrgEditorView({
                                   : "var(--primary)",
                               }} />
                               <span style={{ fontWeight: 500 }}>
-                                {evt.event_type?.replace(/_/g, " ")}
+                                {EVENT_TYPE_LABELS[evt.event_type] || evt.event_type?.replace(/_/g, " ")}
                               </span>
                               <span style={{ color: "var(--muted)", fontSize: 10, marginLeft: "auto" }}>
                                 {fmtTime(evt.timestamp)}
@@ -3507,7 +3632,7 @@ export function OrgEditorView({
                                     background: `${msgTypeColors[item.msg_type] || "#6b7280"}18`,
                                     color: msgTypeColors[item.msg_type] || "#6b7280",
                                   }}>
-                                    {item.msg_type.replace(/_/g, " ")}
+                                    {MSG_TYPE_LABELS[item.msg_type] || item.msg_type.replace(/_/g, " ")}
                                   </span>
                                 )}
                                 <span style={{ color: "var(--muted)", fontSize: 10, marginLeft: "auto" }}>
@@ -3565,7 +3690,7 @@ export function OrgEditorView({
                                   fontWeight: 500, fontSize: 10,
                                   color: isToolCall ? "#7c3aed" : undefined,
                                 }}>
-                                  {isToolCall ? "⚙ " : ""}{evtType.replace(/_/g, " ")}
+                                  {isToolCall ? "⚙ " : ""}{EVENT_TYPE_LABELS[evtType] || evtType.replace(/_/g, " ")}
                                 </span>
                                 <span style={{ color: "var(--muted)", fontSize: 10, marginLeft: "auto" }}>
                                   {tsLocal}
@@ -3573,7 +3698,7 @@ export function OrgEditorView({
                               </div>
                               {item.data && Object.keys(item.data).length > 0 && (() => {
                                 const entries = Object.entries(item.data).slice(0, isExpanded ? 20 : 3);
-                                const mdText = entries.map(([k, v]) => `**${k}**: ${isExpanded ? String(v) : String(v).slice(0, 120)}`).join("\n\n");
+                                const mdText = entries.map(([k, v]) => `**${DATA_KEY_LABELS[k] || k}**: ${isExpanded ? String(v) : String(v).slice(0, 120)}`).join("\n\n");
                                 return (
                                   <div className="bb-entry-content" style={{ fontSize: 10, marginTop: 2, marginLeft: 12 }}>
                                     {mdModules ? (

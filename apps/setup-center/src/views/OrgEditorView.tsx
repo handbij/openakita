@@ -3517,25 +3517,6 @@ export function OrgEditorView({
                   />
                 )}
 
-                {/* Chat entry */}
-                {selectedOrgId && (
-                  <button
-                    onClick={() => { setChatPanelNode(selectedNodeId); setActiveDrawer("chat"); }}
-                    style={{
-                      width: "100%", padding: "10px 12px", fontSize: 12, fontWeight: 500,
-                      border: "1px solid var(--line)", borderRadius: 8,
-                      background: "linear-gradient(135deg, rgba(59,130,246,0.08), rgba(99,102,241,0.08))",
-                      color: "var(--primary)", cursor: "pointer",
-                      display: "flex", alignItems: "center", gap: 8,
-                    }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                    </svg>
-                    与该节点对话
-                  </button>
-                )}
-
                 {/* Schedules */}
                 {nodeSchedules.length > 0 && (
                   <div className="card" style={{ padding: 10 }}>
@@ -3790,6 +3771,35 @@ export function OrgEditorView({
                   )}
                 </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* ── Chat Panel (liveMode, desktop only) ── */}
+      {liveMode && selectedNode && showRightPanel && !isMobile && selectedOrgId && (
+        <div
+          style={{
+            width: 300, flexShrink: 0,
+            borderLeft: "1px solid var(--line)",
+            background: "var(--bg-app)",
+            display: "flex", flexDirection: "column",
+          }}
+        >
+          <div style={{
+            padding: "12px 12px 8px", borderBottom: "1px solid var(--line)",
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+          }}>
+            <div style={{ fontWeight: 600, fontSize: 13 }}>
+              对话 · {selectedNode.role_title}
+            </div>
+          </div>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <OrgChatPanel
+              orgId={selectedOrgId}
+              nodeId={selectedNodeId}
+              apiBaseUrl={apiBaseUrl}
+              compact
+            />
           </div>
         </div>
       )}

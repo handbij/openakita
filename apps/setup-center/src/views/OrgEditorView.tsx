@@ -3517,16 +3517,23 @@ export function OrgEditorView({
                   />
                 )}
 
-                {/* Chat */}
+                {/* Chat entry */}
                 {selectedOrgId && (
-                  <div style={{ height: 360 }}>
-                    <OrgChatPanel
-                      orgId={selectedOrgId}
-                      nodeId={selectedNodeId}
-                      apiBaseUrl={apiBaseUrl}
-                      compact
-                    />
-                  </div>
+                  <button
+                    onClick={() => { setChatPanelNode(selectedNodeId); setActiveDrawer("chat"); }}
+                    style={{
+                      width: "100%", padding: "10px 12px", fontSize: 12, fontWeight: 500,
+                      border: "1px solid var(--line)", borderRadius: 8,
+                      background: "linear-gradient(135deg, rgba(59,130,246,0.08), rgba(99,102,241,0.08))",
+                      color: "var(--primary)", cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 8,
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    与该节点对话
+                  </button>
                 )}
 
                 {/* Schedules */}

@@ -101,7 +101,7 @@ export async function openExternalUrl(url: string): Promise<void> {
 
 /**
  * Download a URL to a file.
- * - Tauri (Win/Mac/Linux): Native HTTP GET → save to user Downloads → returns path.
+ * - Tauri (Win/Mac/Linux): Native HTTP GET → save to user Downloads (or destPath) → returns path.
  * - Web: Programmatic <a download> click; backend must send Content-Disposition: attachment
  *   so the browser triggers download (works same-origin or cross-origin).
  * Returns: saved path (Tauri) or filename (Web).
@@ -109,10 +109,11 @@ export async function openExternalUrl(url: string): Promise<void> {
 export async function downloadFile(
   url: string,
   filename: string,
+  destPath?: string,
 ): Promise<string> {
   if (IS_TAURI) {
     const { invoke: tauriInvoke } = await import("@tauri-apps/api/core");
-    return tauriInvoke<string>("download_file", { url, filename });
+    return tauriInvoke<string>("download_file", { url, filename, destPath });
   }
   const a = document.createElement("a");
   a.href = url;
@@ -130,6 +131,41 @@ export async function showInFolder(path: string): Promise<void> {
   if (!IS_TAURI) return;
   const { invoke: tauriInvoke } = await import("@tauri-apps/api/core");
   await tauriInvoke("show_item_in_folder", { path });
+}
+
+/**
+ * "Save As" — download/copy a file to a user-chosen location.
+ * - Tauri: native Save dialog → Rust reqwest download to chosen path (binary-safe,
+ *   proxy-safe, works for both local and remote backends uniformly)
+ * - Web / Capacitor: fetch blob → `<a download>` (browser handles save location)
+ * Returns the destination path / filename, or null if user cancelled (Tauri).
+ */
+export async function saveAttachment(options: {
+  apiUrl: string;
+  filename: string;
+}): Promise<string | null> {
+  const { apiUrl, filename } = options;
+
+  if (IS_TAURI) {
+    const dest = await saveFileDialog({ title: "保存文件", defaultPath: filename });
+    if (!dest) return null;
+    await downloadFile(apiUrl, filename, dest);
+    return dest;
+  }
+
+  // Web / Capacitor: fetch blob → browser download
+  const resp = await fetch(apiUrl);
+  if (!resp.ok) throw new Error(`Download failed: HTTP ${resp.status}`);
+  const blob = await resp.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000);
+  return filename;
 }
 
 /** Open a file with the OS default application. No-op on web. */

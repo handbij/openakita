@@ -55,7 +55,7 @@ import {
   IconMessageCircle,
 } from "../icons";
 import { safeFetch } from "../providers";
-import { IS_CAPACITOR, saveFileDialog, IS_TAURI, writeTextFile, downloadFile, openFileDialog, onWsEvent } from "../platform";
+import { IS_CAPACITOR, saveFileDialog, IS_TAURI, writeTextFile, openFileDialog, onWsEvent, saveAttachment } from "../platform";
 import { OrgInboxSidebar } from "../components/OrgInboxSidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { OrgAvatar, AVATAR_PRESETS, AVATAR_MAP } from "../components/OrgAvatars";
@@ -3194,9 +3194,15 @@ export function OrgEditorView({
                                       border: "1px solid rgba(8,145,178,0.2)",
                                       color: "#0891b2", cursor: "pointer",
                                     }}
-                                    onClick={() => {
-                                      const url = `${apiBaseUrl}/api/files?path=${encodeURIComponent(att.path)}`;
-                                      void downloadFile(url, att.filename);
+                                    onClick={async () => {
+                                      try {
+                                        await saveAttachment({
+                                          apiUrl: `${apiBaseUrl}/api/files?path=${encodeURIComponent(att.path)}`,
+                                          filename: att.filename,
+                                        });
+                                      } catch (e) {
+                                        console.error("File save failed:", e);
+                                      }
                                     }}
                                   >
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

@@ -5768,34 +5768,44 @@ async fn read_file_base64(path: String) -> Result<String, String> {
     Ok(format!("data:{};base64,{}", mime, b64))
 }
 
-/// Download a file from a URL and save it to the user's Downloads folder.
+/// Download a file from a URL and save it.
+/// If `dest_path` is provided, saves directly to that path (for "Save As" workflows).
+/// Otherwise falls back to the user's Downloads folder with dedup naming.
 /// Returns the saved file path on success.
 #[tauri::command]
-async fn download_file(url: String, filename: String) -> Result<String, String> {
-    // Determine downloads directory
-    let downloads_dir = dirs_next::download_dir()
-        .or_else(|| dirs_next::home_dir().map(|h| h.join("Downloads")))
-        .ok_or_else(|| "Cannot determine Downloads directory".to_string())?;
-    std::fs::create_dir_all(&downloads_dir)
-        .map_err(|e| format!("Cannot create Downloads dir: {e}"))?;
+async fn download_file(url: String, filename: String, dest_path: Option<String>) -> Result<String, String> {
+    let dest = if let Some(dp) = dest_path {
+        let p = PathBuf::from(&dp);
+        if let Some(parent) = p.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Cannot create parent directory: {e}"))?;
+        }
+        p
+    } else {
+        let downloads_dir = dirs_next::download_dir()
+            .or_else(|| dirs_next::home_dir().map(|h| h.join("Downloads")))
+            .ok_or_else(|| "Cannot determine Downloads directory".to_string())?;
+        std::fs::create_dir_all(&downloads_dir)
+            .map_err(|e| format!("Cannot create Downloads dir: {e}"))?;
 
-    // Avoid overwriting: if file exists, append (1), (2), etc.
-    let stem = std::path::Path::new(&filename)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("download")
-        .to_string();
-    let ext = std::path::Path::new(&filename)
-        .extension()
-        .and_then(|s| s.to_str())
-        .map(|s| format!(".{s}"))
-        .unwrap_or_default();
-    let mut dest = downloads_dir.join(&filename);
-    let mut counter = 1u32;
-    while dest.exists() {
-        dest = downloads_dir.join(format!("{stem} ({counter}){ext}"));
-        counter += 1;
-    }
+        let stem = std::path::Path::new(&filename)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("download")
+            .to_string();
+        let ext = std::path::Path::new(&filename)
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| format!(".{s}"))
+            .unwrap_or_default();
+        let mut d = downloads_dir.join(&filename);
+        let mut counter = 1u32;
+        while d.exists() {
+            d = downloads_dir.join(format!("{stem} ({counter}){ext}"));
+            counter += 1;
+        }
+        d
+    };
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))

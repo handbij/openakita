@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useCallback, useImperativeHandle, forwardRef, type ComponentType } from "react";
 import { safeFetch } from "../providers";
-import { downloadFile } from "../platform";
+import { saveAttachment } from "../platform";
 import type { Node } from "@xyflow/react";
 import { fmtShortDate, BB_TYPE_COLORS, BB_TYPE_LABELS } from "../views/orgEditorConstants";
 
@@ -202,12 +202,18 @@ export const OrgBlackboardPanel = forwardRef<OrgBlackboardPanelHandle, OrgBlackb
                               textAlign: "left", fontSize: 12,
                               transition: "background 0.15s",
                             }}
-                            title={`下载 ${att.filename}`}
+                            title={`另存为：${att.filename}`}
                             onMouseEnter={e => { e.currentTarget.style.background = "rgba(8,145,178,0.16)"; }}
                             onMouseLeave={e => { e.currentTarget.style.background = "rgba(8,145,178,0.08)"; }}
-                            onClick={() => {
-                              const url = `${apiBaseUrl}/api/files?path=${encodeURIComponent(att.path)}`;
-                              void downloadFile(url, att.filename);
+                            onClick={async () => {
+                              try {
+                                await saveAttachment({
+                                  apiUrl: `${apiBaseUrl}/api/files?path=${encodeURIComponent(att.path)}`,
+                                  filename: att.filename,
+                                });
+                              } catch (e) {
+                                console.error("File save failed:", e);
+                              }
                             }}
                           >
                             <span style={{ fontSize: 16, lineHeight: 1, flexShrink: 0 }}>

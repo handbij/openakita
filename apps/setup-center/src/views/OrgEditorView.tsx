@@ -1826,6 +1826,7 @@ export function OrgEditorView({
   const onPaneClick = useCallback(() => {
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
+    setShowRightPanel(false);
     setContextMenu(null);
   }, []);
 
@@ -2960,6 +2961,10 @@ export function OrgEditorView({
               display: flex; flex-direction: column; overflow: hidden;
             }
             @keyframes org-slide-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+            @keyframes org-panel-in {
+              from { opacity: 0; transform: translateX(40px); }
+              to { opacity: 1; transform: translateX(0); }
+            }
 
             .org-ctx-menu {
               min-width: 160px;
@@ -3485,6 +3490,7 @@ export function OrgEditorView({
             borderLeft: "1px solid var(--line)",
             background: "var(--bg-app)",
             display: "flex", flexDirection: "column",
+            animation: "org-panel-in 0.3s cubic-bezier(0.4,0,0.2,1)",
           }}
         >
           <div style={{
@@ -3514,6 +3520,7 @@ export function OrgEditorView({
             borderLeft: "1px solid var(--line)",
             overflowY: "auto", scrollbarGutter: "stable",
             background: "var(--bg-app)",
+            animation: "org-panel-in 0.3s cubic-bezier(0.4,0,0.2,1) 0.05s both",
           }}
         >
           <div style={{ padding: "12px 12px 8px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -3820,6 +3827,7 @@ export function OrgEditorView({
             zIndex: isMobile ? 50 : "auto",
             boxShadow: isMobile ? "-4px 0 12px rgba(0,0,0,0.15)" : "none",
             flexShrink: 0,
+            animation: isMobile ? undefined : "org-panel-in 0.3s cubic-bezier(0.4,0,0.2,1) 0.1s both",
           }}
         >
           <div style={{ padding: "12px 12px 8px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>

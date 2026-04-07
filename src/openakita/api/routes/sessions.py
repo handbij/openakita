@@ -45,6 +45,8 @@ async def list_sessions(request: Request, channel: str = "desktop"):
         return {"sessions": [], "data_epoch": wac.data_epoch if wac else "", "ready": False}
 
     sessions = session_manager.list_sessions(channel=channel)
+    # org_* sessions belong to OrgChatPanel (指挥台), not the main chat UI
+    sessions = [s for s in sessions if not s.chat_id.startswith("org_")]
     sessions.sort(key=lambda s: s.last_active, reverse=True)
 
     # 向后兼容：旧版 _truncate_history 会在 session 中插入 system 摘要消息，

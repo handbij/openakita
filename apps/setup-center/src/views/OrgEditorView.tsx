@@ -2095,6 +2095,17 @@ export function OrgEditorView({
                   <button onClick={() => { setNodes(computeTreeLayout(nodes, edges)); setContextMenu(null); }}>
                     <span className="org-ctx-icon">🔀</span>自动布局
                   </button>
+                  <button
+                    onClick={() => {
+                      void reactFlowRef.current?.fitView({ padding: 0.2 });
+                      setContextMenu(null);
+                    }}
+                  >
+                    <span className="org-ctx-icon" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Maximize className="size-3.5" strokeWidth={2} />
+                    </span>
+                    适应视图
+                  </button>
                 </>)}
               </div>,
               document.body

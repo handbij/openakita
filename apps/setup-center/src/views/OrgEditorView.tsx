@@ -475,12 +475,12 @@ function getDeptColor(dept: string): string {
   return DEPT_COLORS[dept] || "#6b7280";
 }
 
-function orgNodeToFlowNode(n: OrgNodeData): Node {
+function orgNodeToFlowNode(n: OrgNodeData, extra?: Record<string, any>): Node {
   return {
     id: n.id,
     type: "orgNode",
     position: n.position,
-    data: { ...n },
+    data: extra ? { ...n, ...extra } : { ...n },
   };
 }
 
@@ -653,7 +653,9 @@ function OrgNodeComponent({ data, selected }: { data: OrgNodeData; selected: boo
   const [hovered, setHovered] = useState(false);
   const nodeRef = useRef<HTMLDivElement>(null);
   const deptColor = getDeptColor(data.department);
-  const statusColor = STATUS_COLORS[data.status] || "var(--muted)";
+  const isLive = (data as any)._liveMode === true;
+  const rawStatusColor = STATUS_COLORS[data.status] || "var(--muted)";
+  const statusColor = (!isLive && data.status === "idle") ? "var(--muted)" : rawStatusColor;
   const isFrozen = data.status === "frozen";
   const isBusy = data.status === "busy";
   const isError = data.status === "error";
@@ -730,6 +732,12 @@ function OrgNodeComponent({ data, selected }: { data: OrgNodeData; selected: boo
           size={30}
           statusColor={statusColor}
           statusGlow={isBusy}
+          statusTitle={
+            !isLive && data.status === "idle" ? "未激活"
+            : data.status === "idle" && idleSecs != null && idleSecs > 60
+              ? `空闲 ${idleSecs >= 3600 ? `${Math.floor(idleSecs / 3600)}h${Math.floor((idleSecs % 3600) / 60)}m` : `${Math.floor(idleSecs / 60)}m`}`
+            : STATUS_LABELS[data.status] || data.status
+          }
           style={isBusy ? { border: `2px solid ${statusColor}` } : isError ? { border: "2px solid var(--danger)" } : undefined}
         />
         {/* Title area */}
@@ -788,16 +796,33 @@ function OrgNodeComponent({ data, selected }: { data: OrgNodeData; selected: boo
               {data.department}
             </span>
           )}
-          {data.status !== "idle" && (
+          {(!isLive && data.status === "idle") ? (
             <span style={{
-              fontSize: 10,
-              padding: "1px 6px",
-              borderRadius: 4,
-              background: `${statusColor}15`,
-              color: statusColor,
+              fontSize: 10, padding: "1px 6px", borderRadius: 4,
+              background: "var(--bg-subtle, #f3f4f6)", color: "var(--muted)",
+              fontWeight: 500,
+            }}>
+              未激活
+            </span>
+          ) : data.status !== "idle" ? (
+            <span style={{
+              fontSize: 10, padding: "1px 6px", borderRadius: 4,
+              background: `${statusColor}15`, color: statusColor,
               fontWeight: 500,
             }}>
               {STATUS_LABELS[data.status] || data.status}
+            </span>
+          ) : (
+            <span style={{
+              fontSize: 10, padding: "1px 6px", borderRadius: 4,
+              background: `${statusColor}15`, color: statusColor,
+              fontWeight: 500,
+            }}
+              title={idleSecs != null && idleSecs > 60
+                ? `空闲 ${idleSecs >= 3600 ? `${Math.floor(idleSecs / 3600)}h${Math.floor((idleSecs % 3600) / 60)}m` : `${Math.floor(idleSecs / 60)}m`}`
+                : "在线空闲"}
+            >
+              空闲
             </span>
           )}
           {pendingMsgs > 0 && (
@@ -808,7 +833,7 @@ function OrgNodeComponent({ data, selected }: { data: OrgNodeData; selected: boo
               {pendingMsgs}
             </span>
           )}
-          {idleSecs != null && idleSecs > 60 && data.status === "idle" && (
+          {idleSecs != null && idleSecs > 60 && data.status === "idle" && isLive && (
             <span style={{
               fontSize: 9, padding: "1px 5px", borderRadius: 3,
               background: "#f3f4f6", color: "#9ca3af",
@@ -872,7 +897,7 @@ function OrgNodeComponent({ data, selected }: { data: OrgNodeData; selected: boo
               <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 11 }}>{data.role_title}</div>
               <div style={{ color: "#6b7280", lineHeight: 1.6 }}>
                 <div>部门: {data.department || "—"} · 层级 L{data.level ?? "?"}</div>
-                <div>状态: <span style={{ color: statusColor, fontWeight: 500 }}>{STATUS_LABELS[data.status] || data.status}</span></div>
+                <div>状态: <span style={{ color: statusColor, fontWeight: 500 }}>{!isLive && data.status === "idle" ? "未激活" : isLive && data.status === "idle" ? "空闲" : STATUS_LABELS[data.status] || data.status}</span></div>
                 {idleSecs != null && <div>空闲: {idleSecs >= 3600 ? `${Math.floor(idleSecs / 3600)}h${Math.floor((idleSecs % 3600) / 60)}m` : idleSecs >= 60 ? `${Math.floor(idleSecs / 60)}m` : `${idleSecs}s`}</div>}
                 {pendingMsgs != null && pendingMsgs > 0 && <div>待处理: {pendingMsgs} 条消息</div>}
                 {((pp && pp.total != null && pp.total > 0) || (ds && (ds.total ?? 0) > 0)) && <Sep />}
@@ -950,7 +975,6 @@ export function OrgEditorView({
   const [promptPreviewLoading, setPromptPreviewLoading] = useState(false);
   const [layoutLocked, setLayoutLocked] = useState(false);
   const liveMode = currentOrg?.status === "active" || currentOrg?.status === "running";
-  const [nodeStatuses, setNodeStatuses] = useState<Record<string, string>>({});
   const [activeDrawer, setActiveDrawer] = useState<"chat" | "inbox" | null>(null);
   const [nodeEvents, setNodeEvents] = useState<any[]>([]);
   const [nodeSchedules, setNodeSchedules] = useState<any[]>([]);
@@ -1058,6 +1082,16 @@ export function OrgEditorView({
     }
   }, [currentOrg?.id, currentOrg?.status]);
 
+  useEffect(() => {
+    setNodes((prev) =>
+      prev.map((n) =>
+        (n.data as any)._liveMode === liveMode
+          ? n
+          : { ...n, data: { ...n.data, _liveMode: liveMode } },
+      ),
+    );
+  }, [liveMode, setNodes]);
+
   // ── Data fetching ──
 
   const fetchOrgList = useCallback(async (): Promise<OrgSummary[]> => {
@@ -1094,14 +1128,15 @@ export function OrgEditorView({
       setSaveStatus("idle");
       setCurrentOrg(data);
       lastSavedRef.current = "";
-      const flowNodes = data.nodes.map(orgNodeToFlowNode);
+      const running = data.status === "active" || data.status === "running";
+      const liveExtra = { _liveMode: running };
+      const flowNodes = data.nodes.map((n) => orgNodeToFlowNode(n, liveExtra));
       const flowEdges = data.edges.map(orgEdgeToFlowEdge);
       const hasOverlap = detectOverlap(flowNodes);
       setNodes(hasOverlap ? computeTreeLayout(flowNodes, flowEdges) : flowNodes);
       setEdges(flowEdges);
       setSelectedNodeId(null);
       setEditingName(false);
-      const running = data.status === "active" || data.status === "running";
       setLayoutLocked(running);
     } catch (e) {
       console.error("Failed to fetch org:", e);
@@ -1209,7 +1244,6 @@ export function OrgEditorView({
 
           if (ev === "org:node_status") {
             const { node_id, status, current_task } = d;
-            setNodeStatuses((prev) => ({ ...prev, [node_id]: status }));
             setNodes((prev) =>
               prev.map((n) =>
                 n.id === node_id
@@ -1344,7 +1378,7 @@ export function OrgEditorView({
   const buildSavePayload = useCallback(() => {
     if (!currentOrg) return null;
     const updatedNodes = nodes.map((n) => {
-      const { status, _runtime, current_task, ...configData } = n.data as any;
+      const { status, _runtime, _liveMode, current_task, ...configData } = n.data as any;
       return { ...configData, position: n.position };
     });
     const updatedEdges = edges.map((e) => ({
@@ -1546,7 +1580,7 @@ export function OrgEditorView({
         avatar: null,
         status: "idle",
       };
-      return [...prev, orgNodeToFlowNode(newNode)];
+      return [...prev, orgNodeToFlowNode(newNode, { _liveMode: liveMode })];
     });
     setSelectedNodeId(newId);
     setNewNodeTitle("");
@@ -1838,12 +1872,12 @@ export function OrgEditorView({
       ...structuredClone(clipboardNode),
       id: newId,
       position: { x: (clipboardNode.position?.x ?? 200) + offset, y: (clipboardNode.position?.y ?? 200) + offset },
-      data: { ...clipboardNode.data, id: newId, role_title: `${clipboardNode.data?.role_title || "节点"} (副本)` },
+      data: { ...clipboardNode.data, id: newId, role_title: `${clipboardNode.data?.role_title || "节点"} (副本)`, _liveMode: liveMode },
       selected: false,
     };
     setNodes((prev) => [...prev, pasted]);
     setContextMenu(null);
-  }, [clipboardNode, setNodes]);
+  }, [clipboardNode, setNodes, liveMode]);
 
   const ctxAddNodeAt = useCallback(() => {
     const newId = `node_${Date.now().toString(36)}`;
@@ -1862,10 +1896,10 @@ export function OrgEditorView({
       clone_source: null, external_tools: [], ephemeral: false, frozen_by: null,
       frozen_reason: null, frozen_at: null, avatar: null, status: "idle",
     };
-    setNodes((prev) => [...prev, orgNodeToFlowNode(newNode)]);
+    setNodes((prev) => [...prev, orgNodeToFlowNode(newNode, { _liveMode: liveMode })]);
     setSelectedNodeId(newId);
     setContextMenu(null);
-  }, [nodes, contextMenu, setNodes]);
+  }, [nodes, contextMenu, setNodes, liveMode]);
 
   // ── Render ──
 
@@ -3316,7 +3350,7 @@ export function OrgEditorView({
               className="grid w-full grid-cols-4"
             >
               <ToggleGroupItem value="overview" className="h-8 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary">
-                概览
+                {liveMode ? "监控" : "概览"}
               </ToggleGroupItem>
               <ToggleGroupItem value="identity" className="h-8 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary">
                 身份
@@ -3333,24 +3367,34 @@ export function OrgEditorView({
           <div style={{ padding: 12 }}>
             {propsTab === "overview" && liveMode && (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {/* Node status summary */}
-                <div className="card" style={{ padding: 10 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>节点状态</div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <span style={{
-                      fontSize: 11,
-                      padding: "2px 8px",
-                      borderRadius: 4,
-                      background: `${STATUS_COLORS[selectedNode.status] || "var(--muted)"}20`,
-                      color: STATUS_COLORS[selectedNode.status] || "var(--muted)",
-                      fontWeight: 500,
-                    }}>
-                      {STATUS_LABELS[selectedNode.status] || selectedNode.status}
-                    </span>
-                    {selectedNode.is_clone && <span style={{ fontSize: 10, color: "#0369a1" }}>副本</span>}
-                    {selectedNode.ephemeral && <span style={{ fontSize: 10, color: "#b45309" }}>临时</span>}
-                  </div>
+                {/* Status strip */}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{
+                    fontSize: 11,
+                    padding: "2px 8px",
+                    borderRadius: 4,
+                    background: `${STATUS_COLORS[selectedNode.status] || "var(--muted)"}20`,
+                    color: STATUS_COLORS[selectedNode.status] || "var(--muted)",
+                    fontWeight: 500,
+                  }}>
+                    {STATUS_LABELS[selectedNode.status] || selectedNode.status}
+                  </span>
+                  {selectedNode.is_clone && <span style={{ fontSize: 10, color: "#0369a1" }}>副本</span>}
+                  {selectedNode.ephemeral && <span style={{ fontSize: 10, color: "#b45309" }}>临时</span>}
                 </div>
+
+                {/* Current task - prominent */}
+                {selectedNode.current_task && (
+                  <div style={{
+                    fontSize: 11, color: "#374151",
+                    whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.4,
+                    background: "#fffbeb", padding: "8px 10px", borderRadius: 6,
+                    border: "1px solid #fde68a",
+                  }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: "#b45309", marginBottom: 4 }}>当前任务</div>
+                    {selectedNode.current_task}
+                  </div>
+                )}
 
                 {/* Schedules */}
                 {nodeSchedules.length > 0 && (
@@ -3606,27 +3650,37 @@ export function OrgEditorView({
                   )}
                 </div>
 
-                {/* Current task detail */}
-                {selectedNode.current_task && (
-                  <div className="card" style={{ padding: 10 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, color: "#b45309" }}>
-                      当前任务
-                    </div>
-                    <div style={{
-                      fontSize: 11,
-                      color: "#374151",
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-word",
-                      lineHeight: 1.4,
-                      background: "#fffbeb",
-                      padding: 8,
-                      borderRadius: 4,
-                      border: "1px solid #fde68a",
-                    }}>
-                      {selectedNode.current_task}
+                {/* Config summary */}
+                <div style={{ borderTop: "1px dashed var(--line)", paddingTop: 10, marginTop: 2 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", marginBottom: 6 }}>节点配置</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11 }}>
+                    <div><span style={{ color: "var(--muted)" }}>岗位: </span>{selectedNode.role_title || "—"}</div>
+                    <div><span style={{ color: "var(--muted)" }}>部门: </span>{selectedNode.department || "—"}</div>
+                    {selectedNode.role_goal && (
+                      <div style={{ lineHeight: 1.4 }}>
+                        <span style={{ color: "var(--muted)" }}>目标: </span>
+                        {selectedNode.role_goal.length > 60 ? selectedNode.role_goal.slice(0, 60) + "…" : selectedNode.role_goal}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
+                      {(selectedNode.external_tools || []).length > 0 && (
+                        <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "rgba(59,130,246,0.1)", color: "#3b82f6" }}>
+                          工具 {selectedNode.external_tools.length}
+                        </span>
+                      )}
+                      {selectedNode.skills.length > 0 && (
+                        <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "rgba(124,58,237,0.1)", color: "#7c3aed" }}>
+                          技能 {selectedNode.skills.length}
+                        </span>
+                      )}
+                      {selectedNode.mcp_servers.length > 0 && (
+                        <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "rgba(16,185,129,0.1)", color: "#10b981" }}>
+                          MCP {selectedNode.mcp_servers.length}
+                        </span>
+                      )}
                     </div>
                   </div>
-                )}
+                </div>
               </div>
             )}
 
@@ -3816,7 +3870,7 @@ export function OrgEditorView({
               </div>
             )}
 
-            {propsTab === "overview" && (
+            {propsTab === "overview" && !liveMode && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>头像</label>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
@@ -4050,6 +4104,17 @@ export function OrgEditorView({
 
             {propsTab === "identity" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {liveMode && (
+                  <div style={{
+                    fontSize: 11, color: "#6b7280", background: "var(--bg-secondary, #f5f5f5)",
+                    padding: "8px 12px", borderRadius: 6, display: "flex", alignItems: "center", gap: 6,
+                    border: "1px solid var(--line)",
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    编排运行中，配置已锁定。停止后可编辑。
+                  </div>
+                )}
+                <fieldset disabled={!!liveMode} style={{ border: "none", margin: 0, padding: 0, minWidth: 0, opacity: liveMode ? 0.5 : 1, display: "flex", flexDirection: "column", gap: 10 }}>
                 {/* Section 1: Field relationship */}
                 <div style={{
                   border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px",
@@ -4197,12 +4262,23 @@ export function OrgEditorView({
                     </div>
                   </div>
                 </div>
+                </fieldset>
               </div>
             )}
 
             {propsTab === "capabilities" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-
+                {liveMode && (
+                  <div style={{
+                    fontSize: 11, color: "#6b7280", background: "var(--bg-secondary, #f5f5f5)",
+                    padding: "8px 12px", borderRadius: 6, display: "flex", alignItems: "center", gap: 6,
+                    border: "1px solid var(--line)",
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    编排运行中，配置已锁定。停止后可编辑。
+                  </div>
+                )}
+                <fieldset disabled={!!liveMode} style={{ border: "none", margin: 0, padding: 0, minWidth: 0, opacity: liveMode ? 0.5 : 1, display: "flex", flexDirection: "column", gap: 10 }}>
                 {/* ── Section 1: 执行工具类目 ── */}
                 <Card className="gap-0 overflow-hidden py-0">
                   <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
@@ -4449,11 +4525,13 @@ export function OrgEditorView({
                     </Button>
                   </div>
                 )}
+                </fieldset>
               </div>
             )}
 
             {propsTab === "capabilities" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <fieldset disabled={!!liveMode} style={{ border: "none", margin: 0, padding: 0, minWidth: 0, opacity: liveMode ? 0.5 : 1, display: "flex", flexDirection: "column", gap: 14 }}>
                 {/* Performance section */}
                 <Card className="gap-0 py-0">
                   <CardHeader className="px-4 py-3">
@@ -4586,6 +4664,7 @@ export function OrgEditorView({
                     />
                   </CardContent>
                 </Card>
+                </fieldset>
               </div>
             )}
 

@@ -261,6 +261,8 @@ interface OrgAvatarProps {
   /** Status dot color; null = no dot */
   statusColor?: string | null;
   statusGlow?: boolean;
+  /** Tooltip text for the status dot */
+  statusTitle?: string;
   onClick?: () => void;
   style?: React.CSSProperties;
 }
@@ -276,6 +278,7 @@ export function OrgAvatar({
   size = 32,
   statusColor = null,
   statusGlow = false,
+  statusTitle,
   onClick,
   style,
 }: OrgAvatarProps) {
@@ -339,6 +342,7 @@ export function OrgAvatar({
       </div>
       {statusColor && (
         <div
+          title={statusTitle}
           style={{
             position: "absolute",
             bottom: -1,

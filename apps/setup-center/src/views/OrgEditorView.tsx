@@ -55,7 +55,7 @@ import {
   IconMessageCircle,
 } from "../icons";
 import { safeFetch } from "../providers";
-import { IS_CAPACITOR, saveFileDialog, IS_TAURI, writeTextFile, downloadFile } from "../platform";
+import { IS_CAPACITOR, saveFileDialog, IS_TAURI, writeTextFile, downloadFile, openFileDialog } from "../platform";
 import { OrgInboxSidebar } from "../components/OrgInboxSidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { OrgAvatar, AVATAR_PRESETS, AVATAR_MAP } from "../components/OrgAvatars";
@@ -4150,6 +4150,35 @@ export function OrgEditorView({
               {((currentOrg as any).operation_mode || "command") === "command"
                 ? "通过聊天或命令面板下达任务，按需执行"
                 : "组织根据核心业务自动运转，顶层负责人持续运营"}
+            </div>
+          </div>
+
+          {/* ── 工作目录 ── */}
+          <div className="card" style={{ padding: 10, marginBottom: 10 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>工作目录</div>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input
+                className="input"
+                style={{ flex: 1, fontSize: 12 }}
+                placeholder="默认：组织数据目录/workspace"
+                value={(currentOrg as any).workspace_dir || ""}
+                onChange={(e) => setCurrentOrg({ ...currentOrg, workspace_dir: e.target.value } as any)}
+              />
+              {IS_TAURI && (
+                <button
+                  className="btnSmall"
+                  style={{ fontSize: 12, padding: "5px 10px", whiteSpace: "nowrap" }}
+                  onClick={async () => {
+                    const selected = await openFileDialog({ directory: true, title: "选择工作目录" });
+                    if (selected) setCurrentOrg({ ...currentOrg, workspace_dir: selected } as any);
+                  }}
+                >
+                  浏览
+                </button>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, lineHeight: 1.5 }}>
+              组织编排产出的文件将保存在此目录。留空则使用默认路径。
             </div>
           </div>
 

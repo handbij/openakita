@@ -965,12 +965,17 @@ class OrgRuntime:
         ):
             self._connect_node_mcp_servers(agent, node.mcp_servers)
 
-        self._override_system_prompt_for_org(agent, org_context_prompt)
+        org_workspace = self._resolve_org_workspace(org)
+        agent.file_tool.base_path = org_workspace
+        agent.shell_tool.default_cwd = str(org_workspace)
+
+        self._override_system_prompt_for_org(agent, org_context_prompt, org_workspace)
 
         agent._org_context = {
             "org_id": org.id,
             "node_id": node.id,
             "tool_handler": self._tool_handler,
+            "workspace": org_workspace,
         }
 
         if hasattr(agent, "brain") and hasattr(agent.brain, "set_trace_context"):
@@ -992,8 +997,28 @@ class OrgRuntime:
 
         return agent
 
+    def _resolve_org_workspace(self, org: Organization) -> Path:
+        """Return the effective workspace directory for an organization.
+
+        Priority: user-configured path > default ``<org_dir>/workspace``.
+        """
+        custom = (org.workspace_dir or "").strip()
+        if custom:
+            p = Path(custom)
+            if p.is_absolute() and (p.is_dir() or not p.exists()):
+                p.mkdir(parents=True, exist_ok=True)
+                return p
+            logger.warning(
+                "[OrgRuntime] workspace_dir %r invalid, falling back to default", custom,
+            )
+        default = self._manager._org_dir(org.id) / "workspace"
+        default.mkdir(parents=True, exist_ok=True)
+        return default
+
     @staticmethod
-    def _override_system_prompt_for_org(agent: Any, org_context: str) -> None:
+    def _override_system_prompt_for_org(
+        agent: Any, org_context: str, workspace: Path | None = None,
+    ) -> None:
         """Replace the agent's system prompt with an org-focused lean prompt.
 
         This prompt is used directly by _build_system_prompt_compiled when
@@ -1049,7 +1074,7 @@ class OrgRuntime:
             f"## 运行环境\n"
             f"- 当前时间: {current_time}\n"
             f"- 操作系统: {platform.system()} {platform.release()}\n"
-            f"- 工作目录: {os.getcwd()}\n"
+            f"- 工作目录: {workspace or os.getcwd()}\n"
             f"- Shell: {shell_type}"
         )
         if platform.system() == "Windows" and has_external:
@@ -1978,8 +2003,10 @@ class OrgRuntime:
                     )
             if tool_name in ("write_file", "generate_image"):
                 try:
+                    ws = getattr(agent, "_org_context", {}).get("workspace")
                     self._record_file_output(
                         org_id, node_id, tool_name, tool_input, result,
+                        workspace=ws,
                     )
                 except Exception:
                     logger.debug(
@@ -2020,6 +2047,8 @@ class OrgRuntime:
         tool_name: str,
         tool_input: dict,
         result: str,
+        *,
+        workspace: Path | None = None,
     ) -> None:
         """After write_file / generate_image succeeds, write a RESOURCE
         entry to the org blackboard so users can see and download files."""
@@ -2045,7 +2074,8 @@ class OrgRuntime:
 
         p = Path(file_path)
         if not p.is_absolute():
-            p = (Path.cwd() / p).resolve()
+            base = workspace or Path.cwd()
+            p = (base / p).resolve()
         else:
             p = p.resolve()
 

@@ -66,8 +66,8 @@ class FilesystemHandler:
         p = Path(raw)
         if p.is_absolute():
             return p.resolve()
-        # FileTool 以 cwd 为 base_path；这里保持一致
-        return (Path.cwd() / p).resolve()
+        base = getattr(getattr(self.agent, "file_tool", None), "base_path", None)
+        return ((base or Path.cwd()) / p).resolve()
 
     def _is_under_any_root(self, target: Path, roots: list[str]) -> bool:
         for r in roots or []:

@@ -389,6 +389,9 @@ class Organization:
     # Operation mode
     operation_mode: str = "command"
 
+    # Workspace — custom output directory for file-producing tools
+    workspace_dir: str = ""
+
     # Watchdog
     watchdog_enabled: bool = True
     watchdog_interval_s: int = 30
@@ -444,6 +447,7 @@ class Organization:
             "token_budget": self.token_budget,
             "token_budget_period": self.token_budget_period,
             "operation_mode": self.operation_mode,
+            "workspace_dir": self.workspace_dir,
             "watchdog_enabled": self.watchdog_enabled,
             "watchdog_interval_s": self.watchdog_interval_s,
             "watchdog_stuck_threshold_s": self.watchdog_stuck_threshold_s,

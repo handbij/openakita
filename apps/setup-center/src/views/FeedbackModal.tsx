@@ -66,6 +66,7 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
   const [captchaCfg, setCaptchaCfg] = useState<{ scene_id: string; prefix: string } | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [submitResult, setSubmitResult] = useState<{ ok: boolean; msg: string; downloadUrl?: string } | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{
@@ -84,6 +85,8 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
   type Phase = "form" | "uploading" | "success";
   const [phase, setPhase] = useState<Phase>("form");
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
+  const [captchaReady, setCaptchaReady] = useState(false);
+  const captchaBoundRef = useRef(false);
 
   useEffect(() => {
     if (open) {
@@ -91,6 +94,8 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
       setDownloading(false);
       setUploadProgress(null);
       setPhase("form");
+      submittingRef.current = false;
+      setCaptchaReady(false);
       if (prefill) {
         setMode(prefill.mode ?? initialMode);
         setTitle(prefill.title ?? "");
@@ -215,7 +220,13 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
             getInstance: (inst: any) => { captchaInstanceRef.current = inst; },
             language: document.documentElement.lang?.startsWith("zh") ? "cn" : "en",
           });
-        } catch { /* init failed, allow submission without captcha */ }
+          if (!destroyed) {
+            captchaBoundRef.current = true;
+            setCaptchaReady(true);
+          }
+        } catch {
+          if (!destroyed) setCaptchaReady(true);
+        }
         return;
       }
       if (!document.querySelector('script[src*="AliyunCaptcha"]')) {
@@ -240,6 +251,8 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
       captchaInstanceRef.current = null;
       captchaTokenRef.current = "";
       captchaNonceRef.current = "";
+      captchaBoundRef.current = false;
+      setCaptchaReady(false);
     };
   }, [open, captchaCfg, captchaResetKey]);
 
@@ -312,7 +325,7 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
     setCaptchaResetKey((k) => k + 1);
   }, [friendlyErrorMsg]);
 
-  const handleSubmitViaIpc = useCallback(async () => {
+  const handleSubmitViaIpc = useCallback(async (captchaToken: string) => {
     const reportId = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
     const wsId = currentWorkspaceId || "default";
 
@@ -349,7 +362,7 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
         reportType: mode,
         title: title.trim(),
         summary: description.trim().slice(0, 2000),
-        captchaVerifyParam: captchaTokenRef.current || "none",
+        captchaVerifyParam: captchaToken,
         contactEmail: contactEmail.trim(),
       },
     );
@@ -373,7 +386,14 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
 
   const handleSubmit = useCallback(async () => {
     if (!title.trim() || !description.trim()) return;
-    if (captchaCfg && !captchaTokenRef.current) return;
+    if (captchaCfg && captchaBoundRef.current && !captchaTokenRef.current) return;
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+
+    const captchaToken = captchaTokenRef.current || "none";
+    const captchaNonce = captchaNonceRef.current || "";
+    captchaTokenRef.current = "";
+    captchaNonceRef.current = "";
 
     setSubmitting(true);
     setSubmitResult(null);
@@ -387,7 +407,7 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
       // Offline IPC path: backend is down, submit via Tauri Rust commands
       if (useOfflineIpc) {
         try {
-          await handleSubmitViaIpc();
+          await handleSubmitViaIpc(captchaToken);
           setUploadProgress(null);
           resetForm();
           setPhase("success");
@@ -403,9 +423,9 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
       const form = new FormData();
       form.append("title", title.trim());
       form.append("description", description.trim());
-      form.append("captcha_verify_param", captchaTokenRef.current || "none");
-      if (captchaNonceRef.current) {
-        form.append("captcha_nonce", captchaNonceRef.current);
+      form.append("captcha_verify_param", captchaToken);
+      if (captchaNonce) {
+        form.append("captcha_nonce", captchaNonce);
       }
       for (const img of imageFiles) {
         form.append("images", img);
@@ -504,9 +524,8 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
       setPhase("form");
       setCaptchaResetKey((k) => k + 1);
     } finally {
-      captchaTokenRef.current = "";
-      captchaNonceRef.current = "";
       abortRef.current = null;
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }, [captchaCfg, mode, title, description, steps, uploadLogs, uploadDebug, contactEmail, imageFiles, apiBase, t, resetForm, useOfflineIpc, handleSubmitViaIpc, handleSseError]);
@@ -753,13 +772,15 @@ export function FeedbackModal({ open, onClose, apiBase, initialMode = "bug", pre
                 <Button
                   id="feedback-submit-btn"
                   size="sm"
-                  disabled={submitting || !title.trim() || !description.trim()}
-                  onClick={handleSubmit}
+                  disabled={submitting || !title.trim() || !description.trim() || (!!captchaCfg && !captchaReady)}
+                  onClick={captchaBoundRef.current ? undefined : handleSubmit}
                   className="min-w-[100px]"
                 >
                   {submitting
                     ? t("bugReport.submitting")
-                    : isBug ? t("bugReport.submit") : t("featureRequest.submit")}
+                    : (captchaCfg && !captchaReady)
+                      ? t("feedback.captchaLoading", "验证加载中…")
+                      : isBug ? t("bugReport.submit") : t("featureRequest.submit")}
                 </Button>
               </div>
             </div>

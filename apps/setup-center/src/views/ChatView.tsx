@@ -2315,8 +2315,6 @@ export function ChatView({
   }, [serviceRunning, apiBaseUrl, getClientId]);
 
   // ── Cross-device sync: conversation lifecycle events via WebSocket ──
-  // onWsEvent handles platform detection internally (no-op for Tauri local,
-  // active for Web / Capacitor / Tauri-remote).
   useEffect(() => {
     const myId = getClientId();
     return onWsEvent((event, data) => {

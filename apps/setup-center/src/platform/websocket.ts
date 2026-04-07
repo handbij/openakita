@@ -1,16 +1,11 @@
 // ─── WebSocket Event Client ───
-// Replaces Tauri listen() events in web mode.
+// Provides real-time event push for ALL modes (Web, Tauri local, Tauri remote, Capacitor).
 // Auto-reconnects on disconnect with exponential backoff.
 
 import { IS_TAURI, IS_CAPACITOR } from "./detect";
 import { getAccessToken, isTokenExpiringSoon, refreshAccessToken, isTauriRemoteMode } from "./auth";
 import { getActiveServer } from "./servers";
 import { logger } from "./logger";
-
-/** True when WS should be skipped (Tauri local mode — events go via IPC instead). */
-function _skipWs(): boolean {
-  return IS_TAURI && !isTauriRemoteMode();
-}
 
 export type WsEventHandler = (event: string, data: unknown) => void;
 
@@ -33,6 +28,18 @@ function getWsUrl(): string {
     const url = new URL(server.url);
     host = url.host;
     proto = url.protocol === "https:" ? "wss:" : "ws:";
+  } else if (IS_TAURI) {
+    // Tauri local mode: window.location is tauri://localhost, not the backend.
+    // Read actual backend address from localStorage (same source as App.tsx apiBaseUrl).
+    const stored = localStorage.getItem("openakita_apiBaseUrl") || "http://127.0.0.1:18900";
+    try {
+      const url = new URL(stored);
+      host = url.host;
+      proto = url.protocol === "https:" ? "wss:" : "ws:";
+    } catch {
+      host = "127.0.0.1:18900";
+      proto = "ws:";
+    }
   } else {
     const loc = window.location;
     host = loc.host;
@@ -113,11 +120,8 @@ function _scheduleReconnect(): void {
 
 /**
  * Subscribe to all WebSocket events. Returns unsubscribe function.
- * In Tauri mode this is a no-op (Tauri events are used instead).
  */
 export function onWsEvent(handler: WsEventHandler): () => void {
-  if (_skipWs()) return () => {};
-
   _handlers.push(handler);
   // Ensure connection is started
   if (!_ws && !_reconnectTimer) {
@@ -152,7 +156,6 @@ export function disconnectWs(): void {
  * Resets backoff and attempts counter. No-op if no handlers are registered.
  */
 export function reconnectWsNow(): void {
-  if (_skipWs()) return;
   _intentionallyClosed = false;
   if (_reconnectTimer) {
     clearTimeout(_reconnectTimer);

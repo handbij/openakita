@@ -1659,6 +1659,32 @@ async def get_org_stats(request: Request, org_id: str):
                 }
             )
 
+    # Push new anomalies to inbox with cooldown to avoid spam
+    if anomalies and inbox:
+        from openakita.orgs.models import InboxPriority
+        _ANOMALY_COOLDOWN = 600  # 10 min between duplicate pushes
+        pushed: dict[str, float] = getattr(rt, "_anomaly_inbox_ts", {})
+        if not hasattr(rt, "_anomaly_inbox_ts"):
+            rt._anomaly_inbox_ts = pushed  # type: ignore[attr-defined]
+        _ANOMALY_PRIORITY = {
+            "error": InboxPriority.ALERT,
+            "stuck": InboxPriority.WARNING,
+            "backlog": InboxPriority.WARNING,
+            "long_idle": InboxPriority.NOTICE,
+        }
+        for a in anomalies:
+            key = f"{org_id}:{a['node_id']}:{a['type']}"
+            if now_wall - pushed.get(key, 0) > _ANOMALY_COOLDOWN:
+                inbox.push(
+                    org_id,
+                    title=f"异常告警: {a['role_title']}",
+                    body=a["message"],
+                    priority=_ANOMALY_PRIORITY.get(a["type"], InboxPriority.WARNING),
+                    source_node=a["node_id"],
+                    category="anomaly",
+                )
+                pushed[key] = now_wall
+
     bb = rt.get_blackboard(org_id)
     recent_bb: list[dict] = []
     if bb:

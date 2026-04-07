@@ -59,6 +59,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   progress: "进度",
   warning: "警告",
   scaling: "扩编",
+  anomaly: "异常",
 };
 
 export function OrgInboxSidebar({
@@ -179,13 +180,13 @@ export function OrgInboxSidebar({
           {unreadCount > 0 && (
             <span style={{
               marginLeft: 6,
-              background: "#ef4444",
+              background: "#3b82f6",
               color: "#fff",
               borderRadius: 10,
               padding: "1px 7px",
               fontSize: 11,
               fontWeight: 500,
-            }}>{unreadCount}</span>
+            }}>{unreadCount} 未读</span>
           )}
           {pendingApprovals > 0 && (
             <span style={{

@@ -1221,7 +1221,9 @@ class LLMClient:
                             request.thinking_depth = _saved_depth
                             raise
 
-                    # ── 诊断: 非 thinking 场景下的空内容检测 ──
+                    # ── 结构性失败: 有 token 但无内容 → 切换端点 ──
+                    # 部分代理返回 content:null 但 output_tokens>0，
+                    # 应视为端点异常而非成功，触发 failover
                     if not response.content and response.usage.output_tokens > 0:
                         logger.error(
                             f"[LLM] ⚠️ CONTENT LOST: endpoint={provider.name} "
@@ -1230,6 +1232,24 @@ class LLMClient:
                             f"stream_only={getattr(provider, '_stream_only', False)}, "
                             f"reasoning={bool(getattr(response, 'reasoning_content', None))})"
                         )
+                        provider._content_error = True
+                        errors.append(
+                            f"{provider.name}: Content lost "
+                            f"({response.usage.output_tokens} output tokens, 0 content)"
+                        )
+                        # 如果还有其他端点，切换过去尝试
+                        if i < len(providers_to_try) - 1:
+                            logger.info(
+                                f"[LLM] Content lost on {provider.name}, "
+                                f"trying next endpoint"
+                            )
+                            break
+                        # 最后一个端点也失败了，返回空响应（让上层处理兜底文案）
+                        logger.warning(
+                            f"[LLM] Content lost on ALL endpoints, "
+                            f"returning empty response from {provider.name}"
+                        )
+                        return response
 
                     return response
 

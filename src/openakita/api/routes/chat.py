@@ -48,16 +48,17 @@ def _is_multi_agent_enabled() -> bool:
 
 
 def _resolve_profile(agent_profile_id: str | None):
-    """Resolve an AgentProfile by id, falling back to 'default'."""
+    """Resolve an AgentProfile by id, falling back to 'default'.
+
+    Priority: disk (user customizations) > in-memory system presets.
+    This matches the priority used by GET /api/agents/profiles so that
+    the profile seen in the management UI is the same one used at runtime.
+    """
     from openakita.agents.presets import SYSTEM_PRESETS
     from openakita.agents.profile import AgentProfile, ProfileStore
     from openakita.config import settings
 
     pid = agent_profile_id or "default"
-
-    for p in SYSTEM_PRESETS:
-        if p.id == pid:
-            return p
 
     try:
         store = ProfileStore(settings.data_dir / "agents")
@@ -66,6 +67,10 @@ def _resolve_profile(agent_profile_id: str | None):
             return profile
     except Exception:
         pass
+
+    for p in SYSTEM_PRESETS:
+        if p.id == pid:
+            return p
 
     for p in SYSTEM_PRESETS:
         if p.id == "default":

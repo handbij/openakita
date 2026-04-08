@@ -432,18 +432,23 @@ class OpenAIProvider(LLMProvider):
         current_tool_id: str | None = None
         stop_reason = StopReason.END_TURN
         response_model = self.config.model
+        stream_usage: dict | None = None
 
         async for event in self._iter_sse_events(body):
             event_type = event.get("type")
+
+            if event_type == "usage":
+                stream_usage = event.get("usage")
+                continue
 
             if event_type == "content_block_delta":
                 delta = event.get("delta", {})
                 delta_type = delta.get("type")
 
                 if delta_type == "text":
-                    text_parts.append(delta.get("text", ""))
+                    text_parts.append(delta.get("text") or "")
                 elif delta_type == "reasoning":
-                    reasoning_parts.append(delta.get("text", ""))
+                    reasoning_parts.append(delta.get("text") or "")
                 elif delta_type == "tool_use":
                     call_id = delta.get("id")
                     if call_id:
@@ -520,11 +525,35 @@ class OpenAIProvider(LLMProvider):
             stop_reason = StopReason.TOOL_USE
 
         _reasoning_text = "".join(reasoning_parts)
+
+        # 防御层：与 _parse_response 对齐 — reasoning 作为可见文本 fallback
+        if not content_blocks and not has_any_tool_calls and _reasoning_text:
+            logger.warning(
+                f"[STREAM] content empty but reasoning has {len(_reasoning_text)} chars "
+                f"from {self.name} — using reasoning as visible text fallback"
+            )
+            content_blocks.append(TextBlock(text=_reasoning_text))
+            _reasoning_text = ""
+
+        # 从流尾部 usage chunk 获取 token 统计（不再始终为零）
+        _usage = Usage()
+        if stream_usage:
+            _usage = Usage(
+                input_tokens=stream_usage.get("prompt_tokens", 0),
+                output_tokens=stream_usage.get("completion_tokens", 0),
+            )
+
+        if not content_blocks and _usage.output_tokens > 0:
+            logger.error(
+                f"[STREAM] ⚠️ CONTENT LOST: {_usage.output_tokens} output tokens "
+                f"but content is empty from {self.name} (stream_only adapter)"
+            )
+
         return LLMResponse(
             id="",
             content=content_blocks,
             stop_reason=stop_reason,
-            usage=Usage(),
+            usage=_usage,
             model=response_model,
             reasoning_content=_reasoning_text or None,
         )
@@ -1003,8 +1032,12 @@ class OpenAIProvider(LLMProvider):
 
     def _convert_stream_event(self, event: dict) -> dict:
         """转换流式事件为统一格式"""
+        # 提取 usage（部分 API 在最后一个 chunk 附带 usage 且 choices 为空）
+        _usage = event.get("usage")
         choices = event.get("choices", [])
         if not choices:
+            if _usage:
+                return {"type": "usage", "usage": _usage}
             return {"type": "ping"}
 
         choice = choices[0]
@@ -1012,9 +1045,9 @@ class OpenAIProvider(LLMProvider):
 
         result = {"type": "content_block_delta"}
 
-        if "content" in delta:
+        if "content" in delta and delta["content"] is not None:
             result["delta"] = {"type": "text", "text": delta["content"]}
-        elif "reasoning_content" in delta:
+        elif "reasoning_content" in delta and delta["reasoning_content"] is not None:
             result["delta"] = {"type": "reasoning", "text": delta["reasoning_content"]}
         elif "tool_calls" in delta:
             tool_calls = delta["tool_calls"]

@@ -1396,18 +1396,36 @@ class ReasoningEngine:
                     cleaned_text = strip_thinking_tags(decision.text_content)
                     _, cleaned_text = parse_intent_tag(cleaned_text)
                     if cleaned_text and cleaned_text.strip():
-                        logger.info(f"[LoopGuard] stop_reason=end_turn after {consecutive_tool_rounds} rounds")
-                        self._save_react_trace(react_trace, conversation_id, session_type, "completed_end_turn", _trace_started_at)
-                        try:
-                            state.transition(TaskStatus.COMPLETED)
-                        except ValueError:
-                            pass
-                        tracer.end_trace(metadata={
-                            "result": "completed_end_turn",
-                            "iterations": iteration + 1,
-                            "tools_used": list(set(executed_tool_names)),
-                        })
-                        return cleaned_text
+                        if self._has_active_plan_pending(conversation_id):
+                            logger.info(
+                                f"[LoopGuard] stop_reason=end_turn after {consecutive_tool_rounds} "
+                                f"rounds but plan has pending steps, continuing loop"
+                            )
+                            working_messages.append({
+                                "role": "assistant",
+                                "content": [{"type": "text", "text": decision.text_content}],
+                                "reasoning_content": decision.thinking_content or None,
+                            })
+                            working_messages.append({
+                                "role": "user",
+                                "content": (
+                                    "[系统提示] 当前 Plan 仍有未完成的步骤。"
+                                    "请立即继续执行下一个 pending 步骤，不需要征求用户确认。"
+                                ),
+                            })
+                        else:
+                            logger.info(f"[LoopGuard] stop_reason=end_turn after {consecutive_tool_rounds} rounds")
+                            self._save_react_trace(react_trace, conversation_id, session_type, "completed_end_turn", _trace_started_at)
+                            try:
+                                state.transition(TaskStatus.COMPLETED)
+                            except ValueError:
+                                pass
+                            tracer.end_trace(metadata={
+                                "result": "completed_end_turn",
+                                "iterations": iteration + 1,
+                                "tools_used": list(set(executed_tool_names)),
+                            })
+                            return cleaned_text
 
                 # 工具签名循环检测 (Supervisor-based)
                 round_signatures = [_make_tool_signature(tc) for tc in decision.tool_calls]
@@ -1586,8 +1604,12 @@ class ReasoningEngine:
             effective_prompt = _build_effective_prompt()
             if plan_mode:
                 effective_prompt += (
-                    "\n\n[PLAN MODE] 用户请求 Plan 模式。"
-                    "请先制定详细计划（使用 create_plan 工具），然后按计划执行。"
+                    "\n\n[PLAN MODE] 用户请求 Plan 模式。\n"
+                    "你**必须**先调用 create_plan 工具制定结构化计划，然后严格按计划逐步执行。\n"
+                    "⚠️ 重要规则：\n"
+                    "1. 禁止在思考/推理中制定计划后跳过 create_plan——系统需要结构化输出来追踪进度。\n"
+                    "2. 禁止只用文字描述计划或征求用户确认——直接调用 create_plan 创建计划。\n"
+                    "3. 创建计划后，立即按顺序执行每个步骤，不需要逐步征求用户确认。"
                 )
 
             # === 端点覆盖 ===
@@ -2116,6 +2138,7 @@ class ReasoningEngine:
                         max_confirmation_text_retries=max_confirmation_text_retries,
                         base_force_retries=base_force_retries,
                         conversation_id=conversation_id,
+                        plan_mode=plan_mode,
                     )
 
                     if isinstance(result, str):
@@ -2583,19 +2606,38 @@ class ReasoningEngine:
                         cleaned_text = strip_thinking_tags(decision.text_content)
                         _, cleaned_text = parse_intent_tag(cleaned_text)
                         if cleaned_text and cleaned_text.strip():
-                            logger.info(
-                                f"[ReAct-Stream][LoopGuard] stop_reason=end_turn after {consecutive_tool_rounds} rounds"
-                            )
-                            self._save_react_trace(
-                                react_trace, conversation_id, session_type,
-                                "completed_end_turn", _trace_started_at,
-                            )
-                            chunk_size = 20
-                            for i in range(0, len(cleaned_text), chunk_size):
-                                yield {"type": "text_delta", "content": cleaned_text[i:i + chunk_size]}
-                                await asyncio.sleep(0.01)
-                            yield {"type": "done"}
-                            return
+                            if self._has_active_plan_pending(conversation_id):
+                                logger.info(
+                                    f"[ReAct-Stream][LoopGuard] stop_reason=end_turn after "
+                                    f"{consecutive_tool_rounds} rounds but plan has pending steps, "
+                                    f"continuing loop"
+                                )
+                                working_messages.append({
+                                    "role": "assistant",
+                                    "content": [{"type": "text", "text": decision.text_content}],
+                                    "reasoning_content": decision.thinking_content or None,
+                                })
+                                working_messages.append({
+                                    "role": "user",
+                                    "content": (
+                                        "[系统提示] 当前 Plan 仍有未完成的步骤。"
+                                        "请立即继续执行下一个 pending 步骤，不需要征求用户确认。"
+                                    ),
+                                })
+                            else:
+                                logger.info(
+                                    f"[ReAct-Stream][LoopGuard] stop_reason=end_turn after {consecutive_tool_rounds} rounds"
+                                )
+                                self._save_react_trace(
+                                    react_trace, conversation_id, session_type,
+                                    "completed_end_turn", _trace_started_at,
+                                )
+                                chunk_size = 20
+                                for i in range(0, len(cleaned_text), chunk_size):
+                                    yield {"type": "text_delta", "content": cleaned_text[i:i + chunk_size]}
+                                    await asyncio.sleep(0.01)
+                                yield {"type": "done"}
+                                return
 
                     # Supervisor 综合评估
                     round_signatures = [_make_tool_sig(tc) for tc in decision.tool_calls]
@@ -3404,6 +3446,7 @@ class ReasoningEngine:
         max_confirmation_text_retries: int,
         base_force_retries: int,
         conversation_id: str | None,
+        plan_mode: bool = False,
     ) -> str | tuple:
         """
         处理纯文本响应（无工具调用）。
@@ -3551,6 +3594,42 @@ class ReasoningEngine:
             f"has_tool_calls=False, tools_executed_in_task=False, "
             f"text_preview=\"{(stripped_text or '')[:80].replace(chr(10), ' ')}\""
         )
+
+        # plan_mode 优先检查（在 _is_confirmation_response 之前）
+        # 拦截模型"描述计划+征求确认"的行为，强制其调用 create_plan
+        try:
+            from ..tools.handlers.plan import has_active_plan, is_plan_required
+            _needs_plan = plan_mode or (conversation_id and is_plan_required(conversation_id))
+        except Exception:
+            _needs_plan = False
+        if _needs_plan and not has_active_plan(conversation_id or ""):
+            no_tool_call_count += 1
+            max_no_tool_retries = max(
+                self._effective_force_retries(base_force_retries, conversation_id), 1
+            )
+            if no_tool_call_count <= max_no_tool_retries:
+                if stripped_text:
+                    working_messages.append({
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": stripped_text}],
+                        "reasoning_content": decision.thinking_content or None,
+                    })
+                working_messages.append({
+                    "role": "user",
+                    "content": (
+                        "[系统] ⚠️ 你被要求使用 Plan 模式，但你没有调用 create_plan 工具。"
+                        "请立即调用 create_plan 工具创建结构化计划。"
+                        "不要只用文字描述计划，不要征求用户确认，直接调用工具。"
+                    ),
+                })
+                logger.warning(
+                    f"[PlanMode] No create_plan called, forcing retry "
+                    f"({no_tool_call_count}/{max_no_tool_retries})"
+                )
+                return (working_messages, no_tool_call_count, verify_incomplete_count,
+                        no_confirmation_text_count, max_no_tool_retries)
+            logger.warning("[PlanMode] create_plan retries exhausted, falling through to text response")
+            return clean_llm_response(stripped_text) or ""
 
         # 确认式回复检测：模型在向用户确认信息（如语音识别结果、执行计划），
         # 而非遗漏工具调用。此时 ForceToolCall 重试毫无意义，只会浪费 token 并

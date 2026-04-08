@@ -55,9 +55,17 @@ function _connect(): void {
   if (_ws) return;
   _intentionallyClosed = false;
 
+  const url = getWsUrl();
+  if (!url) {
+    logger.warn("WS", "No WebSocket URL available, skipping connection");
+    _scheduleReconnect();
+    return;
+  }
+
   try {
-    _ws = new WebSocket(getWsUrl());
-  } catch {
+    _ws = new WebSocket(url);
+  } catch (e) {
+    logger.error("WS", "Failed to create WebSocket", { url, error: String(e) });
     _scheduleReconnect();
     return;
   }
@@ -66,6 +74,7 @@ function _connect(): void {
     _connected = true;
     _reconnectDelay = 1000;
     _reconnectAttempts = 0;
+    logger.info("WS", "Connected", { url });
   };
 
   _ws.onmessage = (ev) => {
@@ -87,15 +96,17 @@ function _connect(): void {
     } catch { /* ignore non-JSON */ }
   };
 
-  _ws.onclose = () => {
+  _ws.onclose = (ev) => {
     _ws = null;
     _connected = false;
     if (!_intentionallyClosed) {
+      logger.warn("WS", "Connection closed", { code: ev.code, reason: ev.reason, url });
       _scheduleReconnect();
     }
   };
 
   _ws.onerror = () => {
+    logger.error("WS", "Connection error", { url });
     _ws?.close();
   };
 }

@@ -34,7 +34,7 @@ def parse_sse_field(line: str) -> tuple[str, str] | None:
     field = line[:colon]
     if field not in _SSE_FIELDS:
         return None
-    value = line[colon + 1:]
+    value = line[colon + 1 :]
     if value.startswith(" "):
         value = value[1:]
     return (field, value)
@@ -88,17 +88,17 @@ class RPMRateLimiter:
 
             tag = f" endpoint={endpoint_name}" if endpoint_name else ""
             logger.info(
-                f"[RPM]{tag} rate limit reached ({self._rpm} rpm), "
-                f"waiting {wait_time:.1f}s"
+                f"[RPM]{tag} rate limit reached ({self._rpm} rpm), waiting {wait_time:.1f}s"
             )
             await asyncio.sleep(max(wait_time, 0.1))
 
+
 # 冷静期时长（秒）- 按错误类型区分
-COOLDOWN_AUTH = 60         # 认证错误: 1 分钟（需要人工干预，但不宜锁太久）
-COOLDOWN_QUOTA = 300       # 配额耗尽: 5 分钟（配额恢复通常需要数小时）
-COOLDOWN_STRUCTURAL = 10   # 结构性错误: 10 秒（上层会快速识别处理）
-COOLDOWN_TRANSIENT = 5     # 瞬时错误: 5 秒（超时/连接失败，很可能快速恢复）
-COOLDOWN_DEFAULT = 30      # 默认: 30 秒
+COOLDOWN_AUTH = 60  # 认证错误: 1 分钟（需要人工干预，但不宜锁太久）
+COOLDOWN_QUOTA = 300  # 配额耗尽: 5 分钟（配额恢复通常需要数小时）
+COOLDOWN_STRUCTURAL = 10  # 结构性错误: 10 秒（上层会快速识别处理）
+COOLDOWN_TRANSIENT = 5  # 瞬时错误: 5 秒（超时/连接失败，很可能快速恢复）
+COOLDOWN_DEFAULT = 30  # 默认: 30 秒
 COOLDOWN_GLOBAL_FAILURE = 10  # 全局故障（所有端点同时失败）: 10 秒
 
 # 渐进式冷静期退避 —— 连续失败时按次数递增
@@ -120,13 +120,11 @@ class LLMProvider(ABC):
         self._healthy = True
         self._last_error: str | None = None
         self._cooldown_until: float = 0  # 冷静期结束时间戳
-        self._error_category: str = ""   # 错误分类
+        self._error_category: str = ""  # 错误分类
         self._consecutive_cooldowns: int = 0  # 连续进入冷静期次数（无成功请求间隔）
         self._is_extended_cooldown: bool = False  # 是否处于升级冷静期
         _rpm = config.rpm_limit if isinstance(config.rpm_limit, int) else 0
-        self._rate_limiter: RPMRateLimiter | None = (
-            RPMRateLimiter(_rpm) if _rpm > 0 else None
-        )
+        self._rate_limiter: RPMRateLimiter | None = RPMRateLimiter(_rpm) if _rpm > 0 else None
 
     @property
     def name(self) -> str:
@@ -154,9 +152,13 @@ class LLMProvider(ABC):
             self._error_category = ""
             if self._is_extended_cooldown:
                 self._is_extended_cooldown = False
-                # 渐进退避冷静期结束后重置连续计数，给端点重新证明自己的机会
-                self._consecutive_cooldowns = 0
-                logger.info(f"[LLM] endpoint={self.name} progressive cooldown expired, reset to healthy")
+                # 不重置 _consecutive_cooldowns：只有 record_success() 才重置。
+                # 这样持续失败的端点在冷却到期后如果再次失败，会直接进入
+                # 上一次的退避阶级（而非从 0 重新开始），避免 5s→10s→reset 循环。
+                logger.info(
+                    f"[LLM] endpoint={self.name} progressive cooldown expired, "
+                    f"reset to healthy (consecutive_cooldowns={self._consecutive_cooldowns} preserved)"
+                )
 
         return self._healthy
 
@@ -199,14 +201,14 @@ class LLMProvider(ABC):
                 - "structural": 结构性/格式错误 (10s)
                 - "transient": 超时/连接错误 (5s)
                 - "": 默认 (30s)
-            is_local: 是否为本地端点（Ollama 等），本地端点 transient
-                错误不参与渐进升级（超时是资源不足，非远程故障）
+            is_local: 是否为本地端点（Ollama 等），影响 transient 错误的退避策略
 
         渐进式冷静期退避：
             连续非结构性错误进入冷静期（中间没有成功请求），冷静期从
-            COOLDOWN_ESCALATION_STEPS 按次数递增，上限 5 分钟。
+            COOLDOWN_ESCALATION_STEPS 按次数递增，上限 60 秒。
             - 结构性错误不计入连续次数（重试不会改变结果）
-            - 本地端点 transient 错误不触发渐进升级（超时是正常行为）
+            - 本地端点 Timeout 不触发渐进升级（超时是推理资源不足）
+            - 本地端点 ConnectError 正常参与渐进升级（服务未启动，持续重试无意义）
         """
         was_already_unhealthy = not self._healthy
         self._healthy = False
@@ -216,10 +218,10 @@ class LLMProvider(ABC):
         # 累计连续冷静期次数
         # - 只在从健康 → 不健康时递增（同一轮重试中多次 mark_unhealthy 不重复计数）
         # - 结构性错误不累计：每次重试结果相同
-        # - 本地端点 transient 错误不累计：超时是资源不足，惩罚无意义
-        skip_escalation = (
-            self._error_category == "structural"
-            or (is_local and self._error_category == "transient")
+        # - 本地端点 Timeout 不累计：超时是推理资源不足，惩罚无意义
+        #   但 ConnectError（服务未启动）应参与渐进退避，否则 5s 冷却循环浪费资源
+        skip_escalation = self._error_category == "structural" or (
+            is_local and self._error_category == "transient" and self._is_timeout_error(error)
         )
         if not skip_escalation and not was_already_unhealthy:
             self._consecutive_cooldowns += 1
@@ -244,8 +246,8 @@ class LLMProvider(ABC):
         elif self._error_category == "structural":
             cooldown = COOLDOWN_STRUCTURAL
         elif self._error_category == "transient":
-            if is_local:
-                # 本地端点超时固定短冷静期，不升级
+            _local_timeout = is_local and self._is_timeout_error(error)
+            if _local_timeout:
                 cooldown = COOLDOWN_TRANSIENT
             elif self._consecutive_cooldowns >= 2:
                 # 远程端点连续失败 → 渐进退避
@@ -336,15 +338,20 @@ class LLMProvider(ABC):
         Args:
             seconds: 新的冷静期秒数（从现在开始计算）
 
-        注意：如果缩短了渐进退避冷静期，必须同步清除 _is_extended_cooldown，
-        否则缩短后的冷静期到期时 is_healthy 会误以为完整退避已完成，
-        错误重置 _consecutive_cooldowns，导致渐进退避永远无法升级。
+        注意：缩短渐进退避冷静期时同步清除 _is_extended_cooldown，
+        避免缩短后到期时触发"progressive cooldown expired"的误导日志。
         """
         new_until = time.time() + seconds
         if self._cooldown_until > new_until:
             if self._is_extended_cooldown:
                 self._is_extended_cooldown = False
             self._cooldown_until = new_until
+
+    @staticmethod
+    def _is_timeout_error(error: str) -> bool:
+        """判断是否为超时错误（区别于连接拒绝等其他 transient 错误）"""
+        err = error.lower()
+        return any(kw in err for kw in ["timeout", "timed out"])
 
     @staticmethod
     def _classify_error(error: str) -> str:
@@ -360,55 +367,106 @@ class LLMProvider(ABC):
         err_lower = error.lower()
 
         # 配额耗尽类（必须在 auth 之前，因为也是 403 状态码）
-        if any(kw in err_lower for kw in [
-            "allocationquota", "freetieronly", "insufficient_quota",
-            "quota_exceeded", "billing", "free tier",
-            "free_tier", "quota", "exceeded your current",
-        ]):
+        if any(
+            kw in err_lower
+            for kw in [
+                "allocationquota",
+                "freetieronly",
+                "insufficient_quota",
+                "quota_exceeded",
+                "billing",
+                "free tier",
+                "free_tier",
+                "quota",
+                "exceeded your current",
+            ]
+        ):
             return "quota"
 
         # 认证类
-        if any(kw in err_lower for kw in [
-            "auth", "401", "403", "api_key", "invalid key", "permission",
-        ]):
+        if any(
+            kw in err_lower
+            for kw in [
+                "auth",
+                "401",
+                "403",
+                "api_key",
+                "invalid key",
+                "permission",
+            ]
+        ):
             return "auth"
 
         # 限速类（必须在 structural 之前，某些提供商 429 响应体含 "invalid_request"）
-        if any(kw in err_lower for kw in [
-            "rate limit", "rate_limit", "too many requests",
-            "rate reaches maximum", "request rate",
-            "(429)",
-        ]):
+        if any(
+            kw in err_lower
+            for kw in [
+                "rate limit",
+                "rate_limit",
+                "too many requests",
+                "rate reaches maximum",
+                "request rate",
+                "(429)",
+            ]
+        ):
             return "transient"
 
         # 模型不可用类（必须在 transient 之前，因为也返回 503 状态码）
         # API 代理返回 model_not_found 表示模型通道不存在，重试无意义
-        if any(kw in err_lower for kw in [
-            "model_not_found", "model not found",
-            "no available channel",
-            "model_decommissioned", "deprecated_model",
-            "model_not_available", "model not available",
-            "model does not exist",
-        ]):
+        if any(
+            kw in err_lower
+            for kw in [
+                "model_not_found",
+                "model not found",
+                "no available channel",
+                "model_decommissioned",
+                "deprecated_model",
+                "model_not_available",
+                "model not available",
+                "model does not exist",
+            ]
+        ):
             return "structural"
 
         # 结构性/格式类
         # 注意: 用 "(400)" 而非 "400"，避免匹配 HTML 中的 CSS 类名等内容
-        if any(kw in err_lower for kw in [
-            "invalid_request", "invalid_parameter", "messages with role",
-            "must be a response", "does not support", "not supported",
-            "(400)", "(413)",
-            "payload too large", "request entity too large",
-            "larger than allowed",
-        ]):
+        if any(
+            kw in err_lower
+            for kw in [
+                "invalid_request",
+                "invalid_parameter",
+                "messages with role",
+                "must be a response",
+                "does not support",
+                "not supported",
+                "(400)",
+                "(413)",
+                "payload too large",
+                "request entity too large",
+                "larger than allowed",
+            ]
+        ):
             return "structural"
 
         # 瞬时类（网络/超时）
-        if any(kw in err_lower for kw in [
-            "timeout", "timed out", "connect", "connection",
-            "network", "unreachable", "reset", "eof", "broken pipe",
-            "502", "503", "504", "529",
-        ]):
+        if any(
+            kw in err_lower
+            for kw in [
+                "timeout",
+                "timed out",
+                "connect",
+                "connection",
+                "network",
+                "unreachable",
+                "reset",
+                "eof",
+                "broken pipe",
+                "502",
+                "503",
+                "504",
+                "529",
+            ]
+        ):
             return "transient"
 
         return "unknown"

@@ -12,7 +12,12 @@ class ChatRequest(BaseModel):
 
     message: str = Field("", description="User message text")
     conversation_id: str | None = Field(None, description="Conversation ID for context")
-    plan_mode: bool = Field(False, description="Force Plan mode")
+    plan_mode: bool = Field(False, description="Force Plan mode (legacy, prefer 'mode')")
+    mode: str = Field(
+        "agent",
+        description="Interaction mode: 'agent' (default) or 'plan'. "
+        "Takes precedence over plan_mode when not 'agent'.",
+    )
     endpoint: str | None = Field(None, description="Specific endpoint name (null=auto)")
     attachments: list[AttachmentInfo] | None = Field(None, description="Attached files/images")
     thinking_mode: str | None = Field(

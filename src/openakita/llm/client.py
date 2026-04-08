@@ -1127,6 +1127,16 @@ class LLMClient:
                             request.thinking_depth = _saved_depth
                             raise
 
+                    # ── 诊断: 非 thinking 场景下的空内容检测 ──
+                    if not response.content and response.usage.output_tokens > 0:
+                        logger.error(
+                            f"[LLM] ⚠️ CONTENT LOST: endpoint={provider.name} "
+                            f"tokens_out={response.usage.output_tokens} but content is empty "
+                            f"(enable_thinking={request.enable_thinking}, "
+                            f"stream_only={getattr(provider, '_stream_only', False)}, "
+                            f"reasoning={bool(getattr(response, 'reasoning_content', None))})"
+                        )
+
                     return response
 
                 except (UserCancelledError, asyncio.CancelledError):

@@ -83,6 +83,17 @@ class TaskScheduler:
 
     async def start(self) -> None:
         """启动调度器"""
+        if self._running and self._scheduler_task and not self._scheduler_task.done():
+            logger.warning("TaskScheduler.start() called while already running, skipping")
+            return
+
+        if self._scheduler_task and not self._scheduler_task.done():
+            self._scheduler_task.cancel()
+            try:
+                await self._scheduler_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
         self._running = True
         self._semaphore = asyncio.Semaphore(self.max_concurrent)
 

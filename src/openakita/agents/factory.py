@@ -220,6 +220,27 @@ class AgentInstancePool:
         self._skills_version += 1
         logger.info(f"Pool skills version bumped to {self._skills_version}")
 
+    @staticmethod
+    def _sync_profile_fields(agent: Agent, profile: AgentProfile) -> None:
+        """Hot-patch mutable profile fields onto a cached agent instance.
+
+        Avoids expensive full rebuild when only lightweight config like
+        preferred_endpoint or custom_prompt changes.
+        """
+        new_ep = profile.preferred_endpoint or None
+        if getattr(agent, "_preferred_endpoint", None) != new_ep:
+            old = getattr(agent, "_preferred_endpoint", None)
+            agent._preferred_endpoint = new_ep
+            logger.info(
+                f"Pool synced preferred_endpoint: {old!r} → {new_ep!r} "
+                f"(profile={profile.id})"
+            )
+
+        new_prompt = profile.custom_prompt or ""
+        if getattr(agent, "_custom_prompt_suffix", "") != new_prompt:
+            agent._custom_prompt_suffix = new_prompt
+            logger.debug(f"Pool synced custom_prompt for profile={profile.id}")
+
     async def get_or_create(
         self, session_id: str, profile: AgentProfile,
     ) -> Agent:
@@ -238,6 +259,7 @@ class AgentInstancePool:
         entry = self._pool.get(key)
         if entry:
             if entry.skills_version >= current_version:
+                self._sync_profile_fields(entry.agent, profile)
                 entry.touch()
                 return entry.agent
             logger.info(
@@ -258,6 +280,7 @@ class AgentInstancePool:
         async with create_lock:
             entry = self._pool.get(key)
             if entry and entry.skills_version >= current_version:
+                self._sync_profile_fields(entry.agent, profile)
                 entry.touch()
                 return entry.agent
 

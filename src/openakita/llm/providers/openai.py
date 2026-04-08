@@ -228,6 +228,9 @@ class OpenAIProvider(LLMProvider):
         """发送聊天请求（支持 stream-only 端点自动检测 + 空响应流式回退）"""
         await self.acquire_rate_limit()
 
+        # 每个 provider 独立判断是否需要流式回退，避免跨端点泄漏
+        request._stream_fallback_tried = False  # type: ignore[attr-defined]
+
         if self._stream_only:
             return await self._chat_via_stream(request)
 
@@ -351,13 +354,7 @@ class OpenAIProvider(LLMProvider):
                 )
 
             self.mark_healthy()
-            self._last_raw_diagnostic = None
-            result = self._parse_response(data)
-            # 附加原始响应诊断（content lost 时由 _parse_response 设置）
-            _diag = self._last_raw_diagnostic
-            if _diag and not result.content:
-                result._raw_diagnostic = _diag  # type: ignore[attr-defined]
-            return result
+            return self._parse_response(data)
 
         except httpx.TimeoutException as e:
             detail = f"{type(e).__name__}: {e}"
@@ -1045,11 +1042,14 @@ class OpenAIProvider(LLMProvider):
         if text_content:
             content_blocks.insert(0, TextBlock(text=text_content))
 
+        # 解析使用统计（提前到防御层之前，避免重复取值）
+        usage_data = data.get("usage", {})
+
         # 防御层：当 content_blocks 为空但 API 确实返回了 output tokens 时，
         # 尝试从 message 的非标准字段中恢复内容（部分中转网关/推理模型
         # 可能将输出放在 reasoning_content/reasoning/output 等字段中）
+        _raw_diagnostic: dict | None = None
         if not content_blocks and not has_tool_calls:
-            usage_data = data.get("usage", {})
             _out_tokens = usage_data.get("completion_tokens", 0)
 
             # 1. reasoning_content 作为可见文本 fallback（部分网关
@@ -1123,8 +1123,7 @@ class OpenAIProvider(LLMProvider):
                     f"extra_data_keys={_extra_keys}, extra_choice_keys={_choice_keys}, "
                     f"token_details={_token_details}"
                 )
-                # 附加原始响应摘要供 llm_debug 保存
-                self._last_raw_diagnostic = {
+                _raw_diagnostic = {
                     "endpoint": self.name,
                     "data_keys": sorted(data.keys()),
                     "choice_keys": sorted(choice.keys()),
@@ -1152,14 +1151,12 @@ class OpenAIProvider(LLMProvider):
             }
             stop_reason = stop_reason_map.get(finish_reason, StopReason.END_TURN)
 
-        # 解析使用统计
-        usage_data = data.get("usage", {})
         usage = Usage(
             input_tokens=usage_data.get("prompt_tokens", 0),
             output_tokens=usage_data.get("completion_tokens", 0),
         )
 
-        return LLMResponse(
+        result = LLMResponse(
             id=data.get("id", ""),
             content=content_blocks,
             stop_reason=stop_reason,
@@ -1167,6 +1164,9 @@ class OpenAIProvider(LLMProvider):
             model=data.get("model", self.config.model),
             reasoning_content=reasoning_content,
         )
+        if _raw_diagnostic:
+            result._raw_diagnostic = _raw_diagnostic  # type: ignore[attr-defined]
+        return result
 
     def _convert_stream_event(self, event: dict) -> dict:
         """转换流式事件为统一格式"""

@@ -108,6 +108,7 @@ class TaskStatus(str, Enum):
     ACCEPTED = "accepted"
     REJECTED = "rejected"
     BLOCKED = "blocked"
+    CANCELLED = "cancelled"
 
 
 # ---------------------------------------------------------------------------

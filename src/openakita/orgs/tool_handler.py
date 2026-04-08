@@ -180,6 +180,13 @@ class OrgToolHandler:
             # 1. chain_id match
             existing = store.find_task_by_chain(chain_id)
             if existing:
+                # Skip updates if task has been cancelled or reset by user
+                if existing.status in (TaskStatus.CANCELLED, TaskStatus.TODO, TaskStatus.ACCEPTED):
+                    logger.info(
+                        f"[ToolHandler] Skipping update for task {existing.id}: "
+                        f"status={existing.status.value} (externally changed)"
+                    )
+                    return
                 updates: dict[str, Any] = {}
                 if status:
                     updates["status"] = TaskStatus(status)
@@ -245,12 +252,15 @@ class OrgToolHandler:
         """Append an entry to a ProjectTask's execution_log."""
         try:
             from openakita.orgs.project_store import ProjectStore
+            from openakita.orgs.models import TaskStatus
 
             mgr = self._runtime._manager
             org_dir = mgr._org_dir(org_id)
             store = ProjectStore(org_dir)
             existing = store.find_task_by_chain(chain_id)
             if not existing:
+                return
+            if existing.status in (TaskStatus.CANCELLED, TaskStatus.TODO, TaskStatus.ACCEPTED):
                 return
             log_entry = {"at": _now_iso(), "by": node_id, "entry": entry[:_LIM_EXEC_LOG]}
             new_log = list(existing.execution_log or []) + [log_entry]

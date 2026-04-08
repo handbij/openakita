@@ -917,6 +917,8 @@ export function OrgEditorView({
         }
       } else if (ev === "org:task_complete") {
         triggerEdgeAnimation((d as any).node_id, (d as any).node_id, "#22c55e");
+      } else if (ev === "org:task_cancelled") {
+        bbPanelRef.current?.refresh();
       } else if (ev === "org:quota_exhausted") {
         showToast(`配额耗尽：${(d as any).message || "LLM 调用次数已用完"}`, "error");
       } else if (ev === "org:watchdog_recovery") {

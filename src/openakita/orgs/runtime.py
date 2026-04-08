@@ -557,6 +557,79 @@ class OrgRuntime:
             result["chain_id"] = chain_id
         return result
 
+    async def cancel_node_task(
+        self,
+        org_id: str,
+        node_id: str,
+        reason: str = "用户取消任务",
+    ) -> dict:
+        """Cancel the running task on a specific node.
+
+        1. Cancel the Agent's internal TaskState so the ReAct loop stops
+        2. Cancel the asyncio.Task wrapper in _running_tasks
+        3. Reset node status to IDLE
+        4. Broadcast status change events
+        """
+        org = self._active_orgs.get(org_id)
+        if not org:
+            return {"ok": False, "error": "Organization not running"}
+
+        node = org.get_node(node_id)
+        if not node:
+            return {"ok": False, "error": f"Node not found: {node_id}"}
+
+        if node.status != NodeStatus.BUSY:
+            return {"ok": False, "error": f"Node {node_id} is not busy (status={node.status.value})"}
+
+        cache_key = f"{org_id}:{node_id}"
+        session_id = f"org:{org_id}:node:{node_id}"
+        cancelled = False
+
+        # (a) Signal the Agent's ReAct loop to stop via cancel_current_task
+        cached = self._agent_cache.get(cache_key)
+        if cached and hasattr(cached.agent, "cancel_current_task"):
+            try:
+                cached.agent.cancel_current_task(reason, session_id=session_id)
+                logger.info(f"[OrgRuntime] Sent cancel signal to agent {cache_key}")
+            except Exception as e:
+                logger.warning(f"[OrgRuntime] Agent cancel_current_task failed: {e}")
+
+        # (b) Cancel the asyncio.Task so CancelledError propagates
+        org_tasks = self._running_tasks.get(org_id, {})
+        for task_key, task in list(org_tasks.items()):
+            if task_key.startswith(f"{node_id}:") and not task.done():
+                task.cancel()
+                cancelled = True
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+                org_tasks.pop(task_key, None)
+                logger.info(f"[OrgRuntime] Cancelled asyncio task {task_key}")
+
+        # (c) Reset node status
+        try:
+            self._set_node_status(org, node, NodeStatus.IDLE, f"task_cancelled: {reason}")
+            self._node_current_chain.pop(cache_key, None)
+            await self._save_org(org)
+        except Exception as e:
+            logger.warning(f"[OrgRuntime] Failed to reset node status: {e}")
+
+        # (d) Broadcast events
+        self.get_event_store(org_id).emit(
+            "task_cancelled", node_id, {"reason": reason[:_LIM_EVENT]},
+        )
+        await self._broadcast_ws("org:node_status", {
+            "org_id": org_id, "node_id": node_id, "status": "idle",
+            "current_task": "",
+        })
+        await self._broadcast_ws("org:task_cancelled", {
+            "org_id": org_id, "node_id": node_id, "reason": reason[:_LIM_WS],
+        })
+
+        logger.info(f"[OrgRuntime] cancel_node_task completed: org={org_id}, node={node_id}, cancelled={cancelled}")
+        return {"ok": True, "node_id": node_id, "cancelled": cancelled}
+
     async def _auto_kickoff(self, org: Organization) -> None:
         """Auto-activate the root node with a mission briefing when org starts
         with core_business set. This enables continuous autonomous operations."""
@@ -857,11 +930,27 @@ class OrgRuntime:
         org: Organization, node: OrgNode,
     ) -> str:
         """Run a single agent task (no timeout wrapper)."""
+        from openakita.core.errors import UserCancelledError
+
         try:
             response = await agent.chat(prompt, session_id=session_id)
             return response or ""
-        except asyncio.CancelledError:
-            logger.info(f"[OrgRuntime] Task cancelled for {node.id}")
+        except (asyncio.CancelledError, UserCancelledError) as cancel_err:
+            logger.info(f"[OrgRuntime] Task cancelled for {node.id}: {type(cancel_err).__name__}")
+            chain_id = self.get_current_chain_id(org.id, node.id)
+            if chain_id:
+                try:
+                    from openakita.orgs.project_store import ProjectStore
+                    from openakita.orgs.models import TaskStatus
+                    store = ProjectStore(self._manager._org_dir(org.id))
+                    task = store.find_task_by_chain(chain_id)
+                    if task and task.status == TaskStatus.IN_PROGRESS:
+                        store.update_task(task.project_id, task.id, {
+                            "status": TaskStatus.CANCELLED,
+                        })
+                        logger.info(f"[OrgRuntime] Marked project task {task.id} as cancelled")
+                except Exception as e:
+                    logger.debug(f"[OrgRuntime] Failed to update task status on cancel: {e}")
             return "(任务已取消)"
         except Exception as e:
             logger.error(f"[OrgRuntime] Agent task error: {e}")

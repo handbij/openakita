@@ -50,6 +50,7 @@ export const TASK_STATUS_LABELS: Record<string, string> = {
   delivered: "已交付",
   rejected: "已打回",
   accepted: "已验收",
+  cancelled: "已取消",
   blocked: "已阻塞",
 };
 

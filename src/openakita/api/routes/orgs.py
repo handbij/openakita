@@ -1934,6 +1934,75 @@ async def dispatch_task(request: Request, org_id: str, project_id: str, task_id:
     return {"ok": True, "task_id": task_id, "chain_id": chain_id, "dispatched": True}
 
 
+@router.post("/{org_id}/projects/{project_id}/tasks/{task_id}/cancel")
+async def cancel_dispatched_task(request: Request, org_id: str, project_id: str, task_id: str):
+    """Cancel a dispatched (in_progress) task: stop the running agent and reset status."""
+    from openakita.orgs.models import TaskStatus
+
+    store = _get_project_store(request, org_id)
+    task_data, proj_data = store.get_task(task_id)
+    if not task_data:
+        raise HTTPException(404, "Task not found")
+    if task_data.project_id != project_id:
+        raise HTTPException(404, "Task not found in this project")
+
+    if task_data.status not in (TaskStatus.IN_PROGRESS,):
+        return {"ok": False, "error": f"Task is not in_progress (status={task_data.status.value})"}
+
+    runtime = _get_runtime(request)
+    chain_id = task_data.chain_id
+
+    # Determine which node is running this task
+    target_node_id = task_data.assignee_node_id
+    if not target_node_id and chain_id:
+        org = runtime.get_org(org_id)
+        if org:
+            for node in org.nodes:
+                current_chain = runtime.get_current_chain_id(org_id, node.id)
+                if current_chain == chain_id:
+                    target_node_id = node.id
+                    break
+
+    body = {}
+    try:
+        body = await request.json() if request.headers.get("content-length", "0") != "0" else {}
+    except Exception:
+        pass
+    reason = body.get("reason", "用户取消任务")
+
+    cancel_result = {"ok": False}
+    if target_node_id:
+        try:
+            cancel_result = await to_engine(
+                runtime.cancel_node_task(org_id, target_node_id, reason)
+            )
+        except Exception as e:
+            logger.warning(f"[OrgAPI] cancel_node_task failed: {e}")
+            cancel_result = {"ok": False, "error": str(e)}
+
+    store.update_task(project_id, task_id, {
+        "status": TaskStatus.CANCELLED,
+        "chain_id": None,
+    })
+
+    try:
+        from .websocket import broadcast_event
+        await broadcast_event("org:task_cancelled", {
+            "org_id": org_id,
+            "project_id": project_id,
+            "task_id": task_id,
+        })
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "task_id": task_id,
+        "status": "cancelled",
+        "node_cancelled": cancel_result.get("ok", False),
+    }
+
+
 @router.put("/{org_id}/projects/{project_id}/tasks/{task_id}")
 async def update_task(request: Request, org_id: str, project_id: str, task_id: str):
     from openakita.orgs.models import TaskStatus

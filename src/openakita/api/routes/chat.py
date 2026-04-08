@@ -26,10 +26,115 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+@router.get("/api/commands")
+async def list_commands():
+    """Return available slash commands for the Desktop UI."""
+    from ...commands.registry import CommandScope, get_commands
+
+    return [
+        {
+            "name": c.name,
+            "label": c.label,
+            "description": c.description,
+            "argsHint": c.args_hint,
+        }
+        for c in get_commands()
+        if CommandScope.DESKTOP in c.scope
+    ]
+
+
+@router.post("/api/chat/clear")
+async def clear_chat(request: Request):
+    """Clear session context for a conversation."""
+    body = await request.json()
+    conversation_id = body.get("conversation_id", "")
+    if not conversation_id:
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "missing conversation_id"},
+        )
+
+    session_manager = getattr(request.app.state, "session_manager", None)
+    if not session_manager:
+        return JSONResponse(
+            status_code=503,
+            content={"ok": False, "error": "session manager not available"},
+        )
+
+    cleared = session_manager.clear_history(
+        channel="desktop",
+        chat_id=conversation_id,
+        user_id="desktop_user",
+    )
+    if cleared:
+        _cleanup_chat_runtime_state(request, conversation_id)
+        return {"ok": True}
+
+    # Fallback: search by Session.id (handles wrapped IDs from API clients)
+    session = session_manager.get_session_by_id(conversation_id)
+    if session:
+        session.context.clear_messages()
+        session_manager.mark_dirty()
+        _cleanup_chat_runtime_state(request, conversation_id)
+        return {"ok": True}
+
+    return JSONResponse(
+        status_code=404,
+        content={"ok": False, "error": "session not found"},
+    )
+
+
+def _cleanup_chat_runtime_state(request: Request, conversation_id: str) -> None:
+    """Clear runtime state that should not survive /api/chat/clear."""
+    try:
+        from ...core.policy import get_policy_engine
+
+        get_policy_engine().cleanup_session(conversation_id)
+    except Exception:
+        pass
+
+    try:
+        from ...tools.handlers.plan import clear_session_todo_state
+
+        clear_session_todo_state(conversation_id)
+    except Exception:
+        pass
+
+    # Clear pending tool confirmations in the ToolExecutor
+    try:
+        brain = getattr(request.app.state, "brain", None)
+        if brain and hasattr(brain, "_tool_executor"):
+            brain._tool_executor.clear_confirm_cache()
+    except Exception:
+        pass
+
+    try:
+        orchestrators = []
+
+        app_orchestrator = getattr(request.app.state, "orchestrator", None)
+        if app_orchestrator is not None:
+            orchestrators.append(app_orchestrator)
+
+        try:
+            from openakita.main import _orchestrator as global_orchestrator
+
+            if global_orchestrator is not None and global_orchestrator not in orchestrators:
+                orchestrators.append(global_orchestrator)
+        except Exception:
+            pass
+
+        for orchestrator in orchestrators:
+            if hasattr(orchestrator, "purge_session_states"):
+                orchestrator.purge_session_states(conversation_id)
+    except Exception:
+        pass
+
+
 async def _broadcast_chat_event(event: str, data: dict) -> None:
     """Broadcast a chat event via WebSocket to all connected clients."""
     try:
         from .websocket import broadcast_event
+
         await broadcast_event(event, data)
     except Exception:
         pass
@@ -46,20 +151,20 @@ def _resolve_agent(agent: object):
 
 def _is_multi_agent_enabled() -> bool:
     from openakita.config import settings
+
     return settings.multi_agent_enabled
 
 
 def _resolve_profile(agent_profile_id: str | None):
-    """Resolve an AgentProfile by id, falling back to 'default'.
-
-    Priority: disk (user customizations) > in-memory system presets.
-    This matches the priority used by GET /api/agents/profiles so that
-    the profile seen in the management UI is the same one used at runtime.
-    """
+    """Resolve an AgentProfile by id, falling back to 'default'."""
     from openakita.agents.presets import SYSTEM_PRESETS
     from openakita.agents.profile import AgentProfile, get_profile_store
 
     pid = agent_profile_id or "default"
+
+    for p in SYSTEM_PRESETS:
+        if p.id == pid:
+            return p
 
     try:
         store = get_profile_store()
@@ -70,17 +175,15 @@ def _resolve_profile(agent_profile_id: str | None):
         pass
 
     for p in SYSTEM_PRESETS:
-        if p.id == pid:
-            return p
-
-    for p in SYSTEM_PRESETS:
         if p.id == "default":
             return p
 
     return AgentProfile(id="default", name="Default Agent")
 
 
-async def _get_agent_for_session(request: Request, conversation_id: str, agent_profile_id: str | None = None):
+async def _get_agent_for_session(
+    request: Request, conversation_id: str, agent_profile_id: str | None = None
+):
     """Get a per-session Agent from pool, or fallback to global agent."""
     pool = getattr(request.app.state, "agent_pool", None)
     if pool is not None and conversation_id:
@@ -127,15 +230,15 @@ def _apply_agent_profile(session: object, new_profile_id: str) -> bool:
     except Exception:
         pass  # graceful fallback — allow switch if validation infra unavailable
 
-    ctx.agent_switch_history.append({
-        "from": old_profile_id,
-        "to": new_profile_id,
-        "at": datetime.now().isoformat(),
-    })
-    ctx.agent_profile_id = new_profile_id
-    logger.info(
-        f"[Chat API] Agent profile switched: {old_profile_id!r} -> {new_profile_id!r}"
+    ctx.agent_switch_history.append(
+        {
+            "from": old_profile_id,
+            "to": new_profile_id,
+            "at": datetime.now().isoformat(),
+        }
     )
+    ctx.agent_profile_id = new_profile_id
+    logger.info(f"[Chat API] Agent profile switched: {old_profile_id!r} -> {new_profile_id!r}")
     return True
 
 
@@ -181,10 +284,11 @@ def _schedule_background_save(
                     meta["artifacts"] = bg_artifacts
                 session.add_message("assistant", bg_reply, **meta)
                 if session_manager:
-                    session_manager.persist()
+                    session_manager.mark_dirty()
                 logger.info(
                     "[Chat API] Background save: %d chars (conv=%s)",
-                    len(bg_reply), conversation_id,
+                    len(bg_reply),
+                    conversation_id,
                 )
             except Exception as e:
                 logger.warning("[Chat API] Background save failed: %s", e)
@@ -223,6 +327,7 @@ async def _stream_chat(
     _reply_chars = 0
     _reply_preview = ""
     _full_reply = ""  # 完整回复文本（用于 session 保存）
+    _chain_reply = ""  # chain_text 累积（仅在无 text_delta 时 fallback 使用）
     _done_sent = False
     _client_disconnected = False
     _ask_user_question = ""
@@ -245,7 +350,7 @@ async def _stream_chat(
         return False
 
     def _sse(event_type: str, data: dict | None = None) -> str:
-        nonlocal _reply_chars, _reply_preview, _full_reply, _done_sent
+        nonlocal _reply_chars, _reply_preview, _full_reply, _chain_reply, _done_sent
         if event_type == "done":
             if _done_sent:
                 return ""
@@ -254,17 +359,27 @@ async def _stream_chat(
             try:
                 logger.info(
                     f"[Chat API] 回复完成: {_reply_chars}字 | "
-                    f"\"{preview}{'...' if _reply_chars > 100 else ''}\""
+                    f'"{preview}{"..." if _reply_chars > 100 else ""}"'
                 )
             except (UnicodeEncodeError, OSError):
                 pass
-        payload = {"type": event_type, **(data or {})}
+        from ...events import normalize_stream_event
+
+        payload = normalize_stream_event({"type": event_type, **(data or {})})
         if event_type == "text_delta" and data and "content" in data:
             chunk = data["content"]
             _reply_chars += len(chunk)
             _full_reply += chunk
             if len(_reply_preview) < 120:
                 _reply_preview += chunk
+        elif event_type == "text_replace" and data and "content" in data:
+            _full_reply = data["content"]
+            _reply_chars = len(_full_reply)
+            _reply_preview = _full_reply[:120]
+        elif event_type == "chain_text" and data and "content" in data:
+            chunk = data["content"]
+            _reply_chars += len(chunk)
+            _chain_reply += chunk
         return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
     _disconnect_watcher_task: asyncio.Task | None = None
@@ -292,9 +407,11 @@ async def _stream_chat(
 
         # --- Session management ---
         import uuid as _uuid
+
         conversation_id = chat_request.conversation_id or f"api_{_uuid.uuid4().hex[:12]}"
         session = None
         session_messages_history: list[dict] = []
+        _msg_added = True
 
         if session_manager and conversation_id:
             try:
@@ -312,11 +429,21 @@ async def _stream_chat(
                     # 先添加用户消息，再获取完整历史（含当前消息）
                     # 这与 IM 路径一致：gateway 先 add_message，再传 session_messages
                     if chat_request.message:
-                        session.add_message("user", chat_request.message)
-                    session_messages_history = list(session.context.messages) if hasattr(session, "context") else []
+                        _msg_added = session.add_message("user", chat_request.message)
+                    session_messages_history = (
+                        list(session.context.messages) if hasattr(session, "context") else []
+                    )
                     session_manager.mark_dirty()
             except Exception as e:
                 logger.warning(f"[Chat API] Session management error: {e}")
+
+        # ── Dedup short-circuit: skip LLM if message is identical duplicate ──
+        if session and not _msg_added and chat_request.message:
+            logger.info(
+                "[Chat API] Dedup: identical message within time window, skipping LLM"
+            )
+            yield _sse("done")
+            return
 
         # ── Background agent task: decoupled from SSE lifecycle ──
         async def _agent_runner():
@@ -328,6 +455,7 @@ async def _stream_chat(
                     session=session,
                     gateway=None,
                     plan_mode=chat_request.plan_mode,
+                    mode=chat_request.mode,
                     endpoint_override=chat_request.endpoint,
                     attachments=chat_request.attachments,
                     thinking_mode=chat_request.thinking_mode,
@@ -368,7 +496,7 @@ async def _stream_chat(
                                     timeout=DISCONNECT_GRACE_SECONDS,
                                 )
                                 logger.info("[Chat API] Agent task 在宽限期内完成")
-                            except asyncio.TimeoutError:
+                            except (asyncio.TimeoutError, TimeoutError):
                                 logger.warning(
                                     "[Chat API] 宽限期超时（%ds），取消任务",
                                     DISCONNECT_GRACE_SECONDS,
@@ -393,10 +521,8 @@ async def _stream_chat(
         _agent_errored = False
         while True:
             try:
-                event = await asyncio.wait_for(
-                    _agent_queue.get(), timeout=SSE_KEEPALIVE_INTERVAL
-                )
-            except TimeoutError:
+                event = await asyncio.wait_for(_agent_queue.get(), timeout=SSE_KEEPALIVE_INTERVAL)
+            except (asyncio.TimeoutError, TimeoutError):
                 if not _client_disconnected and not await _check_disconnected():
                     yield _sse("heartbeat", {"ts": time.time()})
                 continue
@@ -408,7 +534,8 @@ async def _stream_chat(
             if event_type == "__agent_error__":
                 _agent_errored = True
                 if not _client_disconnected:
-                    yield _sse("error", {"message": event.get("__exc_msg__", "Unknown error")})
+                    _err_msg = event.get("__exc_msg__") or "Unknown error"
+                    yield _sse("error", {"message": _err_msg})
                     yield _sse("done")
                 break
 
@@ -497,7 +624,7 @@ async def _stream_chat(
                     except (json.JSONDecodeError, TypeError, KeyError, ValueError) as exc:
                         logger.warning(
                             f"[Chat API] Delegation artifact parse failed: {exc!r}, "
-                            f"chunk preview: {_del_result[max(0, _search_pos - 50):_search_pos + 100]}"
+                            f"chunk preview: {_del_result[max(0, _search_pos - 50) : _search_pos + 100]}"
                         )
                         break
                 if _art_marker in _del_result:
@@ -525,8 +652,10 @@ async def _stream_chat(
         _save_done = True
         # ask_user 场景：_ask_user_question 已包含 LLM 文本 + 问题（由 reason_stream 拼接），
         # 优先使用它作为保存文本，确保下一轮 LLM 能看到完整的确认问题上下文。
-        if _ask_user_question:
-            parts = [_ask_user_question]
+        if _ask_user_question or _ask_user_questions:
+            parts = []
+            if _ask_user_question:
+                parts.append(_ask_user_question)
             if _ask_user_questions:
                 for q in _ask_user_questions:
                     q_prompt = q.get("prompt", "")
@@ -540,9 +669,10 @@ async def _stream_chat(
                 parts.append("\n选项：")
                 for o in _ask_user_options:
                     parts.append(f"  - {o.get('id', '')}: {o.get('label', '')}")
-            assistant_text_to_save = "\n".join(parts)
+            ask_text = "\n".join(parts)
+            assistant_text_to_save = ask_text if ask_text.strip() else (_full_reply or _chain_reply)
         else:
-            assistant_text_to_save = _full_reply
+            assistant_text_to_save = _full_reply or _chain_reply
 
         # Collect tool execution summary as structured metadata
         _tool_summary = None
@@ -560,6 +690,15 @@ async def _stream_chat(
                 session.set_metadata("_last_chain_summary", None)
             except Exception:
                 pass
+
+        if not assistant_text_to_save:
+            _task = (
+                actual_agent.agent_state.current_task
+                if hasattr(actual_agent, "agent_state") and actual_agent.agent_state
+                else None
+            )
+            if _task and _task.cancelled:
+                assistant_text_to_save = "[任务已取消]"
 
         if session and assistant_text_to_save:
             try:
@@ -579,9 +718,11 @@ async def _stream_chat(
                     _msg_meta["ask_user"] = _ask_user_data
                 session.add_message("assistant", assistant_text_to_save, **_msg_meta)
                 if session_manager:
-                    session_manager.persist()
+                    session_manager.mark_dirty()
             except Exception as e:
-                logger.error(f"[Chat API] Failed to save assistant message to session: {e}", exc_info=True)
+                logger.error(
+                    f"[Chat API] Failed to save assistant message to session: {e}", exc_info=True
+                )
 
         # Ensure sub-agent records are flushed to disk
         if session and hasattr(session, "context") and session_manager:
@@ -597,8 +738,9 @@ async def _stream_chat(
                 _usage_data = dict(_cached)
             else:
                 re = getattr(actual_agent, "reasoning_engine", None)
-                trace = getattr(actual_agent, "_last_finalized_trace", None) or \
-                    (getattr(re, "_last_react_trace", []) if re else [])
+                trace = getattr(actual_agent, "_last_finalized_trace", None) or (
+                    getattr(re, "_last_react_trace", []) if re else []
+                )
                 if trace:
                     total_in = sum(t.get("tokens", {}).get("input", 0) for t in trace)
                     total_out = sum(t.get("tokens", {}).get("output", 0) for t in trace)
@@ -607,7 +749,9 @@ async def _stream_chat(
                         "output_tokens": total_out,
                         "total_tokens": total_in + total_out,
                     }
-                ctx_mgr = getattr(actual_agent, "context_manager", None) or getattr(re, "_context_manager", None)
+                ctx_mgr = getattr(actual_agent, "context_manager", None) or getattr(
+                    re, "_context_manager", None
+                )
                 if ctx_mgr and hasattr(ctx_mgr, "get_max_context_tokens"):
                     _max_ctx = ctx_mgr.get_max_context_tokens()
                     _msgs = getattr(re, "_last_working_messages", None) or getattr(
@@ -627,7 +771,8 @@ async def _stream_chat(
     except Exception as e:
         logger.error(f"Chat stream error: {e}", exc_info=True)
         if not _client_disconnected:
-            yield _sse("error", {"message": str(e)[:500]})
+            err_msg = str(e)[:500] or f"{type(e).__name__}: unknown error"
+            yield _sse("error", {"message": err_msg})
             yield _sse("done")
     finally:
         # ── Wait for agent task to finish (deferred save if SSE gen was interrupted) ──
@@ -635,15 +780,22 @@ async def _stream_chat(
         if _agent_task is not None and not _agent_done.is_set():
             try:
                 await asyncio.wait_for(_agent_done.wait(), timeout=65.0)
-            except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
+            except (TimeoutError, asyncio.CancelledError, Exception):
                 if _agent_task and not _agent_task.done():
                     # 长任务仍在运行 — 不立即取消，注册后台保存回调。
                     # 任务完成时回调会 drain queue 并保存 session。
                     _bg_save_scheduled = True
                     _schedule_background_save(
-                        _agent_task, _agent_done, _agent_queue, _sse,
-                        session, session_manager, conversation_id,
-                        _full_reply, _collected_artifacts, _save_done,
+                        _agent_task,
+                        _agent_done,
+                        _agent_queue,
+                        _sse,
+                        session,
+                        session_manager,
+                        conversation_id,
+                        _full_reply,
+                        _collected_artifacts,
+                        _save_done,
                     )
 
         # Drain remaining queue events to accumulate _full_reply for deferred save
@@ -659,16 +811,17 @@ async def _stream_chat(
             except Exception:
                 pass
             # Deferred session save
-            if session and _full_reply:
+            _deferred_text = _full_reply or _chain_reply
+            if session and _deferred_text:
                 try:
                     _deferred_meta: dict = {}
                     if _collected_artifacts:
                         _deferred_meta["artifacts"] = _collected_artifacts
-                    session.add_message("assistant", _full_reply, **_deferred_meta)
+                    session.add_message("assistant", _deferred_text, **_deferred_meta)
                     if session_manager:
-                        session_manager.persist()
+                        session_manager.mark_dirty()
                     logger.info(
-                        f"[Chat API] Deferred save: {len(_full_reply)} chars "
+                        f"[Chat API] Deferred save: {len(_deferred_text)} chars "
                         f"(client_disconnected={_client_disconnected})"
                     )
                 except Exception as e:
@@ -695,12 +848,15 @@ async def _stream_chat(
         if _conv_id:
             await get_lifecycle_manager().finish(_conv_id, generation=busy_generation)
             if _full_reply:
-                await _broadcast_chat_event("chat:message_update", {
-                    "conversation_id": _conv_id,
-                    "client_id": getattr(chat_request, "client_id", "") or "",
-                    "last_message_preview": _full_reply[:100],
-                    "timestamp": time.time(),
-                })
+                await _broadcast_chat_event(
+                    "chat:message_update",
+                    {
+                        "conversation_id": _conv_id,
+                        "client_id": getattr(chat_request, "client_id", "") or "",
+                        "last_message_preview": _full_reply[:100],
+                        "timestamp": time.time(),
+                    },
+                )
 
 
 @router.post("/api/chat")
@@ -714,19 +870,35 @@ async def chat(request: Request, body: ChatRequest):
     Each conversation gets its own Agent instance via AgentInstancePool
     to support concurrent streaming without shared-state corruption.
 
-    Returns Server-Sent Events with the following event types:
-    - thinking_start / thinking_delta / thinking_end
+    Returns Server-Sent Events with the following event types
+    (canonical definitions in openakita.events.StreamEventType):
+    - heartbeat / iteration_start
+    - thinking_start / thinking_delta / thinking_end / chain_text
     - text_delta
     - tool_call_start / tool_call_end
-    - plan_created / plan_step_updated
-    - ask_user
-    - agent_switch
-    - agent_handoff
+    - context_compressed
+    - security_confirm / ask_user
+    - todo_created / todo_step_updated / todo_completed / todo_cancelled
+    - agent_handoff / user_insert
+    - artifact / ui_preference
     - error
-    - done
+    - done (with optional usage payload)
     """
     import uuid as _uuid
-    conversation_id = body.conversation_id or f"api_{_uuid.uuid4().hex[:12]}"
+
+    pool = getattr(request.app.state, "agent_pool", None)
+    if not body.conversation_id:
+        if pool is not None:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "missing_conversation_id",
+                    "message": "conversation_id is required in pool mode to avoid agent instance leaks",
+                },
+            )
+        body.conversation_id = f"api_{_uuid.uuid4().hex[:12]}"
+
+    conversation_id = body.conversation_id
     client_id = body.client_id or ""
 
     # ── Busy-lock check (via lifecycle manager) ──
@@ -754,13 +926,36 @@ async def chat(request: Request, body: ChatRequest):
             await lifecycle.finish(conversation_id, generation=busy_gen)
         raise
 
+    # Resolve effective mode: backward compat plan_mode=true -> mode="plan"
+    effective_mode = body.mode
+    if body.plan_mode and effective_mode == "agent":
+        effective_mode = "plan"
+
     msg_preview = (body.message or "")[:100]
     att_count = len(body.attachments) if body.attachments else 0
+
+    # Detect likely client-side encoding corruption: if the message is mostly
+    # '?' characters mixed with sparse ASCII, the client probably encoded
+    # Chinese/CJK text as ASCII with errors="replace" before sending.
+    _msg = body.message or ""
+    if len(_msg) > 2:
+        _q = _msg.count("?")
+        _non_ascii = sum(1 for c in _msg if ord(c) > 127)
+        if _q > len(_msg) * 0.4 and _non_ascii == 0:
+            logger.warning(
+                "[Chat API] 疑似编码损坏: 消息含 %d/%d 个问号且无非ASCII字符, "
+                "客户端可能在发送前将中文编码为ASCII(errors=replace)。"
+                "请确认客户端使用 UTF-8 编码 JSON body | conv=%s",
+                _q,
+                len(_msg),
+                conversation_id,
+            )
+
     logger.info(
-        f"[Chat API] 收到消息: \"{msg_preview}\""
+        f'[Chat API] 收到消息: "{msg_preview}"'
         + (f" (+{att_count}个附件)" if att_count else "")
         + (f" | endpoint={body.endpoint}" if body.endpoint else "")
-        + (" | plan_mode" if body.plan_mode else "")
+        + (f" | mode={effective_mode}" if effective_mode != "agent" else "")
         + (f" | thinking={body.thinking_mode}" if body.thinking_mode else "")
         + (f" | depth={body.thinking_depth}" if body.thinking_depth else "")
         + (f" | conv={conversation_id}")
@@ -770,13 +965,15 @@ async def chat(request: Request, body: ChatRequest):
     # Pass pre-resolved conversation_id so _stream_chat doesn't generate a new one
     body.conversation_id = conversation_id
 
-    sse_gen = _stream_chat(body, agent, session_manager, http_request=request, busy_generation=busy_gen)
+    sse_gen = _stream_chat(
+        body, agent, session_manager, http_request=request, busy_generation=busy_gen
+    )
     if is_dual_loop():
         sse_gen = engine_stream(sse_gen)
 
     return StreamingResponse(
         sse_gen,
-        media_type="text/event-stream",
+        media_type="text/event-stream; charset=utf-8",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
@@ -871,6 +1068,8 @@ async def chat_insert(request: Request, body: ChatControlRequest):
         _conv_id = conv_id or getattr(actual_agent, "_current_conversation_id", None)
         logger.info(f"[Chat API] Insert -> STOP: reason={reason!r}, conv_id={_conv_id!r}")
         actual_agent.cancel_current_task(reason, session_id=_conv_id)
+        if _conv_id:
+            await get_lifecycle_manager().finish(_conv_id)
         logger.info("[Chat API] Insert -> STOP 执行完成")
         return {"status": "ok", "action": "cancel", "reason": reason}
 
@@ -880,14 +1079,23 @@ async def chat_insert(request: Request, body: ChatControlRequest):
         ok = actual_agent.skip_current_step(reason, session_id=_skip_conv_id)
         logger.info(f"[Chat API] Insert -> SKIP: reason={reason!r}, ok={ok}")
         if not ok:
-            return {"status": "warning", "action": "skip", "reason": reason, "message": "No active task to skip"}
+            return {
+                "status": "warning",
+                "action": "skip",
+                "reason": reason,
+                "message": "No active task to skip",
+            }
         return {"status": "ok", "action": "skip", "reason": reason}
 
     _insert_conv_id = conv_id or getattr(actual_agent, "_current_conversation_id", None)
     ok = await to_engine(actual_agent.insert_user_message(body.message, session_id=_insert_conv_id))
     logger.info(f"[Chat API] Insert 作为普通消息: ok={ok}, message={body.message[:60]!r}")
     if not ok:
-        return {"status": "warning", "action": "insert", "message": "No active task, message dropped"}
+        return {
+            "status": "warning",
+            "action": "insert",
+            "message": "No active task, message dropped",
+        }
     return {"status": "ok", "action": "insert", "message": body.message[:100]}
 
 
@@ -897,6 +1105,7 @@ async def get_sub_agent_tasks(request: Request, conversation_id: str = ""):
     orchestrator = None
     try:
         from openakita.main import _orchestrator
+
         orchestrator = _orchestrator
     except (ImportError, AttributeError):
         pass
@@ -921,10 +1130,34 @@ async def get_sub_agent_records(request: Request, conversation_id: str = ""):
         return []
     try:
         session = session_manager.get_session(
-            "desktop", conversation_id, "desktop_user", create_if_missing=False,
+            "desktop",
+            conversation_id,
+            "desktop_user",
+            create_if_missing=False,
         )
         if session and hasattr(session, "context"):
             return getattr(session.context, "sub_agent_records", [])
     except Exception as e:
         logger.warning(f"[Chat API] sub-records query error: {e}")
     return []
+
+
+@router.post("/api/plan/dismiss")
+async def dismiss_plan_approval(request: Request):
+    """用户关闭审批面板时清除后端 pending 状态"""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "error": "invalid JSON body"}
+    conversation_id = body.get("conversation_id", "")
+    if not conversation_id:
+        return {"ok": False, "error": "missing conversation_id"}
+
+    agent = _get_existing_agent(request, conversation_id)
+    if agent is None:
+        return {"ok": True}
+
+    pending_map = getattr(agent, "_plan_exit_pending", None)
+    if isinstance(pending_map, dict):
+        pending_map.pop(conversation_id, None)
+    return {"ok": True}

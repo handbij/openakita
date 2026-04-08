@@ -308,8 +308,17 @@ class ScheduledTask:
         self.fail_count += 1
         self.updated_at = datetime.now()
 
-        # 失败后仍然保持调度（除非连续失败太多次）
-        if self.fail_count >= 5:
+        # System tasks (non-deletable) are core infrastructure and should never
+        # be auto-disabled.  Transient issues like network outages will resolve
+        # on their own; permanently disabling memory consolidation etc. degrades
+        # the user experience far more than occasional retries.
+        if not self.deletable and self.fail_count >= 5:
+            logger.warning(
+                f"System task {self.id} has {self.fail_count} consecutive failures "
+                f"but will NOT be disabled (non-deletable system task)"
+            )
+            self.status = TaskStatus.SCHEDULED
+        elif self.fail_count >= 5:
             self.status = TaskStatus.FAILED
             self.enabled = False
             logger.warning(f"Task {self.id} disabled after {self.fail_count} failures")

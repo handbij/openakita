@@ -1647,6 +1647,7 @@ export function ChatView({
   apiBaseUrl = "http://127.0.0.1:18900",
   visible = true,
   multiAgentEnabled = false,
+  currentWorkspaceId,
 }: {
   serviceRunning: boolean;
   endpoints: EndpointSummary[];
@@ -1654,16 +1655,23 @@ export function ChatView({
   apiBaseUrl?: string;
   visible?: boolean;
   multiAgentEnabled?: boolean;
+  currentWorkspaceId?: string | null;
 }) {
   const { t, i18n } = useTranslation();
   const mdModules = useMdModules();
 
-  // ── 持久化 Key 常量 ──
-  const STORAGE_KEY_CONVS = "chat_conversations";
-  const STORAGE_KEY_ACTIVE = "chat_activeConvId";
-  const STORAGE_KEY_MSGS_PREFIX = "chat_msgs_";
+  // ── Workspace-scoped localStorage keys ──
+  const wsTag = currentWorkspaceId || "_default";
+  const STORAGE_KEY_CONVS = `chat_conversations_${wsTag}`;
+  const STORAGE_KEY_ACTIVE = `chat_activeConvId_${wsTag}`;
+  const STORAGE_KEY_MSGS_PREFIX = `chat_msgs_${wsTag}_`;
 
-  // ── State（从 localStorage 恢复） ──
+  // Old (pre-isolation) global keys — used only for one-time migration
+  const OLD_KEY_CONVS = "chat_conversations";
+  const OLD_KEY_ACTIVE = "chat_activeConvId";
+  const OLD_KEY_MSGS_PREFIX = "chat_msgs_";
+
+  // ── State（从 localStorage 恢复，不含迁移回退——迁移由 workspace-change effect 处理） ──
   const [conversations, setConversations] = useState<ChatConversation[]>(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY_CONVS);
@@ -1687,6 +1695,93 @@ export function ChatView({
   const [selectedEndpoint, setSelectedEndpoint] = useState("auto");
   const [planMode, setPlanMode] = useState(false);
   const [streamingTick, setStreamingTick] = useState(0);
+
+  // Reload chat state when workspace changes (keys are workspace-scoped).
+  // When transitioning from "_default" → real workspace ID, migrate old global keys.
+  const prevWsRef = useRef(wsTag);
+  useEffect(() => {
+    if (wsTag === prevWsRef.current) return;
+    const migrateFromGlobal = prevWsRef.current === "_default" && wsTag !== "_default";
+    prevWsRef.current = wsTag;
+
+    // ── Load conversations (with optional one-time migration) ──
+    let convs: ChatConversation[] = [];
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_CONVS);
+      if (raw) {
+        convs = JSON.parse(raw);
+      } else if (migrateFromGlobal) {
+        const oldRaw = localStorage.getItem(OLD_KEY_CONVS);
+        if (oldRaw) {
+          convs = JSON.parse(oldRaw);
+          localStorage.setItem(STORAGE_KEY_CONVS, oldRaw);
+          localStorage.removeItem(OLD_KEY_CONVS);
+        }
+      }
+    } catch { convs = []; }
+    setConversations(convs);
+
+    // ── Load activeConvId ──
+    let convId: string | null = null;
+    try {
+      convId = localStorage.getItem(STORAGE_KEY_ACTIVE) || null;
+      if (!convId && migrateFromGlobal) {
+        convId = localStorage.getItem(OLD_KEY_ACTIVE) || null;
+        if (convId) {
+          localStorage.setItem(STORAGE_KEY_ACTIVE, convId);
+          localStorage.removeItem(OLD_KEY_ACTIVE);
+        }
+      }
+    } catch { convId = null; }
+    setActiveConvId(convId);
+
+    // ── Load messages for active conversation ──
+    let msgs: ChatMessage[] = [];
+    if (convId) {
+      try {
+        const rawMsgs = localStorage.getItem(STORAGE_KEY_MSGS_PREFIX + convId);
+        if (rawMsgs) {
+          msgs = JSON.parse(rawMsgs);
+        } else if (migrateFromGlobal) {
+          const oldRaw = localStorage.getItem(OLD_KEY_MSGS_PREFIX + convId);
+          if (oldRaw) {
+            msgs = JSON.parse(oldRaw);
+            localStorage.setItem(STORAGE_KEY_MSGS_PREFIX + convId, oldRaw);
+            localStorage.removeItem(OLD_KEY_MSGS_PREFIX + convId);
+          }
+        }
+      } catch { msgs = []; }
+    }
+    setMessages(msgs);
+
+    // ── Migrate remaining message entries for non-active conversations ──
+    if (migrateFromGlobal && convs.length > 0) {
+      for (const c of convs) {
+        if (c.id === convId) continue;
+        try {
+          const oldMsgKey = OLD_KEY_MSGS_PREFIX + c.id;
+          const oldMsgRaw = localStorage.getItem(oldMsgKey);
+          if (oldMsgRaw && !localStorage.getItem(STORAGE_KEY_MSGS_PREFIX + c.id)) {
+            localStorage.setItem(STORAGE_KEY_MSGS_PREFIX + c.id, oldMsgRaw);
+            localStorage.removeItem(oldMsgKey);
+          }
+        } catch { /* best effort */ }
+      }
+    }
+
+    // ── Clean up orphaned "_default" keys from the brief null→real transition ──
+    if (migrateFromGlobal) {
+      try {
+        localStorage.removeItem("chat_conversations__default");
+        localStorage.removeItem("chat_activeConvId__default");
+      } catch { /* ignore */ }
+    }
+
+    setSelectedEndpoint("auto");
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- STORAGE_KEY_* are derived from wsTag;
+  // listing wsTag alone is sufficient to trigger on workspace change.
+  }, [wsTag]);
+
   const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== "undefined" && window.innerWidth > 768);
   const [sidebarPinned, setSidebarPinned] = useState(() => {
     try { return localStorage.getItem("openakita_convSidebarPinned") === "true"; } catch { return false; }
@@ -1859,10 +1954,15 @@ export function ChatView({
   const [contextTooltipVisible, setContextTooltipVisible] = useState(false);
 
   // ── 持久化会话列表 & 当前对话 ID ──
+  // STORAGE_KEY_* intentionally excluded from deps: when only the key changes
+  // (workspace switch), the workspace-change effect handles loading new data;
+  // if we included the key here, old workspace data would be written to the
+  // new key before the workspace-change effect has a chance to run.
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_CONVS, JSON.stringify(conversations));
     } catch { /* quota exceeded or private mode */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversations]);
 
   useEffect(() => {
@@ -1871,6 +1971,7 @@ export function ChatView({
       if (activeConvId) localStorage.setItem(STORAGE_KEY_ACTIVE, activeConvId);
       else localStorage.removeItem(STORAGE_KEY_ACTIVE);
     } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeConvId]);
 
   // Force re-render every 30s to refresh relative timestamps
@@ -1893,6 +1994,8 @@ export function ChatView({
     saveMessagesToStorage(STORAGE_KEY_MSGS_PREFIX + convId, latestMessagesRef.current);
   }, [STORAGE_KEY_MSGS_PREFIX]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- same rationale as above:
+  // STORAGE_KEY_* excluded to avoid writing stale data to a new workspace key during transition.
   useEffect(() => {
     if (!activeConvId) return;
     if (streamContexts.current.get(activeConvId)?.isStreaming) return;
@@ -2158,10 +2261,10 @@ export function ChatView({
     });
   }, [selectedEndpoint]);
 
-  // Validate selectedEndpoint against current endpoints list
+  // Validate selectedEndpoint against current endpoints list.
+  // When endpoints is empty (new workspace / no config), also reset to "auto".
   useEffect(() => {
     if (selectedEndpoint === "auto") return;
-    if (endpoints.length === 0) return;
     if (!endpoints.some((ep) => ep.name === selectedEndpoint)) {
       setSelectedEndpoint("auto");
     }

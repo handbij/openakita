@@ -736,8 +736,57 @@ class RuntimeState:
             logger.error(f"[RuntimeState] Failed to load: {e}")
 
 
+def _create_settings_safe() -> Settings:
+    """Create the global Settings instance with recovery for poisoned .env files.
+
+    If a field in .env has an unparseable value (e.g. Python repr instead of JSON
+    for complex types), remove that field from .env and retry. This handles the
+    case where _PERSISTABLE_KEYS fields were incorrectly written to .env by older
+    code — those fields are managed by RuntimeState, not .env.
+    """
+    import re
+
+    max_retries = 3
+    last_err: Exception | None = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            return Settings()
+        except Exception as e:
+            last_err = e
+            if attempt == max_retries:
+                break
+
+            err_msg = str(e)
+            logger.error(f"[Config] Settings init failed (attempt {attempt + 1}): {err_msg}")
+
+            env_path = Path.cwd() / ".env"
+            if not env_path.exists():
+                break
+
+            field_match = re.search(r'field "(\w+)"', err_msg)
+            if not field_match:
+                break
+
+            bad_field = field_match.group(1).upper()
+            logger.warning(f"[Config] Removing poisoned key '{bad_field}' from .env and retrying")
+
+            try:
+                lines = env_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                cleaned = [
+                    ln for ln in lines
+                    if not ln.strip().startswith(f"{bad_field}=")
+                ]
+                env_path.write_text("\n".join(cleaned) + "\n", encoding="utf-8")
+            except Exception as io_err:
+                logger.error(f"[Config] Failed to repair .env: {io_err}")
+                break
+
+    raise last_err  # type: ignore[misc]
+
+
 # 全局配置实例
-settings = Settings()
+settings = _create_settings_safe()
 
 # 全局运行时状态管理器
 runtime_state = RuntimeState()

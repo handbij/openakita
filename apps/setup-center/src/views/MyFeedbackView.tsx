@@ -352,7 +352,6 @@ export function MyFeedbackView({ apiBaseUrl, serviceRunning, onOpenFeedbackModal
           {onOpenFeedbackModal && (
             <Button
               size="sm"
-              disabled={!serviceRunning}
               onClick={() => onOpenFeedbackModal()}
               className="gap-1.5"
             >

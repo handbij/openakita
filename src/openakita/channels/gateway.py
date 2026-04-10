@@ -68,6 +68,7 @@ def format_user_friendly_error(error: str) -> str:
 if TYPE_CHECKING:
     from ..core.brain import Brain
     from ..llm.stt_client import STTClient
+    from .media_parser import MediaParseResult
 
 logger = logging.getLogger(__name__)
 
@@ -907,6 +908,8 @@ class MessageGateway:
         self._pre_process_hooks: list[Callable[[UnifiedMessage], Awaitable[UnifiedMessage]]] = []
         self._post_process_hooks: list[Callable[[UnifiedMessage, str], Awaitable[str]]] = []
 
+        self._plugin_hooks = None  # set by start_im_channels() in main.py
+
         # ==================== 消息中断机制 ====================
         # 会话级中断队列 {session_key: asyncio.PriorityQueue[InterruptMessage]}
         self._interrupt_queues: dict[str, asyncio.PriorityQueue] = {}
@@ -1428,15 +1431,44 @@ class MessageGateway:
 
     @staticmethod
     def _format_group_context(items: list[dict]) -> str:
-        """将缓冲区条目格式化为可注入 prompt 的文本。"""
+        """将缓冲区条目格式化为可注入 prompt 的文本。
+
+        末尾附带条数元信息，AI 可自然地在回复中提及
+        "我注意到了最近 N 条群聊消息的上下文"。
+        """
         if not items:
             return ""
-        lines = ["[群聊近期上下文] 以下是本群中最近的未处理消息，供你理解上下文："]
+        n = len(items)
+        lines = [
+            f"[群聊近期上下文] 以下是本群中最近 {n} 条未处理消息，供你理解上下文。\n"
+            f"请在回复末尾简要注明 [基于最近 {n} 条群聊消息]。"
+        ]
         for entry in items:
             user = entry.get("user") or entry.get("user_id", "?")
             text = entry.get("text", "")
             lines.append(f"  - {user}: {text}")
         return "\n".join(lines)
+
+    async def _try_smart_reaction(self, message: "UnifiedMessage") -> None:
+        """Smart 模式过滤消息时，尝试在原消息上添加 emoji 反应。
+
+        行为受 ``SMART_REACTION_ENABLED`` 环境变量控制（默认关闭以避免群内刷屏）。
+        仅当适配器声明 ``add_reaction`` 能力时执行。
+        """
+        import os
+
+        if os.environ.get("SMART_REACTION_ENABLED", "").lower() not in ("1", "true", "yes"):
+            return
+        adapter = self._adapters.get(message.channel)
+        if not adapter or not adapter.has_capability("add_reaction"):
+            return
+        msg_id = message.channel_message_id
+        if not msg_id:
+            return
+        try:
+            await adapter.add_reaction(msg_id, emoji_type="DONE")
+        except Exception as e:
+            logger.debug(f"[Smart] Failed to add reaction: {e}")
 
     def _apply_persisted_group_policy(self) -> None:
         """Load persisted group policy from JSON and apply to adapters."""
@@ -1739,6 +1771,12 @@ class MessageGateway:
 
     async def stop(self) -> None:
         """停止网关（立即停止，不等待进行中任务）"""
+        if self._plugin_hooks:
+            try:
+                await self._plugin_hooks.dispatch("on_shutdown", gateway=self)
+            except Exception as e:
+                logger.debug(f"on_shutdown hook error: {e}")
+
         self._running = False
         self._accepting = False
 
@@ -1762,10 +1800,10 @@ class MessageGateway:
                 await cleanup_task
 
         # 取消所有活跃的 session tasks
-        for skey, task in list(self._session_tasks.items()):
+        for _skey, task in list(self._session_tasks.items()):
             if not task.done():
                 task.cancel()
-        for skey, task in list(self._session_tasks.items()):
+        for _skey, task in list(self._session_tasks.items()):
             if not task.done():
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
@@ -1913,6 +1951,8 @@ class MessageGateway:
             await adapter.stop()
         except Exception as e:
             logger.error(f"Error stopping adapter {name} during unregister: {e}")
+        adapter._message_callback = None
+        adapter._failure_callback = None
         logger.info(f"Unregistered adapter: {name}")
         return True
 
@@ -1940,6 +1980,12 @@ class MessageGateway:
                 f"[Shutdown] Message rejected (drain mode): {message.channel}/{message.user_id}"
             )
             return
+
+        if self._plugin_hooks:
+            try:
+                await self._plugin_hooks.dispatch("on_message_received", message=message)
+            except Exception as e:
+                logger.debug(f"on_message_received hook error: {e}")
 
         session_key = self._get_session_key(message)
         _raw_text = (message.plain_text or "").strip()
@@ -2406,7 +2452,7 @@ class MessageGateway:
                     task = asyncio.create_task(self._session_dispatch(message))
                     self._session_tasks[session_key] = task
 
-            except TimeoutError:
+            except (asyncio.TimeoutError, TimeoutError):
                 continue
             except asyncio.CancelledError:
                 break
@@ -2473,6 +2519,8 @@ class MessageGateway:
                     if not self._smart_throttle.should_process(message.chat_id):
                         with contextlib.suppress(Exception):
                             self._buffer_group_context(message, text=user_text)
+                        # Smart 模式过滤时，尝试添加 emoji 反应表示"已收到"
+                        await self._try_smart_reaction(message)
                         logger.debug(
                             f"[IM] Group message throttled (smart), buffered: {user_text[:50]}"
                         )
@@ -2820,7 +2868,8 @@ class MessageGateway:
             if _tool_summary:
                 _msg_meta["tool_summary"] = _tool_summary
             session.add_message(role="assistant", content=response_text, **_msg_meta)
-            self.session_manager.persist()
+            self.session_manager.mark_dirty()
+            self.session_manager.flush()
             _notify_im_event(
                 "im:new_message",
                 {
@@ -3039,8 +3088,8 @@ class MessageGateway:
                         voice.transcription = transcription
                         logger.info(f"Voice transcribed: {transcription}")
                     else:
-                        voice.transcription = "[语音识别失败，请配置在线 STT 端点]"
-            except TimeoutError:
+                        voice.transcription = "[语音识别失败]"
+            except (asyncio.TimeoutError, TimeoutError):
                 logger.error(f"Voice processing timed out: {voice.filename}")
                 voice.transcription = "[语音处理超时]"
             except Exception as e:
@@ -3542,7 +3591,7 @@ class MessageGateway:
                         self.agent_handler(session, input_text),
                         timeout=_AGENT_TIMEOUT,
                     )
-                except TimeoutError:
+                except (asyncio.TimeoutError, TimeoutError):
                     logger.error(f"[Gateway] Agent handler timed out after {_AGENT_TIMEOUT}s")
                     response = f"⚠️ 处理超时（{int(_AGENT_TIMEOUT)}秒），请稍后重试或简化您的问题。"
 
@@ -3640,9 +3689,23 @@ class MessageGateway:
                             )
                         else:
                             await self.emit_progress_event(session, content)
+                elif etype == "tool_call_start":
+                    tool_name = event.get("name", "unknown")
+                    if chain_push:
+                        await self.emit_progress_event(session, f"🔧 正在调用工具: {tool_name}")
+                elif etype == "tool_call_end":
+                    tool_name = event.get("name", "unknown")
+                    tool_ok = event.get("success", True)
+                    if chain_push:
+                        status = "✅" if tool_ok else "❌"
+                        await self.emit_progress_event(
+                            session, f"{status} 工具 {tool_name} 执行完成"
+                        )
                 elif etype == "ask_user":
                     if not reply_text:
                         reply_text = event.get("question", "")
+                elif etype == "security_confirm":
+                    await self._handle_im_security_confirm(session, event, adapter, message)
                 elif etype == "error":
                     err_msg = event.get("message", "")
                     if not reply_text:
@@ -3652,7 +3715,7 @@ class MessageGateway:
 
         try:
             await asyncio.wait_for(_consume_stream(), timeout=_STREAM_TIMEOUT)
-        except TimeoutError:
+        except (asyncio.TimeoutError, TimeoutError):
             logger.error(f"[IM] Streaming agent timed out after {_STREAM_TIMEOUT}s")
             if not reply_text:
                 reply_text = f"⚠️ 处理超时（{int(_STREAM_TIMEOUT)}秒），请稍后重试或简化您的问题。"
@@ -3765,6 +3828,14 @@ class MessageGateway:
 
         from .media_parser import parse_media_from_text
 
+        if self._plugin_hooks:
+            try:
+                await self._plugin_hooks.dispatch(
+                    "on_message_sending", message=original, response=response
+                )
+            except Exception as e:
+                logger.debug(f"on_message_sending hook error: {e}")
+
         adapter = self._adapters.get(original.channel)
         if not adapter:
             logger.error(f"No adapter for channel: {original.channel}")
@@ -3778,9 +3849,19 @@ class MessageGateway:
         base_channel = channel.split(":")[0].split("_")[0]
 
         max_length = self._CHANNEL_MAX_LENGTH.get(base_channel, self._DEFAULT_MAX_LENGTH)
-        from .text_splitter import chunk_markdown_text
+        from .text_splitter import (
+            add_fragment_numbers,
+            chunk_markdown_text,
+            estimate_number_prefix_len,
+        )
 
-        messages = chunk_markdown_text(text_to_send, max_length) if text_to_send else []
+        # 预留分片序号长度：先做一次粗估（假设最大 10 片），分片后再精确添加
+        _est_prefix = estimate_number_prefix_len(10)
+        _effective_max = (
+            max(max_length - _est_prefix, max_length // 2) if max_length > 0 else max_length
+        )
+        messages = chunk_markdown_text(text_to_send, _effective_max) if text_to_send else []
+        messages = add_fragment_numbers(messages)
 
         interval = self._SPLIT_SEND_INTERVAL.get(base_channel, self._DEFAULT_SPLIT_INTERVAL)
 
@@ -3852,10 +3933,16 @@ class MessageGateway:
                 await adapter.send_message(plain_out)
             except Exception as e2:
                 logger.error(f"Plain-text fallback also failed for part {failed_at + j + 1}: {e2}")
+                _sent_count = failed_at + j
+                _fail_hint = (
+                    f"消息发送失败（已送达 {_sent_count}/{len(messages)} 段），请稍后重试。"
+                    if _sent_count > 0
+                    else "消息发送失败，请稍后重试。"
+                )
                 with contextlib.suppress(Exception):
                     await adapter.send_text(
                         chat_id=original.chat_id,
-                        text="消息发送失败，请稍后重试。",
+                        text=_fail_hint,
                         reply_to=original.channel_message_id,
                         thread_id=original.thread_id,
                         metadata=outgoing_meta,
@@ -4096,10 +4183,7 @@ class MessageGateway:
         try:
             # 标记为中间消息，防止飞书思考卡片被提前消费
             _meta = kwargs.pop("metadata", None) or {}
-            if isinstance(_meta, dict):
-                _meta = dict(_meta)
-            else:
-                _meta = {}
+            _meta = dict(_meta) if isinstance(_meta, dict) else {}
             _meta.setdefault("_interim", True)
             kwargs["metadata"] = _meta
 
@@ -4156,6 +4240,107 @@ class MessageGateway:
                 logger.warning(f"Failed to record message to session: {e}")
 
         return result
+
+    async def send_security_confirm(
+        self,
+        session: "Session",
+        tool_name: str,
+        reason: str,
+        risk_level: str = "HIGH",
+    ) -> None:
+        """Send a security confirmation request to the IM channel.
+
+        Uses platform-native interactive elements when available
+        (Feishu cards, Telegram InlineKeyboard), falls back to plain text.
+        """
+        adapter = self._adapters.get(session.channel)
+        if adapter is None:
+            return
+
+        text = (
+            f"⚠️ **安全确认**\n\n"
+            f"工具: `{tool_name}`\n"
+            f"风险等级: **{risk_level}**\n"
+            f"原因: {reason}\n\n"
+            f"请回复: **允许** / **拒绝**"
+        )
+
+        if hasattr(adapter, "build_simple_card") and hasattr(adapter, "send_card"):
+            card = adapter.build_simple_card(
+                title=f"⚠️ 安全确认 — {risk_level}",
+                content=(f"**工具**: {tool_name}\n**原因**: {reason}"),
+                buttons=[
+                    {"text": "✅ 允许", "value": "security_allow"},
+                    {"text": "❌ 拒绝", "value": "security_deny"},
+                ],
+            )
+            try:
+                chat_id = session.chat_id
+                reply_to = session.thread_id
+                await adapter.send_card(chat_id, card, reply_to=reply_to)
+                return
+            except Exception as e:
+                logger.warning(f"[Security] Card send failed, falling back to text: {e}")
+
+        try:
+            await self.send_to_session(session, text, role="system")
+        except Exception as e:
+            logger.warning(f"[Security] Failed to send confirmation: {e}")
+
+    async def _handle_im_security_confirm(
+        self,
+        session: "Session",
+        event: dict,
+        adapter,
+        message: "UnifiedMessage",
+    ) -> None:
+        """Handle security_confirm events in IM streaming.
+
+        Send a confirmation card/text to the user, then wait for their reply
+        via the interrupt queue.
+        """
+        tool_name = event.get("tool", "")
+        reason = event.get("reason", "")
+        risk = event.get("risk_level", "HIGH")
+        confirm_id = event.get("id", "")
+
+        await self.send_security_confirm(session, tool_name, reason, risk_level=risk)
+
+        # Wait for user reply via interrupt queue (set by adapter callbacks or
+        # plain-text keyword matching in _handle_message)
+        try:
+            reply_msg = await asyncio.wait_for(
+                self._wait_for_interrupt(session.session_key),
+                timeout=float(session.get_metadata("security_timeout") or 120),
+            )
+            text = reply_msg.message.text.strip().lower() if reply_msg else ""
+        except (asyncio.TimeoutError, TimeoutError):
+            text = ""
+
+        decision = "deny"
+        if text in ("允许", "allow", "yes", "y", "allow_once"):
+            decision = "allow_once"
+        elif text in ("始终允许", "allow_always", "always"):
+            decision = "allow_always"
+        elif text in ("会话允许", "allow_session", "session"):
+            decision = "allow_session"
+        elif text in ("沙盒", "sandbox"):
+            decision = "sandbox"
+
+        try:
+            from ..core.policy import get_policy_engine
+
+            get_policy_engine().resolve_ui_confirm(confirm_id, decision)
+        except Exception as exc:
+            logger.warning(f"[Security] IM confirm resolve failed: {exc}")
+
+    async def _wait_for_interrupt(self, session_key: str) -> "InterruptMessage | None":
+        """Block until an interrupt message arrives for the session."""
+        queue = self._interrupt_queues.get(session_key)
+        if queue is None:
+            self._interrupt_queues[session_key] = asyncio.PriorityQueue()
+            queue = self._interrupt_queues[session_key]
+        return await queue.get()
 
     async def _try_patch_progress_to_card(
         self,

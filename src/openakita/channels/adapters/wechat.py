@@ -19,7 +19,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
-import json
 import logging
 import math
 import mimetypes
@@ -29,11 +28,11 @@ import struct
 import time
 import uuid
 from collections import OrderedDict
-from urllib.parse import quote
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar
+from urllib.parse import quote
 
 from ..base import ChannelAdapter
 from ..types import (
@@ -58,6 +57,7 @@ def _import_httpx():
     if httpx is None:
         try:
             import httpx as _httpx
+
             httpx = _httpx
         except ImportError:
             raise ImportError("httpx not installed. Run: pip install httpx")
@@ -126,8 +126,10 @@ TYPING_CANCEL = 2
 # AES-128-ECB 加解密
 # ---------------------------------------------------------------------------
 
+
 def _encrypt_aes_ecb(plaintext: bytes, key: bytes) -> bytes:
     from Crypto.Cipher import AES
+
     pad_len = 16 - (len(plaintext) % 16)
     padded = plaintext + bytes([pad_len] * pad_len)
     cipher = AES.new(key, AES.MODE_ECB)
@@ -136,6 +138,7 @@ def _encrypt_aes_ecb(plaintext: bytes, key: bytes) -> bytes:
 
 def _decrypt_aes_ecb(ciphertext: bytes, key: bytes) -> bytes:
     from Crypto.Cipher import AES
+
     cipher = AES.new(key, AES.MODE_ECB)
     padded = cipher.decrypt(ciphertext)
     pad_len = padded[-1]
@@ -204,6 +207,7 @@ def _markdown_to_plaintext(text: str) -> str:
 # MIME 工具
 # ---------------------------------------------------------------------------
 
+
 def _guess_mime(filepath: str) -> str:
     mime, _ = mimetypes.guess_type(filepath)
     return mime or "application/octet-stream"
@@ -223,6 +227,7 @@ def _guess_extension(content_type: str | None, url: str = "") -> str:
 # 配置
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class WeChatConfig:
     token: str = ""
@@ -236,6 +241,7 @@ class WeChatConfig:
 # TypingTicket 缓存
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class _TicketEntry:
     ticket: str = ""
@@ -247,6 +253,7 @@ class _TicketEntry:
 # ---------------------------------------------------------------------------
 # WeChatAdapter
 # ---------------------------------------------------------------------------
+
 
 class WeChatAdapter(ChannelAdapter):
     """微信个人号适配器 (iLink Bot API)"""
@@ -320,8 +327,10 @@ class WeChatAdapter(ChannelAdapter):
 
         # 耗时统计 (chat_id → 首次 send_typing 的 time.time())
         self._typing_start_time: dict[str, float] = {}
-        self._footer_elapsed: bool = footer_elapsed if footer_elapsed is not None else (
-            os.environ.get("WECHAT_FOOTER_ELAPSED", "true").lower() in ("true", "1", "yes")
+        self._footer_elapsed: bool = (
+            footer_elapsed
+            if footer_elapsed is not None
+            else (os.environ.get("WECHAT_FOOTER_ELAPSED", "true").lower() in ("true", "1", "yes"))
         )
 
         # 统计指标
@@ -334,17 +343,17 @@ class WeChatAdapter(ChannelAdapter):
 
     async def start(self) -> None:
         if not self.config.token:
-            raise ValueError(
-                "微信 Token 未配置，请先在 Bot 配置中扫码登录获取 Token。"
-            )
+            raise ValueError("微信 Token 未配置，请先在 Bot 配置中扫码登录获取 Token。")
 
         _import_httpx()
-        self._http = httpx.AsyncClient(timeout=httpx.Timeout(
-            connect=10.0,
-            read=float(self._next_poll_timeout_ms / 1000) + 10,
-            write=10.0,
-            pool=10.0,
-        ))
+        self._http = httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=10.0,
+                read=float(self._next_poll_timeout_ms / 1000) + 10,
+                write=10.0,
+                pool=10.0,
+            )
+        )
         self.media_dir.mkdir(parents=True, exist_ok=True)
         self._sync_buf_dir.mkdir(parents=True, exist_ok=True)
         self._load_sync_buf()
@@ -352,8 +361,7 @@ class WeChatAdapter(ChannelAdapter):
         self._running = True
         self._poll_task = asyncio.create_task(self._poll_loop())
         logger.info(
-            f"{self.channel_name}: WeChat adapter started "
-            f"(base_url={self.config.base_url})"
+            f"{self.channel_name}: WeChat adapter started (base_url={self.config.base_url})"
         )
 
     async def stop(self) -> None:
@@ -403,9 +411,7 @@ class WeChatAdapter(ChannelAdapter):
             f"pausing all API calls for {remaining_min} min"
         )
 
-    async def _api_post(
-        self, endpoint: str, body: dict, *, timeout_s: float | None = None
-    ) -> dict:
+    async def _api_post(self, endpoint: str, body: dict, *, timeout_s: float | None = None) -> dict:
         if self._is_session_paused():
             remaining = int(self._session_paused_until - time.time())
             raise RuntimeError(f"session paused, {remaining}s remaining")
@@ -455,10 +461,7 @@ class WeChatAdapter(ChannelAdapter):
                 f"(ret={ret}, errcode={errcode}, errmsg={errmsg})"
             )
 
-        raise RuntimeError(
-            f"WeChat {action} failed: ret={ret}, errcode={errcode}, "
-            f"errmsg={errmsg}"
-        )
+        raise RuntimeError(f"WeChat {action} failed: ret={ret}, errcode={errcode}, errmsg={errmsg}")
 
     # ==================== 长轮询 ====================
 
@@ -475,9 +478,8 @@ class WeChatAdapter(ChannelAdapter):
                 if resp is None:
                     continue
 
-                is_error = (
-                    (resp.get("ret") not in (None, 0))
-                    or (resp.get("errcode") not in (None, 0))
+                is_error = (resp.get("ret") not in (None, 0)) or (
+                    resp.get("errcode") not in (None, 0)
                 )
                 if is_error:
                     errcode = resp.get("errcode") or resp.get("ret")
@@ -800,9 +802,7 @@ class WeChatAdapter(ChannelAdapter):
         chat_id = message.chat_id
         ctx_token = self._resolve_context_token(chat_id, message.metadata)
         if not ctx_token:
-            logger.warning(
-                f"{self.channel_name}: no context_token for {chat_id}, message may fail"
-            )
+            logger.warning(f"{self.channel_name}: no context_token for {chat_id}, message may fail")
 
         text = message.content.text or ""
 
@@ -813,8 +813,11 @@ class WeChatAdapter(ChannelAdapter):
             if media.local_path and Path(media.local_path).exists():
                 try:
                     return await self._send_media_by_mime(
-                        chat_id, media.local_path, _guess_mime(media.local_path),
-                        caption=text, ctx_token=ctx_token,
+                        chat_id,
+                        media.local_path,
+                        _guess_mime(media.local_path),
+                        caption=text,
+                        ctx_token=ctx_token,
                     )
                 except Exception:
                     logger.exception(
@@ -830,7 +833,9 @@ class WeChatAdapter(ChannelAdapter):
         return await self._send_text(chat_id, plain, ctx_token)
 
     def _resolve_context_token(
-        self, chat_id: str, metadata: dict | None = None,
+        self,
+        chat_id: str,
+        metadata: dict | None = None,
     ) -> str:
         """返回最新可用的 context_token。
 
@@ -884,11 +889,19 @@ class WeChatAdapter(ChannelAdapter):
         return body["msg"]["client_id"]
 
     async def _send_media_by_mime(
-        self, chat_id: str, file_path: str, mime: str, *,
-        caption: str = "", ctx_token: str = "",
+        self,
+        chat_id: str,
+        file_path: str,
+        mime: str,
+        *,
+        caption: str = "",
+        ctx_token: str = "",
     ) -> str:
         uploaded = await self._cdn_upload(
-            file_path, chat_id, mime, context_token=ctx_token,
+            file_path,
+            chat_id,
+            mime,
+            context_token=ctx_token,
         )
         plain_caption = _markdown_to_plaintext(caption) if caption else ""
 
@@ -979,7 +992,11 @@ class WeChatAdapter(ChannelAdapter):
         ctx_token = self._resolve_context_token(chat_id)
         mime = _guess_mime(file_path)
         return await self._send_media_by_mime(
-            chat_id, file_path, mime, caption=caption or "", ctx_token=ctx_token,
+            chat_id,
+            file_path,
+            mime,
+            caption=caption or "",
+            ctx_token=ctx_token,
         )
 
     # ==================== Typing ====================
@@ -1054,6 +1071,7 @@ class WeChatAdapter(ChannelAdapter):
             if resp.get("ret", 0) == 0:
                 ticket = resp.get("typing_ticket", "")
                 import random
+
                 self._ticket_cache[user_id] = _TicketEntry(
                     ticket=ticket,
                     next_fetch_at=now + random.random() * CONFIG_CACHE_TTL_S,
@@ -1076,9 +1094,7 @@ class WeChatAdapter(ChannelAdapter):
 
     # ==================== CDN 媒体 ====================
 
-    async def _cdn_download(
-        self, encrypt_query_param: str, aes_key: bytes | None
-    ) -> bytes:
+    async def _cdn_download(self, encrypt_query_param: str, aes_key: bytes | None) -> bytes:
         url = (
             f"{self.config.cdn_base_url}/download"
             f"?encrypted_query_param={quote(encrypt_query_param, safe='')}"
@@ -1091,8 +1107,12 @@ class WeChatAdapter(ChannelAdapter):
         return data
 
     async def _cdn_upload(
-        self, file_path: str, to_user_id: str, mime: str,
-        *, context_token: str = "",
+        self,
+        file_path: str,
+        to_user_id: str,
+        mime: str,
+        *,
+        context_token: str = "",
     ) -> dict:
         plaintext = Path(file_path).read_bytes()
         rawsize = len(plaintext)
@@ -1163,9 +1183,7 @@ class WeChatAdapter(ChannelAdapter):
                 if isinstance(e, RuntimeError) and "client error" in str(e):
                     raise
                 if attempt < UPLOAD_MAX_RETRIES:
-                    logger.warning(
-                        f"{self.channel_name}: CDN upload attempt {attempt} failed: {e}"
-                    )
+                    logger.warning(f"{self.channel_name}: CDN upload attempt {attempt} failed: {e}")
                 else:
                     logger.error(
                         f"{self.channel_name}: CDN upload all {UPLOAD_MAX_RETRIES} attempts failed"
@@ -1209,9 +1227,7 @@ class WeChatAdapter(ChannelAdapter):
         )
         mf.extra = {
             "encrypt_query_param": uploaded["download_param"],
-            "aes_key": base64.b64encode(
-                bytes.fromhex(uploaded["aeskey"])
-            ).decode(),
+            "aes_key": base64.b64encode(bytes.fromhex(uploaded["aeskey"])).decode(),
             "filekey": uploaded["filekey"],
         }
         mf.status = MediaStatus.READY
@@ -1238,8 +1254,7 @@ class WeChatAdapter(ChannelAdapter):
                 self._get_updates_buf = p.read_text(encoding="utf-8").strip()
                 if self._get_updates_buf:
                     logger.info(
-                        f"{self.channel_name}: loaded sync buf "
-                        f"({len(self._get_updates_buf)} bytes)"
+                        f"{self.channel_name}: loaded sync buf ({len(self._get_updates_buf)} bytes)"
                     )
             except Exception:
                 self._get_updates_buf = ""

@@ -8,7 +8,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -41,14 +42,22 @@ def _safe_int(val: Any, default: int) -> int:
 
 
 def _create_feishu(
-    creds: dict, *, channel_name: str, bot_id: str, agent_profile_id: str, domain: str = "feishu",
+    creds: dict,
+    *,
+    channel_name: str,
+    bot_id: str,
+    agent_profile_id: str,
+    domain: str = "feishu",
 ):
     from .adapters import FeishuAdapter
+
     return FeishuAdapter(
         app_id=creds.get("app_id", ""),
         app_secret=creds.get("app_secret", ""),
         domain=domain,
-        channel_name=channel_name, bot_id=bot_id, agent_profile_id=agent_profile_id,
+        channel_name=channel_name,
+        bot_id=bot_id,
+        agent_profile_id=agent_profile_id,
         streaming_enabled=_cred_bool(creds.get("streaming_enabled")),
         group_streaming=_cred_bool(creds.get("group_streaming")),
         group_response_mode=creds.get("group_response_mode") or None,
@@ -59,10 +68,13 @@ def _create_feishu(
 
 def _create_telegram(creds: dict, *, channel_name: str, bot_id: str, agent_profile_id: str):
     from .adapters import TelegramAdapter
+
     kwargs: dict[str, Any] = dict(
         bot_token=creds.get("bot_token", ""),
         webhook_url=creds.get("webhook_url") or None,
-        channel_name=channel_name, bot_id=bot_id, agent_profile_id=agent_profile_id,
+        channel_name=channel_name,
+        bot_id=bot_id,
+        agent_profile_id=agent_profile_id,
     )
     if creds.get("pairing_code"):
         kwargs["pairing_code"] = creds["pairing_code"]
@@ -82,10 +94,13 @@ def _create_telegram(creds: dict, *, channel_name: str, bot_id: str, agent_profi
 
 def _create_dingtalk(creds: dict, *, channel_name: str, bot_id: str, agent_profile_id: str):
     from .adapters import DingTalkAdapter
+
     return DingTalkAdapter(
         app_key=creds.get("app_key", creds.get("client_id", "")),
         app_secret=creds.get("app_secret", creds.get("client_secret", "")),
-        channel_name=channel_name, bot_id=bot_id, agent_profile_id=agent_profile_id,
+        channel_name=channel_name,
+        bot_id=bot_id,
+        agent_profile_id=agent_profile_id,
         footer_elapsed=_cred_bool(creds.get("footer_elapsed")),
         footer_status=_cred_bool(creds.get("footer_status")),
     )
@@ -93,50 +108,63 @@ def _create_dingtalk(creds: dict, *, channel_name: str, bot_id: str, agent_profi
 
 def _create_wework(creds: dict, *, channel_name: str, bot_id: str, agent_profile_id: str):
     from .adapters import WeWorkBotAdapter
+
     return WeWorkBotAdapter(
         corp_id=creds.get("corp_id", ""),
         token=creds.get("token", ""),
         encoding_aes_key=creds.get("encoding_aes_key", ""),
         callback_port=_safe_int(creds.get("callback_port", 9880), 9880),
         callback_host=creds.get("callback_host", "0.0.0.0"),
-        channel_name=channel_name, bot_id=bot_id, agent_profile_id=agent_profile_id,
+        channel_name=channel_name,
+        bot_id=bot_id,
+        agent_profile_id=agent_profile_id,
     )
 
 
 def _create_wework_ws(creds: dict, *, channel_name: str, bot_id: str, agent_profile_id: str):
     from .adapters import WeWorkWsAdapter
+
     return WeWorkWsAdapter(
         bot_id=creds.get("bot_id", ""),
         secret=creds.get("secret", ""),
         ws_url=creds.get("ws_url", "wss://openws.work.weixin.qq.com"),
-        channel_name=channel_name, bot_id_alias=bot_id, agent_profile_id=agent_profile_id,
+        channel_name=channel_name,
+        bot_id_alias=bot_id,
+        agent_profile_id=agent_profile_id,
         webhook_url=creds.get("webhook_url", ""),
     )
 
 
 def _create_onebot(creds: dict, *, channel_name: str, bot_id: str, agent_profile_id: str):
     from .adapters import OneBotAdapter
+
     return OneBotAdapter(
         ws_url=creds.get("ws_url", "ws://127.0.0.1:8080"),
         access_token=creds.get("access_token") or None,
         mode=creds.get("mode", "forward"),
-        channel_name=channel_name, bot_id=bot_id, agent_profile_id=agent_profile_id,
+        channel_name=channel_name,
+        bot_id=bot_id,
+        agent_profile_id=agent_profile_id,
     )
 
 
 def _create_onebot_reverse(creds: dict, *, channel_name: str, bot_id: str, agent_profile_id: str):
     from .adapters import OneBotAdapter
+
     return OneBotAdapter(
         access_token=creds.get("access_token") or None,
         mode="reverse",
         reverse_host=creds.get("reverse_host", "0.0.0.0"),
         reverse_port=_safe_int(creds.get("reverse_port", 6700), 6700),
-        channel_name=channel_name, bot_id=bot_id, agent_profile_id=agent_profile_id,
+        channel_name=channel_name,
+        bot_id=bot_id,
+        agent_profile_id=agent_profile_id,
     )
 
 
 def _create_qqbot(creds: dict, *, channel_name: str, bot_id: str, agent_profile_id: str):
     from .adapters import QQBotAdapter
+
     return QQBotAdapter(
         app_id=creds.get("app_id", ""),
         app_secret=creds.get("app_secret", ""),
@@ -144,18 +172,23 @@ def _create_qqbot(creds: dict, *, channel_name: str, bot_id: str, agent_profile_
         mode=creds.get("mode", "websocket"),
         webhook_port=_safe_int(creds.get("webhook_port", 9890), 9890),
         webhook_path=creds.get("webhook_path", "/qqbot/callback"),
-        channel_name=channel_name, bot_id=bot_id, agent_profile_id=agent_profile_id,
+        channel_name=channel_name,
+        bot_id=bot_id,
+        agent_profile_id=agent_profile_id,
         footer_elapsed=_cred_bool(creds.get("footer_elapsed")),
     )
 
 
 def _create_wechat(creds: dict, *, channel_name: str, bot_id: str, agent_profile_id: str):
     from .adapters import WeChatAdapter
+
     return WeChatAdapter(
         token=creds.get("token", ""),
         base_url=creds.get("base_url", ""),
         cdn_base_url=creds.get("cdn_base_url", ""),
-        channel_name=channel_name, bot_id=bot_id, agent_profile_id=agent_profile_id,
+        channel_name=channel_name,
+        bot_id=bot_id,
+        agent_profile_id=agent_profile_id,
         footer_elapsed=_cred_bool(creds.get("footer_elapsed")),
     )
 
@@ -163,8 +196,10 @@ def _create_wechat(creds: dict, *, channel_name: str, bot_id: str, agent_profile
 def _create_lark(creds: dict, *, channel_name: str, bot_id: str, agent_profile_id: str):
     return _create_feishu(
         creds,
-        channel_name=channel_name, bot_id=bot_id,
-        agent_profile_id=agent_profile_id, domain="lark",
+        channel_name=channel_name,
+        bot_id=bot_id,
+        agent_profile_id=agent_profile_id,
+        domain="lark",
     )
 
 

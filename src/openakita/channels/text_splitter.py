@@ -246,7 +246,7 @@ def chunk_text_by_bytes(
                 if not piece:
                     break
                 chunks.append(piece)
-                line = line[len(piece):]
+                line = line[len(piece) :]
         else:
             current = line + "\n"
 

@@ -346,6 +346,10 @@ class TelegramAdapter(ChannelAdapter):
         self._seen_update_ids: OrderedDict[int, None] = OrderedDict()
         self._seen_update_ids_max = 500
 
+        # 安全确认 InlineKeyboard：callback_data 限 64 字节，用短 token 映射 confirm_id
+        self._sec_cb_tokens: OrderedDict[str, str] = OrderedDict()
+        self._sec_cb_tokens_max = 500
+
         # 思考占位消息：session_key -> (chat_id_int, message_id)
         self._thinking_cards: dict[str, tuple[int, int]] = {}
         # 流式输出状态
@@ -672,12 +676,13 @@ class TelegramAdapter(ChannelAdapter):
         with contextlib.suppress(Exception):
             await query.answer()
 
-        # Security confirmation callbacks: sec_<decision>_<confirm_id>
+        # Security confirmation callbacks: sec_<decision>_<token_or_id>
         if data.startswith("sec_"):
             parts = data.split("_", 2)
             if len(parts) >= 3:
                 decision_key = parts[1]
-                confirm_id = parts[2]
+                confirm_raw = parts[2]
+                confirm_id = self._sec_cb_tokens.get(confirm_raw, confirm_raw)
                 decision_map = {
                     "allow": "allow_once",
                     "session": "allow_session",
@@ -1369,6 +1374,77 @@ class TelegramAdapter(ChannelAdapter):
             text = text.replace(f"\x00INLINE{i}\x00", f"<code>{_html.escape(code)}</code>")
 
         return text
+
+    def _alloc_sec_callback_token(self, confirm_id: str) -> str:
+        tok = secrets.token_hex(8)
+        self._sec_cb_tokens[tok] = confirm_id
+        while len(self._sec_cb_tokens) > self._sec_cb_tokens_max:
+            self._sec_cb_tokens.popitem(last=False)
+        return tok
+
+    def build_simple_card(
+        self,
+        title: str,
+        content: str,
+        buttons: list[dict] | None = None,
+    ) -> dict:
+        """构建安全确认等场景的 InlineKeyboard（与 gateway.send_security_confirm 对接）。"""
+        _import_telegram()
+        IB = telegram.InlineKeyboardButton
+        IKM = telegram.InlineKeyboardMarkup
+
+        action_to_key = {
+            "security_allow": "allow",
+            "security_deny": "deny",
+            "security_allow_session": "session",
+            "security_sandbox": "sandbox",
+        }
+        row: list[Any] = []
+        keyboard_rows: list[list[Any]] = []
+        for btn in buttons or []:
+            raw = btn.get("value", "")
+            if isinstance(raw, dict):
+                action = str(raw.get("action", ""))
+                cid = str(raw.get("confirm_id", "") or "")
+            else:
+                action = str(raw) if raw else ""
+                cid = ""
+            key = action_to_key.get(action)
+            if not key or not cid:
+                continue
+            tok = self._alloc_sec_callback_token(cid)
+            cb = f"sec_{key}_{tok}"
+            row.append(IB(btn.get("text", ""), callback_data=cb))
+            if len(row) >= 2:
+                keyboard_rows.append(row)
+                row = []
+        if row:
+            keyboard_rows.append(row)
+        text_body = f"{title}\n\n{content}"
+        return {"text": text_body, "reply_markup": IKM(keyboard_rows)}
+
+    async def send_card(
+        self,
+        chat_id: str,
+        card: dict,
+        *,
+        reply_to: str | None = None,
+    ) -> str:
+        """发送带内联键盘的文本消息（卡片场景）。"""
+        _import_telegram()
+        if not self._bot:
+            raise RuntimeError("Telegram bot not started")
+        kw: dict[str, Any] = {
+            "chat_id": int(chat_id),
+            "text": card.get("text", ""),
+            "reply_markup": card.get("reply_markup"),
+        }
+        if reply_to:
+            with contextlib.suppress(ValueError, TypeError):
+                kw["reply_to_message_id"] = int(str(reply_to))
+        msg = await self._bot.send_message(**kw)
+        mid = getattr(msg, "message_id", None)
+        return str(mid) if mid is not None else ""
 
     async def send_message(self, message: OutgoingMessage) -> str:
         """发送消息"""

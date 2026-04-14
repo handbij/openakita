@@ -13,7 +13,18 @@ export default defineConfig({
   description: "OpenAkita 用户使用文档 — 开源多 Agent AI 助手",
   base: `/user-docs/v${v}/`,
 
-  head: [["link", { rel: "icon", href: `/user-docs/v${v}/favicon.ico` }]],
+  head: [
+    ["link", { rel: "icon", href: `/user-docs/v${v}/favicon.ico` }],
+    [
+      "script",
+      {},
+      `(() => {
+  if (window.parent && window.parent !== window) {
+    document.documentElement.classList.add("openakita-embedded-docs");
+  }
+})();`,
+    ],
+  ],
 
   ignoreDeadLinks: [
     /^\/web\//,

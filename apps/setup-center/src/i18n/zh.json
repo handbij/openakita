@@ -24,6 +24,18 @@
     "expand": "展开侧栏",
     "docs": "文档"
   },
+  "docsView": {
+    "title": "内置文档",
+    "checking": "正在检查文档服务是否可用...",
+    "serviceUnavailable": "文档暂时打不开，因为后台服务还没有启动。",
+    "missing": "文档暂时打不开，请先重试；如果还是不行，可以重启服务后再试。",
+    "missingHint": "大多数情况下，重试或重启服务后就能恢复正常。",
+    "suggestRestart": "如果点“重试”后还是打不开，可以试试“重启服务”。",
+    "developerHint": "如果你是从源码运行的开发者，可能还需要先构建文档资源。",
+    "restartService": "重启服务",
+    "error": "文档页面暂时不可用，请稍后重试。",
+    "errorDetail": "技术信息：{{detail}}"
+  },
   "topbar": {
     "workspace": "工作区",
     "running": "运行中",

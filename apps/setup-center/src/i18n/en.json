@@ -24,6 +24,18 @@
     "expand": "Expand sidebar",
     "docs": "Docs"
   },
+  "docsView": {
+    "title": "Built-in Docs",
+    "checking": "Checking whether the docs service is available...",
+    "serviceUnavailable": "The docs are temporarily unavailable because the backend service is not running yet.",
+    "missing": "The docs are temporarily unavailable. Please try again first; if it still does not work, restart the service and try again.",
+    "missingHint": "In most cases, retrying or restarting the service will fix this.",
+    "suggestRestart": "If retry does not help, try restarting the service.",
+    "developerHint": "If you are running from source as a developer, you may also need to build the docs assets first.",
+    "restartService": "Restart Service",
+    "error": "The docs page is temporarily unavailable. Please try again later.",
+    "errorDetail": "Technical details: {{detail}}"
+  },
   "topbar": {
     "workspace": "Workspace",
     "running": "Running",

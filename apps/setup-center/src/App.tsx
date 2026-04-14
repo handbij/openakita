@@ -135,6 +135,9 @@ function _viewToHash(view: string, stepId?: string): string {
 
 export function App() {
   const { t, i18n } = useTranslation();
+  type DocsAvailabilityState =
+    | { status: "idle" | "checking" | "ready" | "service_unavailable" | "missing" }
+    | { status: "error"; detail: string };
 
   // ── Web / Capacitor auth gate ──
   // IS_LOCAL_WEB: hostname is 127.0.0.1/localhost/::1 — backend authenticates
@@ -550,6 +553,7 @@ export function App() {
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState<boolean | null>(null);
   // autoStartBackend 已合并到"开机自启"：--background 模式自动拉起后端，无需独立开关
   const [serviceStatus, setServiceStatus] = useState<{ running: boolean; pid: number | null; pidFile: string; port?: number } | null>(null);
+  const [docsAvailability, setDocsAvailability] = useState<DocsAvailabilityState>({ status: "idle" });
   // 心跳状态机: "alive" | "suspect" | "degraded" | "dead"
   const [heartbeatState, setHeartbeatState] = useState<"alive" | "suspect" | "degraded" | "dead">("dead");
   const heartbeatStateRef = useRef<"alive" | "suspect" | "degraded" | "dead">("dead");
@@ -1600,6 +1604,48 @@ export function App() {
   }, [serviceStatus?.running, dataMode, apiBaseUrl]);
 
   useEffect(() => { fetchDisabledViews(); }, [fetchDisabledViews]);
+
+  const detectDocsAvailability = useCallback(async (): Promise<DocsAvailabilityState> => {
+    if (!(serviceStatus?.running ?? false)) {
+      return { status: "service_unavailable" };
+    }
+    try {
+      const res = await safeFetch(`${httpApiBase()}/user-docs/`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      const contentType = (res.headers.get("content-type") || "").toLowerCase();
+      if (contentType.includes("text/html")) {
+        return { status: "ready" };
+      }
+      const detail = (await res.text().catch(() => "")).trim();
+      return {
+        status: "error",
+        detail: detail || `Unexpected content-type: ${contentType || "unknown"}`,
+      };
+    } catch (e) {
+      const detail = String(e);
+      if (detail.includes("404")) {
+        return { status: "missing" };
+      }
+      return { status: "error", detail };
+    }
+  }, [serviceStatus?.running, dataMode, apiBaseUrl]);
+
+  const refreshDocsAvailability = useCallback(async () => {
+    setDocsAvailability({ status: "checking" });
+    const next = await detectDocsAvailability();
+    setDocsAvailability(next);
+  }, [detectDocsAvailability]);
+
+  useEffect(() => {
+    if (view !== "docs") return;
+    let cancelled = false;
+    setDocsAvailability({ status: "checking" });
+    detectDocsAvailability().then((next) => {
+      if (!cancelled) setDocsAvailability(next);
+    });
+    return () => { cancelled = true; };
+  }, [view, detectDocsAvailability]);
 
   // ── Unread feedback count polling ──
   useEffect(() => {
@@ -4838,13 +4884,100 @@ export function App() {
     }
     if (view === "docs") {
       const docsBase = httpApiBase();
+      const canStartLocalService = !IS_WEB && !IS_CAPACITOR;
+      const docsStatus = docsAvailability.status;
       return (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
-          <iframe
-            src={`${docsBase}/user-docs/`}
-            style={{ flex: 1, border: "none", width: "100%", height: "100%", borderRadius: 8, background: "var(--bg, #fff)" }}
-            title={t("sidebar.docs")}
-          />
+          {docsStatus === "ready" ? (
+            <iframe
+              src={`${docsBase}/user-docs/`}
+              style={{ flex: 1, border: "none", width: "100%", height: "100%", borderRadius: 8, background: "var(--bg, #fff)" }}
+              title={t("sidebar.docs")}
+            />
+          ) : (
+            <Card style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <CardContent style={{ maxWidth: 680, textAlign: "center", padding: 32 }}>
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+                  {docsStatus === "checking" ? (
+                    <Loader2 size={24} className="animate-spin" />
+                  ) : (
+                    <IconInfo size={24} />
+                  )}
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>{t("docsView.title")}</div>
+                <div style={{ marginTop: 8, fontSize: 14, color: "var(--muted)", lineHeight: 1.8 }}>
+                  {docsStatus === "checking" && t("docsView.checking")}
+                  {docsStatus === "service_unavailable" && t("docsView.serviceUnavailable")}
+                  {docsStatus === "missing" && t("docsView.missing")}
+                  {docsStatus === "error" && t("docsView.error")}
+                </div>
+                {docsStatus === "missing" && (
+                  <>
+                    <div style={{ marginTop: 12, fontSize: 13, color: "var(--muted)", lineHeight: 1.8 }}>
+                      {t("docsView.missingHint")}
+                    </div>
+                    <div style={{
+                      marginTop: 14,
+                      padding: 14,
+                      textAlign: "left",
+                      borderRadius: 10,
+                      background: "var(--panel2)",
+                      border: "1px solid var(--line)",
+                      fontSize: 13,
+                      lineHeight: 1.8,
+                      color: "var(--fg)",
+                    }}>
+                      <div>{t("docsView.suggestRestart")}</div>
+                      <div style={{ marginTop: 6, color: "var(--muted)" }}>{t("docsView.developerHint")}</div>
+                    </div>
+                  </>
+                )}
+                {docsStatus === "error" && "detail" in docsAvailability && docsAvailability.detail && (
+                  <div style={{
+                    marginTop: 12,
+                    fontSize: 12,
+                    color: "var(--muted)",
+                    lineHeight: 1.6,
+                    wordBreak: "break-word",
+                  }}>
+                    {t("docsView.errorDetail", { detail: docsAvailability.detail })}
+                  </div>
+                )}
+                <div style={{ marginTop: 18, display: "flex", justifyContent: "center", gap: 10, flexWrap: "wrap" }}>
+                  <Button
+                    variant="outline"
+                    onClick={() => { void refreshDocsAvailability(); }}
+                    disabled={docsStatus === "checking"}
+                  >
+                    {docsStatus === "checking" ? <Loader2 size={14} className="animate-spin" /> : null}
+                    {t("common.retry")}
+                  </Button>
+                  {docsStatus === "missing" && (serviceStatus?.running ?? false) && (
+                    <Button
+                      variant="outline"
+                      onClick={async () => { await restartService(); }}
+                    >
+                      {t("docsView.restartService")}
+                    </Button>
+                  )}
+                  {docsStatus === "service_unavailable" && canStartLocalService && (
+                    <Button
+                      onClick={async () => {
+                        const effectiveWsId = currentWorkspaceId || workspaces[0]?.id || null;
+                        if (!effectiveWsId) {
+                          notifyError("未找到工作区（请先创建/选择一个工作区）");
+                          return;
+                        }
+                        await startLocalServiceWithConflictCheck(effectiveWsId);
+                      }}
+                    >
+                      {t("topbar.start")}
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       );
     }

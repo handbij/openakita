@@ -133,7 +133,7 @@ def _find_docs_dist() -> Path | None:
 
 
 def _deploy_docs(data_dir: Path, app_version: str) -> Path | None:
-    """Deploy bundled docs to data/docs/v{version}/ if not already present.
+    """Deploy bundled docs to data/docs/v{version}/ and refresh same-version assets.
 
     Historical versions are never deleted so users can switch between them.
     """
@@ -147,11 +147,16 @@ def _deploy_docs(data_dir: Path, app_version: str) -> Path | None:
     docs_root = data_dir / "docs"
     version_clean = app_version.split("+")[0]
     version_dir = docs_root / f"v{version_clean}"
+    tmp_dir = docs_root / f".v{version_clean}.tmp"
 
-    if not (version_dir / "index.html").exists():
-        version_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(bundled, version_dir, dirs_exist_ok=True)
-        logger.info(f"Deployed user docs v{version_clean} → {version_dir}")
+    docs_root.mkdir(parents=True, exist_ok=True)
+    if tmp_dir.exists():
+        shutil.rmtree(tmp_dir)
+    shutil.copytree(bundled, tmp_dir)
+    if version_dir.exists():
+        shutil.rmtree(version_dir)
+    tmp_dir.replace(version_dir)
+    logger.info(f"Deployed user docs v{version_clean} → {version_dir}")
 
     versions_file = docs_root / "versions.json"
     try:

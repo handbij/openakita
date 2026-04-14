@@ -549,10 +549,8 @@ async def write_disabled_views(body: DisabledViewsRequest):
 
 @router.get("/api/config/agent-mode")
 async def read_agent_mode():
-    """返回多Agent模式开关状态"""
-    from openakita.config import settings
-
-    return {"multi_agent_enabled": settings.multi_agent_enabled}
+    """兼容旧前端接口：多Agent模式现已固定为开启。"""
+    return {"multi_agent_enabled": True}
 
 
 def _hot_patch_agent_tools(request: Request, *, enable: bool) -> None:
@@ -600,17 +598,14 @@ def _hot_patch_agent_tools(request: Request, *, enable: bool) -> None:
 
 @router.post("/api/config/agent-mode")
 async def write_agent_mode(body: AgentModeRequest, request: Request):
-    """切换多Agent模式（Beta）。修改立即生效并持久化。"""
-    from openakita.config import runtime_state, settings
+    """兼容旧接口：仅确保多Agent模式已开启，不再支持关闭。"""
+    from openakita.config import settings
 
     old = settings.multi_agent_enabled
-    settings.multi_agent_enabled = body.enabled
-    runtime_state.save()
-    logger.info(
-        f"[Config API] multi_agent_enabled: {old} -> {body.enabled}"
-    )
+    settings.multi_agent_enabled = True
+    logger.info("[Config API] agent-mode request received: requested=%s effective=%s", body.enabled, True)
 
-    if body.enabled and not old:
+    if not old:
         try:
             from openakita.main import _init_orchestrator
             await _init_orchestrator()
@@ -628,15 +623,12 @@ async def write_agent_mode(body: AgentModeRequest, request: Request):
 
         _hot_patch_agent_tools(request, enable=True)
 
-    elif not body.enabled and old:
-        _hot_patch_agent_tools(request, enable=False)
-
     # 通知 pool 刷新版本号，旧会话的 Agent 下次请求时自动重建
     pool = getattr(request.app.state, "agent_pool", None)
     if pool is not None:
         pool.notify_skills_changed()
 
-    return {"status": "ok", "multi_agent_enabled": body.enabled}
+    return {"status": "ok", "multi_agent_enabled": True}
 
 
 @router.get("/api/config/providers")

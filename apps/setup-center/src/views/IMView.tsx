@@ -2262,7 +2262,6 @@ function BotCreationWizard({
                 <Select
                   value={bot.agent_profile_id}
                   onValueChange={(v) => setBot((prev) => ({ ...prev, agent_profile_id: v }))}
-                  disabled={!multiAgentEnabled}
                 >
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent position="popper" side="bottom" sideOffset={4}>
@@ -2272,9 +2271,6 @@ function BotCreationWizard({
                     ))}
                   </SelectContent>
                 </Select>
-                {!multiAgentEnabled && (
-                  <p className="text-[11px] text-muted-foreground">{t("im.needMultiAgent")}</p>
-                )}
               </div>
             )}
 

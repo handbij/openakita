@@ -326,7 +326,7 @@ class Settings(BaseSettings):
 
     # === 多 Agent 模式 (Beta) ===
     multi_agent_enabled: bool = Field(
-        default=False,
+        default=True,
         description="多Agent模式 (Beta)，开启后支持多Agent协作、专用Agent、IM多Bot等",
     )
 
@@ -672,7 +672,6 @@ _PERSISTABLE_KEYS: list[str] = [
     "proactive_quiet_hours_end",
     "ui_theme",
     "ui_language",
-    "multi_agent_enabled",
     "im_bots",
     "force_tool_call_max_retries",
     "force_tool_call_im_floor",

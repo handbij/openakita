@@ -10,7 +10,7 @@
 """
 
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -121,7 +121,10 @@ class TestHealthEndpoint:
 
 
 class TestRestartOrchestratorRecovery:
-    async def test_agent_mode_toggle(self, shutdown_event):
+    async def test_agent_mode_endpoint_keeps_multi_agent_enabled(self, shutdown_event):
+        import openakita.agents.presets as presets_module
+        import openakita.main as main_module
+
         mock_orchestrator = MagicMock()
         app = create_app(
             agent=MagicMock(initialized=True, _tools=[], tool_catalog=MagicMock(), handler_registry=MagicMock()),
@@ -136,7 +139,9 @@ class TestRestartOrchestratorRecovery:
             with (
                 patch("openakita.config.settings") as mock_settings,
                 patch("openakita.config.runtime_state") as mock_rs,
-                patch("openakita.api.routes.config._hot_patch_agent_tools"),
+                patch("openakita.api.routes.config._hot_patch_agent_tools") as mock_hot_patch,
+                patch.object(main_module, "_init_orchestrator", new=AsyncMock()) as mock_init_orchestrator,
+                patch.object(presets_module, "ensure_presets_on_mode_enable") as mock_ensure_presets,
             ):
                 mock_settings.multi_agent_enabled = False
                 mock_settings.data_dir = MagicMock()
@@ -144,4 +149,11 @@ class TestRestartOrchestratorRecovery:
 
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
+        assert resp.json()["multi_agent_enabled"] is True
+        assert mock_settings.multi_agent_enabled is True
+        mock_rs.save.assert_not_called()
+        mock_init_orchestrator.assert_awaited_once()
+        mock_ensure_presets.assert_called_once()
+        mock_hot_patch.assert_called_once()
+        assert mock_hot_patch.call_args.kwargs["enable"] is True
         shutdown_event.clear()

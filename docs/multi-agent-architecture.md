@@ -1,11 +1,11 @@
 # Multi-Agent Architecture
 
-本文档描述 OpenAkita 的多 Agent 架构设计。该架构通过 `multi_agent_enabled` 开关与单 Agent 模式完全隔离，标记为 **Beta**。
+本文档描述 OpenAkita 的多 Agent 架构设计。当前桌面端与后端均以多 Agent 为默认工作形态，相关能力标记为 **Beta**。
 
 ## 设计原则
 
-1. **模式隔离** — 多 Agent 功能通过 `multi_agent_enabled` 配置项守护，关闭时所有多 Agent 组件不加载、不影响现有行为
-2. **渐进增强** — 数据结构改动向后兼容（新字段有默认值），单 Agent 模式无感知
+1. **默认常开** — 多 Agent 是系统默认工作模式，前端不再提供单独的开关入口
+2. **兼容保守** — 运行时守卫仍然保留，用于初始化阶段、测试桩和兼容旧调用路径
 3. **轻量通信** — 废弃旧 ZMQ 方案，使用 `asyncio.Queue` + JSON 进行进程内通信
 4. **安全沙箱** — AI 动态创建的 Agent 受权限继承、深度限制、生命周期约束
 
@@ -25,24 +25,20 @@
 │  • /模式 /切换 /help      • 多 Bot 实例管理                        │
 └────────────────────────────┬──────────────────────────────────────┘
                              │
-              ┌──────────────┴──────────────┐
-              │    multi_agent_enabled?      │
-              └──────┬──────────────┬────────┘
-                     │ False        │ True
-                     ▼              ▼
-           ┌──────────────┐  ┌──────────────────────┐
-           │  单 Agent     │  │  AgentOrchestrator    │
-           │  (现有流程)   │  │  ┌──────────────────┐ │
-           │              │  │  │ ProfileStore     │ │
-           │              │  │  │ AgentFactory     │ │
-           │              │  │  │ InstancePool     │ │
-           │              │  │  │ FallbackResolver │ │
-           │              │  │  │ TaskQueue        │ │
-           │              │  │  │ LockManager      │ │
-           │              │  │  └──────────────────┘ │
-           └──────────────┘  └──────────────────────┘
-                     │              │
-                     ▼              ▼
+                             ▼
+                  ┌──────────────────────────┐
+                  │     AgentOrchestrator    │
+                  │  ┌────────────────────┐  │
+                  │  │ ProfileStore       │  │
+                  │  │ AgentFactory       │  │
+                  │  │ InstancePool       │  │
+                  │  │ FallbackResolver   │  │
+                  │  │ TaskQueue          │  │
+                  │  │ LockManager        │  │
+                  │  └────────────────────┘  │
+                  └────────────┬─────────────┘
+                               │
+                               ▼
            ┌──────────────────────────────────────────┐
            │            ReasoningEngine                │
            │  • LLM 调用 + 工具执行 + 流式输出          │
@@ -146,7 +142,7 @@ per-resource 异步锁，防止多 Agent 并发访问共享资源（文件、内
 | `browser-agent` | 🌐 | 浏览器代理 | browser |
 | `data-analyst` | 📊 | 数据分析 | xlsx, shell, web_search |
 
-首次开启多 Agent 模式时自动部署到 `data/agents/profiles/`。
+首次完成多 Agent 初始化时会自动部署到 `data/agents/profiles/`。
 
 ## IM 多 Bot 架构
 
@@ -170,7 +166,7 @@ im_bots:
 
 | 命令 | 说明 | 模式限制 |
 |------|------|----------|
-| `/模式` `/mode` | 查看/切换单多 Agent 模式 | 始终可用 |
+| `/模式` `/mode` | 查看当前多 Agent 模式说明 | 始终可用 |
 | `/切换` `/switch` | 切换当前 Agent | 仅多 Agent |
 | `/help` `/帮助` | 命令帮助 | 仅多 Agent |
 | `/状态` `/status` | 当前 Agent 信息 | 仅多 Agent |
@@ -194,7 +190,7 @@ MemoryScope:
 
 SQLite `memories` 表增加 `scope` + `scope_owner` 列，旧数据默认 `GLOBAL`。
 
-## AI 工具（仅多 Agent 模式注入）
+## AI 工具（随多 Agent 初始化注入）
 
 ### delegate_to_agent
 
@@ -240,13 +236,13 @@ GET /api/stats/tokens/by-agent?period=24h
 
 | 组件 | 位置 | 功能 |
 |------|------|------|
-| 侧边栏 Beta 开关 | App.tsx | 切换多 Agent 模式 |
+| 多 Agent 默认入口 | App.tsx | 多 Agent 页面始终展示，无单独开关 |
 | Agent 选择器 | ChatView.tsx 输入框顶部 | 选择当前会话的 Agent |
 | Agent 仪表盘 | AgentDashboardView.tsx | 状态卡片 + Bot/Agent 关系图 + 粒子动画 |
 | Agent 管理器 | AgentManagerView.tsx | CRUD Agent + 自定义编辑器 |
 | 委派气泡 | ChatView.tsx | SSE `agent_handoff` 事件展示 |
 
-所有多 Agent UI 组件通过 `multiAgentEnabled` prop 守护，关闭时不渲染。
+当前主界面默认展示多 Agent 相关 UI；运行时守卫主要用于初始化阶段和兼容路径。
 
 ## 数据存储路径
 
@@ -259,7 +255,7 @@ GET /api/stats/tokens/by-agent?period=24h
 │       └── ...
 ├── sessions/                  # 会话数据 (含 agent_profile_id)
 ├── memory/                    # 记忆存储 (含 scope/scope_owner)
-├── runtime_state.json         # 运行时状态 (含 im_bots, multi_agent_enabled)
+├── runtime_state.json         # 运行时状态 (含 im_bots)
 └── agent.db                   # SQLite (含 token_usage.agent_profile_id)
 ```
 
@@ -269,13 +265,12 @@ GET /api/stats/tokens/by-agent?period=24h
 
 - `project_root` 变更 → `data_dir` 随之变更 → Agent profiles、sessions、memory 自然隔离
 - 各工作区有独立的 Agent 配置和会话状态
-- `multi_agent_enabled` 存储在 `runtime_state.json` 中，跟随工作区
 - IM Bot 凭证（`im_bots`）也存储在 `runtime_state.json`，跟随工作区
 
 **注意事项：**
 - `OPENAKITA_ROOT` 环境变量可覆盖 `openakita_home`，不影响 `data_dir`
 - `skills_path` 在 `user_workspace_path/skills` 下，技能全局共享
-- Agent profiles 是 per-workspace 的，但系统预置会在每个工作区首次启用时自动部署
+- Agent profiles 是 per-workspace 的，但系统预置会在每个工作区首次初始化时自动部署
 
 ## 旧架构废弃说明
 
@@ -290,8 +285,8 @@ GET /api/stats/tokens/by-agent?period=24h
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/config/agent-mode` | 获取多 Agent 模式状态 |
-| POST | `/api/config/agent-mode` | 切换多 Agent 模式 |
+| GET | `/api/config/agent-mode` | 获取兼容态的多 Agent 状态（始终开启） |
+| POST | `/api/config/agent-mode` | 兼容旧客户端调用；服务端保持多 Agent 开启 |
 | GET | `/api/agents/profiles` | 列出 Agent profiles |
 | POST | `/api/agents/profiles` | 创建自定义 Agent |
 | PUT | `/api/agents/profiles/{id}` | 更新 Agent |

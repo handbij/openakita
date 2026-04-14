@@ -305,7 +305,7 @@ export function App() {
   const [feedbackRefreshKey, setFeedbackRefreshKey] = useState(0);
   const [unreadFeedbackCount, setUnreadFeedbackCount] = useState(0);
   const [disabledViews, setDisabledViews] = useState<string[]>([]);
-  const [multiAgentEnabled, setMultiAgentEnabled] = useState(false);
+  const multiAgentEnabled = true;
   const [storeVisible, setStoreVisible] = useState(() => localStorage.getItem("openakita_storeVisible") === "true");
   // ── Hash-based deep link routing ──
   useEffect(() => {
@@ -638,11 +638,6 @@ export function App() {
       } catch { /* ignore */ }
       // Explicitly fetch config that useCallback/useEffect chains may miss
       // due to auth not being ready when the initial effects fired
-      try {
-        const modeRes = await safeFetch(`${capBase}/api/config/agent-mode`);
-        const modeData = await modeRes.json();
-        if (!cancelled) setMultiAgentEnabled(modeData.multi_agent_enabled ?? false);
-      } catch { /* ignore */ }
       try {
         const dvRes = await safeFetch(`${capBase}/api/config/disabled-views`);
         const dvData = await dvRes.json();
@@ -1606,19 +1601,6 @@ export function App() {
 
   useEffect(() => { fetchDisabledViews(); }, [fetchDisabledViews]);
 
-  const fetchAgentMode = useCallback(async () => {
-    if (!shouldUseHttpApi()) return;
-    try {
-      const res = await safeFetch(`${httpApiBase()}/api/config/agent-mode`);
-      const data = await res.json();
-      setMultiAgentEnabled(data.multi_agent_enabled ?? false);
-    } catch (e) {
-      logger.warn("App", "Failed to fetch agent mode", { error: String(e) });
-    }
-  }, [serviceStatus?.running, dataMode, apiBaseUrl]);
-
-  useEffect(() => { fetchAgentMode(); }, [fetchAgentMode]);
-
   // ── Unread feedback count polling ──
   useEffect(() => {
     if (!serviceStatus?.running) return;
@@ -1633,20 +1615,6 @@ export function App() {
     const timer = setInterval(poll, 5 * 60 * 1000);
     return () => clearInterval(timer);
   }, [serviceStatus?.running, dataMode, apiBaseUrl]);
-
-  const toggleMultiAgent = useCallback(async () => {
-    const next = !multiAgentEnabled;
-    try {
-      await safeFetch(`${httpApiBase()}/api/config/agent-mode`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: next }),
-      });
-      setMultiAgentEnabled(next);
-    } catch (e) {
-      logger.error("App", "Failed to toggle agent mode", { error: String(e) });
-    }
-  }, [multiAgentEnabled]);
 
   const toggleViewDisabled = useCallback(async (viewName: string) => {
     const next = disabledViews.includes(viewName)
@@ -4839,7 +4807,6 @@ export function App() {
         <AgentDashboardView
           apiBaseUrl={apiBaseUrl}
           visible={view === "dashboard"}
-          multiAgentEnabled={multiAgentEnabled}
         />
       );
     }
@@ -4850,7 +4817,6 @@ export function App() {
         <AgentManagerView
           apiBaseUrl={apiBaseUrl}
           visible={view === "agent_manager"}
-          multiAgentEnabled={multiAgentEnabled}
         />
       );
     }
@@ -5060,8 +5026,6 @@ export function App() {
           if (view === "wizard") window.location.hash = _viewToHash("wizard", s);
         }}
         disabledViews={disabledViews}
-        multiAgentEnabled={multiAgentEnabled}
-        onToggleMultiAgent={toggleMultiAgent}
         storeVisible={storeVisible}
         desktopVersion={desktopVersion}
         backendVersion={backendVersion}

@@ -987,62 +987,18 @@ class MessageGateway:
 
     async def _handle_mode_command(self, user_text: str) -> str:
         """
-        处理 /模式 或 /mode 命令：查看和切换单/多Agent模式。
+        处理 /模式 或 /mode 命令：查看当前模式说明。
 
         用法:
           /模式           — 查看当前模式
-          /模式 开启      — 开启多Agent模式
-          /模式 关闭      — 关闭多Agent模式
+          /模式 开启      — 返回当前模式说明
+          /模式 关闭      — 返回当前模式说明
           /mode on|off   — 同上英文版
         """
-        from ..config import runtime_state, settings
-
-        parts = user_text.strip().split(None, 1)
-        arg = parts[1].strip().lower() if len(parts) > 1 else ""
-
-        ON_ARGS = {"开启", "on", "true", "1", "multi"}
-        OFF_ARGS = {"关闭", "off", "false", "0", "single"}
-
-        if arg in ON_ARGS:
-            if settings.multi_agent_enabled:
-                return "ℹ️ 多Agent模式 (Beta) 已经是开启状态。"
-            settings.multi_agent_enabled = True
-            runtime_state.save()
-            logger.info("[Mode] multi_agent_enabled toggled ON via IM command")
-            # Deploy system presets on first enable
-            try:
-                from openakita.agents.presets import ensure_presets_on_mode_enable
-                ensure_presets_on_mode_enable(settings.data_dir / "agents")
-            except Exception as e:
-                logger.warning(f"[Gateway] Failed to deploy presets: {e}")
-            # Initialize orchestrator — rollback on failure
-            try:
-                from openakita.main import _init_orchestrator
-                await _init_orchestrator()
-            except Exception as e:
-                logger.error(f"[Gateway] Failed to init orchestrator, rolling back: {e}")
-                settings.multi_agent_enabled = False
-                runtime_state.save()
-                return f"❌ 多Agent模式开启失败（Orchestrator 初始化出错: {e}）\n已回滚到单Agent模式。"
-            return "✅ 已切换到 **多Agent模式 (Beta)**\n新消息将通过多Agent系统处理。"
-
-        if arg in OFF_ARGS:
-            if not settings.multi_agent_enabled:
-                return "ℹ️ 当前已经是单Agent模式。"
-            settings.multi_agent_enabled = False
-            runtime_state.save()
-            logger.info("[Mode] multi_agent_enabled toggled OFF via IM command")
-            return "✅ 已切换到 **单Agent模式**\n新消息将由默认Agent直接处理。"
-
-        current = settings.multi_agent_enabled
-        mode_label = "多Agent模式 (Beta)" if current else "单Agent模式"
-        lines = [
-            f"🔧 **当前模式: {mode_label}**\n",
-            "用法:",
-            "  `/模式 开启` — 切换到多Agent模式 (Beta)",
-            "  `/模式 关闭` — 切换到单Agent模式",
-        ]
-        return "\n".join(lines)
+        return "\n".join([
+            "🔧 **当前模式: 多Agent模式 (Beta)**\n",
+            "多Agent模式现已默认常开，不再支持切换为单Agent模式。",
+        ])
 
     def _is_agent_command(self, text: str) -> bool:
         """检查是否是多Agent相关命令"""
@@ -1066,10 +1022,7 @@ class MessageGateway:
         from ..config import settings
 
         if not settings.multi_agent_enabled:
-            t = user_text.strip().lower()
-            if t in ("/状态", "/status"):
-                return None
-            return "多Agent模式未开启。发送 `/模式 开启` 开启。"
+            return "多Agent系统正在初始化，请稍后再试。"
 
         session = self.session_manager.get_session(
             channel=message.channel,
@@ -1176,7 +1129,7 @@ class MessageGateway:
             "  `/chain [on|off]` — 思维链进度推送开关",
             "",
             "**模式:**",
-            "  `/模式` / `/mode` — 查看或切换单/多Agent模式",
+            "  `/模式` / `/mode` — 查看当前多Agent模式说明",
         ]
 
         if settings.multi_agent_enabled:

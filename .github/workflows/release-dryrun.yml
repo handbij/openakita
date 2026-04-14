@@ -36,7 +36,9 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: apps/setup-center/package-lock.json
+          cache-dependency-path: |
+            apps/setup-center/package-lock.json
+            docs-site/package-lock.json
 
       - name: Build web frontend
         working-directory: apps/setup-center
@@ -44,10 +46,21 @@ jobs:
           npm ci
           npm run build:web
 
+      - name: Install docs dependencies
+        working-directory: docs-site
+        run: npm ci
+
+      - name: Build user docs
+        run: python scripts/build_docs.py
+
+      - name: Verify user docs bundle
+        shell: bash
+        run: |
+          test -f docs-site/.vitepress/dist/index.html
+
       - name: Build wheel
         run: |
           pip install build
-          mkdir -p docs-site/.vitepress/dist
           python -m build --wheel
 
       - name: Verify wheel installs correctly
@@ -134,7 +147,9 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: apps/setup-center/package-lock.json
+          cache-dependency-path: |
+            apps/setup-center/package-lock.json
+            docs-site/package-lock.json
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -156,10 +171,21 @@ jobs:
           npm ci
           npm run build:web
 
+      - name: Install docs dependencies
+        working-directory: docs-site
+        run: npm ci
+
+      - name: Build user docs
+        run: python scripts/build_docs.py
+
+      - name: Verify user docs bundle
+        shell: bash
+        run: |
+          test -f docs-site/.vitepress/dist/index.html
+
       - name: Install Python project and PyInstaller
         shell: bash
         run: |
-          mkdir -p docs-site/.vitepress/dist
           pip install -e ".[all]"
           pip install "pyinstaller>=6.18.0"
 

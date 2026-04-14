@@ -520,6 +520,16 @@ if (web_dist_dir / "index.html").exists():
 else:
     print("[spec] INFO: dist-web not found, web remote access will not be available")
 
+# User docs for in-app documentation (built by: python scripts/build_docs.py)
+# Bundled to openakita/docs_dist/ so _find_docs_dist() in server.py can locate it
+# via Path(__file__).parent.parent / "docs_dist" → _internal/openakita/docs_dist/
+docs_dist_dir = PROJECT_ROOT / "docs-site" / ".vitepress" / "dist"
+if (docs_dist_dir / "index.html").exists():
+    datas.append((str(docs_dist_dir), "openakita/docs_dist"))
+    print(f"[spec] Bundling user docs: {docs_dist_dir}")
+else:
+    print("[spec] INFO: docs dist not found, in-app user docs will not be available")
+
 # openakita source code: needed by bridge subcommand which runs via the bundled
 # system python.exe (not the frozen executable), so it needs importable .py files
 # in _internal/openakita/

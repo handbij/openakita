@@ -14,6 +14,13 @@ build
 # Node / Frontend build artifacts
 apps/setup-center/node_modules
 apps/setup-center/dist
+apps/setup-center/src-tauri/target
+apps/setup-center/src-tauri/resources
+apps/setup-center/.idea
+apps/setup-center/android/.gradle
+apps/setup-center/android/app/build
+apps/setup-center/android/build
+apps/setup-center/ios-icon/build
 
 # IDE & tooling
 .cursor

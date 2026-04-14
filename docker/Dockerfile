@@ -1,5 +1,23 @@
 # OpenAkita Dockerfile
-# 基于官方 Python 镜像
+
+# ------------------------------
+# Stage 1: Build web frontend
+# ------------------------------
+FROM node:20-slim AS web-builder
+
+WORKDIR /build/apps/setup-center
+
+COPY apps/setup-center/package.json apps/setup-center/package-lock.json ./
+RUN npm ci
+
+COPY apps/setup-center /build/apps/setup-center
+COPY src/openakita/llm/registries/providers.json /build/src/openakita/llm/registries/providers.json
+
+RUN npm run build:web
+
+# ------------------------------
+# Stage 2: Python runtime
+# ------------------------------
 FROM python:3.11-slim
 
 # 设置工作目录
@@ -19,6 +37,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 复制应用文件
 COPY . .
+
+# 注入构建好的 Web 前端，并为 docs 生成最小占位目录，
+# 以满足 pyproject.toml 中 hatch force-include 的打包要求。
+COPY --from=web-builder /build/apps/setup-center/dist-web /app/apps/setup-center/dist-web
+RUN mkdir -p /app/docs-site/.vitepress/dist \
+    && printf '%s\n' \
+    '<!doctype html>' \
+    '<html><head><meta charset="utf-8"><title>OpenAkita Docs</title></head>' \
+    '<body><h1>OpenAkita Docs Not Bundled</h1><p>Docs are not included in this image build.</p></body></html>' \
+    > /app/docs-site/.vitepress/dist/index.html
 
 # 安装 Python 依赖
 RUN pip install --no-cache-dir --upgrade pip \

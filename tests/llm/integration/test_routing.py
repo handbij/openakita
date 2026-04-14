@@ -200,6 +200,31 @@ class TestCapabilityFiltering:
         # 应该选 claude-primary（优先级更高）
         assert multi_endpoint_client.providers["claude-primary"].chat.called
 
+    @pytest.mark.asyncio
+    async def test_it_s06b_image_request_excludes_nonvision_override_fallback(self, multi_endpoint_client):
+        """IT-S06b: 图片请求不会回退到不支持 vision 的 override 端点"""
+        multi_endpoint_client.switch_model("qwen-backup", hours=1)
+        multi_endpoint_client.providers["claude-primary"].chat = AsyncMock(
+            side_effect=LLMError("vision endpoint temporary failure")
+        )
+        multi_endpoint_client.providers["qwen-backup"].chat = AsyncMock(
+            return_value=mock_successful_response()
+        )
+        multi_endpoint_client.providers["kimi-video"].chat = AsyncMock(
+            return_value=mock_successful_response()
+        )
+
+        image = ImageContent(media_type="image/png", data="abc123")
+        response = await multi_endpoint_client.chat(
+            messages=[Message(role="user", content=[
+                ImageBlock(image=image),
+                TextBlock(text="Describe this image"),
+            ])],
+        )
+
+        assert multi_endpoint_client.providers["kimi-video"].chat.called
+        assert not multi_endpoint_client.providers["qwen-backup"].chat.called
+
 
 class TestFallback:
     """降级处理测试"""
@@ -219,8 +244,8 @@ class TestFallback:
             enable_thinking=True,
         )
         
-        # 应该警告但使用首选端点
-        assert multi_endpoint_client.providers["claude-primary"].chat.called
+        # 应该降级为任一可用文本端点，而不是直接失败
+        assert any(provider.chat.called for provider in multi_endpoint_client.providers.values())
     
     @pytest.mark.asyncio
     async def test_it_s08_video_no_match_soft_degradation(self):
@@ -252,6 +277,34 @@ class TestFallback:
             ])],
         )
         assert response is not None
+
+    @pytest.mark.asyncio
+    async def test_it_s08b_image_no_match_raises_instead_of_silent_degradation(self):
+        """IT-S08b: Image 无匹配时必须明确失败，不能静默降级到文本模型"""
+        endpoints = [
+            EndpointConfig(
+                name="text-only",
+                provider="openai",
+                api_type="openai",
+                base_url="https://api.openai.com/v1",
+                api_key_env="API_KEY",
+                model="gpt-4",
+                priority=1,
+                capabilities=["text", "tools"],
+            ),
+        ]
+        client = LLMClient(endpoints=endpoints)
+        for provider in client.providers.values():
+            provider.chat = AsyncMock(return_value=mock_successful_response())
+
+        image = ImageContent(media_type="image/png", data="abc123")
+        with pytest.raises(AllEndpointsFailedError):
+            await client.chat(
+                messages=[Message(role="user", content=[
+                    ImageBlock(image=image),
+                    TextBlock(text="Describe"),
+                ])],
+            )
 
 
 class TestFailover:

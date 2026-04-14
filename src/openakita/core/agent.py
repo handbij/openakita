@@ -29,6 +29,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ..api.attachment_store import get_attachment_store
 from ..config import settings
 
 # 记忆系统
@@ -2436,6 +2437,162 @@ create_agent(name="名称", description="描述", skills=["技能"], custom_prom
                 )
 
     @staticmethod
+    def _normalize_desktop_attachment(att: object) -> dict:
+        """Normalize desktop attachment metadata from dict/Pydantic/object inputs."""
+        if isinstance(att, dict):
+            att_id = str(att.get("id", "") or "")
+            att_type = str(att.get("type", "") or "")
+            name = str(att.get("name", "") or "file")
+            url = str(att.get("url", "") or "")
+            mime_type = str(att.get("mime_type", "") or att.get("mimeType", "") or att_type)
+            size = int(att.get("size", 0) or 0)
+            source_path = str(att.get("source_path", "") or "")
+            display_path = str(att.get("display_path", "") or source_path)
+            entries = att.get("entries") or []
+            text_preview = str(att.get("text_preview", "") or "")
+        else:
+            att_id = str(getattr(att, "id", "") or "")
+            att_type = str(getattr(att, "type", "") or "")
+            name = str(getattr(att, "name", "") or "file")
+            url = str(getattr(att, "url", "") or "")
+            mime_type = str(
+                getattr(att, "mime_type", None)
+                or getattr(att, "mimeType", None)
+                or att_type
+            )
+            size = int(getattr(att, "size", 0) or 0)
+            source_path = str(getattr(att, "source_path", "") or "")
+            display_path = str(getattr(att, "display_path", "") or source_path)
+            entries = getattr(att, "entries", None) or []
+            text_preview = str(getattr(att, "text_preview", "") or "")
+        return {
+            "id": att_id,
+            "type": att_type,
+            "name": name,
+            "url": url,
+            "mime_type": mime_type,
+            "size": size,
+            "source_path": source_path,
+            "display_path": display_path,
+            "entries": entries,
+            "text_preview": text_preview,
+        }
+
+    @classmethod
+    def _resolve_desktop_attachment_record(cls, att: object) -> dict:
+        normalized = cls._normalize_desktop_attachment(att)
+        att_id = normalized.get("id", "")
+        if not att_id:
+            return normalized
+        record = get_attachment_store().get(att_id)
+        if not record:
+            return normalized
+        return {
+            "id": record.get("id", att_id),
+            "type": normalized.get("type") or record.get("type", ""),
+            "name": normalized.get("name") or record.get("name", "file"),
+            "url": normalized.get("url") or record.get("content_url") or "",
+            "mime_type": normalized.get("mime_type") or record.get("mime_type", ""),
+            "size": normalized.get("size") or record.get("size", 0),
+            "storage_path": record.get("storage_path", ""),
+            "source_path": normalized.get("source_path") or record.get("source_path", ""),
+            "display_path": normalized.get("display_path") or record.get("display_path", ""),
+            "entries": normalized.get("entries") or record.get("entries", []),
+            "text_preview": normalized.get("text_preview") or record.get("text_preview", ""),
+        }
+
+    @classmethod
+    def _build_desktop_attachment_content_blocks(
+        cls,
+        attachments: list[object] | None,
+        text: str = "",
+    ) -> list[dict]:
+        """Build multimodal content blocks from desktop chat attachments."""
+        content_blocks: list[dict] = []
+        if text:
+            content_blocks.append({"type": "text", "text": text})
+
+        for raw_att in attachments or []:
+            att = cls._resolve_desktop_attachment_record(raw_att)
+            att_type = att["type"]
+            att_url = str(att.get("url", "") or "")
+            att_name = att["name"]
+            att_mime = att["mime_type"]
+            display_path = str(att.get("display_path", "") or att.get("source_path", "") or att_name)
+            text_preview = str(att.get("text_preview", "") or "")
+            entries = att.get("entries") or []
+
+            is_image = (
+                att_type == "image"
+                or att_mime.startswith("image/")
+                or att_url.startswith("data:image/")
+            )
+            is_video = (
+                att_type == "video"
+                or att_mime.startswith("video/")
+                or att_url.startswith("data:video/")
+            )
+            if att.get("id") and att_url and not att_url.startswith("data:"):
+                data_url = get_attachment_store().to_data_url(att)
+                if data_url:
+                    att_url = data_url
+
+            if is_image and att_url:
+                content_blocks.append({"type": "image_url", "image_url": {"url": att_url}})
+            elif is_video and att_url:
+                content_blocks.append({"type": "video_url", "video_url": {"url": att_url}})
+            elif att_type == "document" and att_url:
+                path_text = f" 路径: {display_path}" if display_path else ""
+                preview_text = f"\n{text_preview}" if text_preview else ""
+                content_blocks.append({
+                    "type": "text",
+                    "text": f"[文档: {att_name} ({att_mime})]{path_text}{preview_text}",
+                })
+            elif att_type == "directory":
+                listing = "\n".join(str(item) for item in entries[:50])
+                content_blocks.append({
+                    "type": "text",
+                    "text": (
+                        f"[目录引用: {att_name}] 路径: {display_path}"
+                        + (f"\n目录内容:\n{listing}" if listing else "")
+                    ),
+                })
+            elif att_url:
+                path_text = f" 路径: {display_path}" if display_path else ""
+                preview_text = f"\n{text_preview}" if text_preview else ""
+                content_blocks.append({
+                    "type": "text",
+                    "text": f"[附件: {att_name} ({att_mime})]{path_text}{preview_text}",
+                })
+
+        return content_blocks
+
+    @staticmethod
+    def _merge_llm_message_content(existing: object, incoming: object) -> str | list[dict] | None:
+        """Merge consecutive same-role messages without losing multimodal parts."""
+        if isinstance(existing, str) and isinstance(incoming, str):
+            if not incoming:
+                return existing
+            if not existing:
+                return incoming
+            return existing + "\n" + incoming
+
+        def _to_blocks(content: object) -> list[dict]:
+            if isinstance(content, str):
+                return [{"type": "text", "text": content}] if content else []
+            if isinstance(content, list):
+                return [part for part in content if isinstance(part, dict)]
+            return []
+
+        existing_blocks = _to_blocks(existing)
+        incoming_blocks = _to_blocks(incoming)
+        if not incoming_blocks:
+            return existing if isinstance(existing, (str, list)) else None
+        if not existing_blocks:
+            return incoming_blocks
+        return existing_blocks + [{"type": "text", "text": "\n"}] + incoming_blocks
+
+    @staticmethod
     def _extract_outbound_attachments(
         tool_calls: list[dict], tool_results: list[dict],
     ) -> list[dict]:
@@ -3324,6 +3481,7 @@ create_agent(name="名称", description="描述", skills=["技能"], custom_prom
         for msg in history_messages:
             role = msg.get("role", "user")
             content = msg.get("content", "")
+            attachments_meta = msg.get("attachments") if role == "user" else None
             if role == "assistant":
                 for _marker in _STRIP_MARKERS:
                     if _marker in content:
@@ -3338,11 +3496,21 @@ create_agent(name="名称", description="描述", skills=["技能"], custom_prom
                     content = f"[{dt.strftime('%H:%M')}] {content}"
                 except (ValueError, TypeError):
                     pass
-            if role in ("user", "assistant") and content:
+            llm_content: str | list[dict] | None = content if content else None
+            if role == "user" and attachments_meta:
+                llm_content = self._build_desktop_attachment_content_blocks(
+                    attachments_meta,
+                    content if isinstance(content, str) else "",
+                )
+            if role in ("user", "assistant") and llm_content:
                 if messages and messages[-1]["role"] == role:
-                    messages[-1]["content"] += "\n" + content
+                    merged = self._merge_llm_message_content(messages[-1]["content"], llm_content)
+                    if merged is not None:
+                        messages[-1]["content"] = merged
+                    else:
+                        messages.append({"role": role, "content": llm_content})
                 else:
-                    messages.append({"role": role, "content": content})
+                    messages.append({"role": role, "content": llm_content})
 
         # 上下文连续标记（合并到当前用户消息前缀，避免插入假 assistant 回复破坏对话连贯性）
         _has_history = bool(messages)
@@ -3497,40 +3665,10 @@ create_agent(name="名称", description="描述", skills=["技能"], custom_prom
 
         # Desktop Chat 附件处理（与 IM 的 pending_images 对齐）
         if attachments and not pending_images:
-            content_blocks: list[dict] = []
-            if compiled_message:
-                content_blocks.append({"type": "text", "text": compiled_message})
-            for att in attachments:
-                att_type = getattr(att, "type", None) or ""
-                att_url = getattr(att, "url", None) or ""
-                att_name = getattr(att, "name", None) or "file"
-                att_mime = getattr(att, "mime_type", None) or att_type
-
-                is_image = (
-                    att_type == "image"
-                    or (att_mime or "").startswith("image/")
-                    or (att_url or "").startswith("data:image/")
-                )
-                is_video = (
-                    att_type == "video"
-                    or (att_mime or "").startswith("video/")
-                    or (att_url or "").startswith("data:video/")
-                )
-
-                if is_image and att_url:
-                    content_blocks.append({"type": "image_url", "image_url": {"url": att_url}})
-                elif is_video and att_url:
-                    content_blocks.append({"type": "video_url", "video_url": {"url": att_url}})
-                elif att_type == "document" and att_url:
-                    content_blocks.append({
-                        "type": "text",
-                        "text": f"[文档: {att_name} ({att_mime})] URL: {att_url}",
-                    })
-                elif att_url:
-                    content_blocks.append({
-                        "type": "text",
-                        "text": f"[附件: {att_name} ({att_mime})] URL: {att_url}",
-                    })
+            content_blocks = self._build_desktop_attachment_content_blocks(
+                attachments,
+                compiled_message,
+            )
             if content_blocks:
                 messages.append({"role": "user", "content": content_blocks})
             elif compiled_message:

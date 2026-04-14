@@ -10,7 +10,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { setThemePref } from "../theme";
 import type { Theme } from "../theme";
-import { invoke, downloadFile, openFileWithDefault, showInFolder, readFileBase64, onDragDrop, IS_TAURI, IS_WEB, IS_MOBILE_BROWSER, onWsEvent, logger, getAssetUrl } from "../platform";
+import { invoke, downloadFile, openFileWithDefault, showInFolder, inspectLocalPath, onDragDrop, readLocalFile, IS_TAURI, IS_WEB, IS_MOBILE_BROWSER, onWsEvent, logger, getAssetUrl } from "../platform";
 import { getAccessToken } from "../platform/auth";
 import { safeFetch } from "../providers";
 import type {
@@ -84,13 +84,19 @@ type QueuedMessage = {
  * （thinkingChain 可由后端 chain_summary 重建）。
  */
 function saveMessagesToStorage(key: string, msgs: ChatMessage[]): boolean {
-  const base = msgs.map(({ streaming, ...rest }) => rest);
+  const base = msgs.map(({ streaming, ...rest }) => ({
+    ...rest,
+    attachments: rest.attachments?.map(({ previewUrl, status, error, entries, textPreview, ...att }) => att) ?? rest.attachments,
+  }));
   try {
     localStorage.setItem(key, JSON.stringify(base));
     return true;
   } catch {
     // 配额溢出 → 剥离最大数据块后重试
-    const slim = msgs.map(({ streaming, thinkingChain, ...rest }) => rest);
+    const slim = msgs.map(({ streaming, thinkingChain, ...rest }) => ({
+      ...rest,
+      attachments: rest.attachments?.map(({ previewUrl, status, error, entries, textPreview, ...att }) => att) ?? rest.attachments,
+    }));
     try {
       localStorage.setItem(key, JSON.stringify(slim));
       return true;
@@ -1010,10 +1016,11 @@ function AskUserBlock({ ask, onAnswer }: { ask: ChatAskUser; onAnswer: (answer: 
 }
 
 function AttachmentPreview({ att, onRemove }: { att: ChatAttachment; onRemove?: () => void }) {
-  if (att.type === "image" && att.previewUrl) {
+  const imageSrc = att.previewUrl || att.url;
+  if (att.type === "image" && imageSrc) {
     return (
       <div style={{ position: "relative", display: "inline-block" }}>
-        <img src={att.previewUrl} alt={att.name} style={{ width: 80, height: 80, objectFit: "cover", display: "block", borderRadius: 10, border: "1px solid var(--line)" }} />
+        <img src={imageSrc} alt={att.name} style={{ width: 80, height: 80, objectFit: "cover", display: "block", borderRadius: 10, border: "1px solid var(--line)" }} />
         {onRemove && (
           <button
             onClick={onRemove}
@@ -1027,6 +1034,21 @@ function AttachmentPreview({ att, onRemove }: { att: ChatAttachment; onRemove?: 
           >
             <IconX size={11} />
           </button>
+        )}
+        {att.status && att.status !== "ready" && (
+          <div style={{
+            position: "absolute",
+            left: 6,
+            bottom: 6,
+            padding: "2px 6px",
+            borderRadius: 999,
+            fontSize: 10,
+            fontWeight: 700,
+            color: "#fff",
+            background: att.status === "failed" ? "rgba(220,38,38,0.88)" : "rgba(15,23,42,0.72)",
+          }}>
+            {att.status === "failed" ? "失败" : "上传中"}
+          </div>
         )}
       </div>
     );
@@ -1052,6 +1074,12 @@ function AttachmentPreview({ att, onRemove }: { att: ChatAttachment; onRemove?: 
       <span style={{ display: "inline-flex", alignItems: "center" }}>{icon}</span>
       <span style={{ fontWeight: 600 }}>{att.name}</span>
       {sizeStr && <span style={{ opacity: 0.5 }}>{sizeStr}</span>}
+      {att.type === "directory" && att.entries?.length ? <span style={{ opacity: 0.5 }}>{att.entries.length} items</span> : null}
+      {att.status && att.status !== "ready" ? (
+        <span style={{ opacity: 0.7, color: att.status === "failed" ? "var(--danger)" : "var(--text-muted, #64748b)" }}>
+          {att.status === "failed" ? "上传失败" : "上传中"}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -2061,7 +2089,7 @@ export function ChatView({
   const hydrateSeqRef = useRef(0);
 
   const mapBackendHistoryToMessages = useCallback(
-    (rows: { id: string; role: string; content: string; timestamp: number; chain_summary?: ChainSummaryItem[]; artifacts?: ChatArtifact[]; ask_user?: { question: string; options?: { id: string; label: string }[]; questions?: ChatAskQuestion[] } }[]): ChatMessage[] => {
+    (rows: { id: string; role: string; content: string; timestamp: number; chain_summary?: ChainSummaryItem[]; artifacts?: ChatArtifact[]; attachments?: ChatAttachment[]; ask_user?: { question: string; options?: { id: string; label: string }[]; questions?: ChatAskQuestion[] } }[]): ChatMessage[] => {
       return rows.map((m) => ({
         id: m.id,
         role: m.role as "user" | "assistant" | "system",
@@ -2069,10 +2097,18 @@ export function ChatView({
         timestamp: m.timestamp,
         ...(m.chain_summary?.length ? { thinkingChain: buildChainFromSummary(m.chain_summary) } : {}),
         ...(m.artifacts?.length ? { artifacts: m.artifacts } : {}),
+        ...(m.attachments?.length ? {
+          attachments: m.attachments.map((att) => ({
+            ...att,
+            status: "ready",
+            url: att.url && att.url.startsWith("/") ? `${apiBaseUrl}${att.url}` : att.url,
+            previewUrl: att.previewUrl && att.previewUrl.startsWith("/") ? `${apiBaseUrl}${att.previewUrl}` : att.previewUrl,
+          })),
+        } : {}),
         ...(m.ask_user ? { askUser: m.ask_user, content: "" } : {}),
       }));
     },
-    [],
+    [apiBaseUrl],
   );
 
   const hydrateConversationMessages = useCallback(async (convId: string, expectedCount = 0) => {
@@ -2501,15 +2537,37 @@ export function ChatView({
 
   // ── API base URL ──
   const apiBase = apiBaseUrl;
+  const hasUploadingAttachments = pendingAttachments.some((att) => att.status === "uploading");
+  const hasFailedAttachments = pendingAttachments.some((att) => att.status === "failed");
+  const allAttachmentsReady = pendingAttachments.every((att) => (att.status ?? "ready") === "ready");
 
   // ── 文件上传辅助函数：上传文件到 /api/upload 并返回访问 URL ──
-  const uploadFile = useCallback(async (file: Blob, filename: string): Promise<string> => {
+  const uploadFile = useCallback(async (
+    file: Blob,
+    filename: string,
+    kind?: ChatAttachment["type"],
+  ): Promise<ChatAttachment> => {
     const form = new FormData();
     form.append("file", file, filename);
+    if (activeConvId) form.append("conversation_id", activeConvId);
+    if (kind) form.append("type", kind);
     const res = await safeFetch(`${apiBase}/api/upload`, { method: "POST", body: form });
     const data = await res.json();
-    return data.url as string;  // 后端返回 { url: "/api/uploads/<filename>" }
-  }, [apiBase]);
+    const att = (data.attachment || {}) as Record<string, unknown>;
+    return {
+      id: typeof att.id === "string" ? att.id : undefined,
+      type: (typeof att.type === "string" ? att.type : kind || "file") as ChatAttachment["type"],
+      name: typeof att.name === "string" ? att.name : filename,
+      status: "ready",
+      url: typeof att.url === "string" && att.url ? `${apiBase}${att.url}` : undefined,
+      size: typeof att.size === "number" ? att.size : file.size,
+      mimeType: typeof att.mime_type === "string" ? att.mime_type : file.type,
+      sourcePath: typeof att.source_path === "string" ? att.source_path : undefined,
+      displayPath: typeof att.display_path === "string" ? att.display_path : undefined,
+      entries: Array.isArray(att.entries) ? att.entries.filter((v): v is string => typeof v === "string") : undefined,
+      textPreview: typeof att.text_preview === "string" ? att.text_preview : undefined,
+    };
+  }, [activeConvId, apiBase]);
 
   // ── 组件卸载清理：abort 所有流式请求 + 停止麦克风 ──
   useEffect(() => {
@@ -2797,6 +2855,15 @@ export function ChatView({
     const text = (overrideText ?? inputTextRef.current).trim();
     if (!text && pendingAttachments.length === 0) return;
     if (orgCommandPendingRef.current) return;
+    if (hasUploadingAttachments || !allAttachmentsReady) {
+      setMessages((prev) => [...prev, {
+        id: genId(),
+        role: "system",
+        content: hasFailedAttachments ? "有附件尚未上传成功，请删除失败附件或等待上传完成后再发送。" : "附件仍在上传中，请稍候发送。",
+        timestamp: Date.now(),
+      }]);
+      return;
+    }
 
     const resolvedConvId = targetConvId || activeConvId;
     const targetIsStreaming = resolvedConvId ? !!streamContexts.current.get(resolvedConvId)?.isStreaming : false;
@@ -2991,11 +3058,15 @@ export function ChatView({
     }
 
     // 创建用户消息
+    const readyAttachments = pendingAttachments
+      .filter((att) => (att.status ?? "ready") === "ready")
+      .map((att) => ({ ...att, previewUrl: att.previewUrl || att.url, status: "ready" as const }));
+
     const userMsg: ChatMessage = {
       id: genId(),
       role: "user",
       content: displayContent || text,
-      attachments: pendingAttachments.length > 0 ? [...pendingAttachments] : undefined,
+      attachments: readyAttachments.length > 0 ? readyAttachments : undefined,
       timestamp: Date.now(),
     };
 
@@ -3209,12 +3280,18 @@ export function ChatView({
       };
 
       // 附件信息
-      if (pendingAttachments.length > 0) {
-        body.attachments = pendingAttachments.map((a) => ({
+      if (readyAttachments.length > 0) {
+        body.attachments = readyAttachments.map((a) => ({
+          id: a.id,
           type: a.type,
           name: a.name,
           url: a.url,
           mime_type: a.mimeType,
+          size: a.size,
+          source_path: a.sourcePath,
+          display_path: a.displayPath,
+          entries: a.entries,
+          text_preview: a.textPreview,
         }));
       }
 
@@ -3945,7 +4022,7 @@ export function ChatView({
         return updated;
       });
     }
-  }, [pendingAttachments, isCurrentConvStreaming, activeConvId, planMode, selectedEndpoint, apiBase, slashCommands, thinkingMode, thinkingDepth, t, setInputValue]);
+  }, [pendingAttachments, hasUploadingAttachments, hasFailedAttachments, allAttachmentsReady, isCurrentConvStreaming, activeConvId, planMode, selectedEndpoint, apiBase, slashCommands, thinkingMode, thinkingDepth, t, setInputValue]);
 
   // ── 处理用户回答 (ask_user) ──
   const handleAskAnswer = useCallback((msgId: string, answer: string) => {
@@ -4104,8 +4181,12 @@ export function ChatView({
     const files = e.target.files;
     if (!files) return;
     for (const file of Array.from(files)) {
+      const attType: ChatAttachment["type"] = file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : file.type.startsWith("audio/") ? "voice" : file.type === "application/pdf" ? "document" : "file";
+      const tempId = `temp-${genId()}`;
       const att: ChatAttachment = {
-        type: file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : file.type.startsWith("audio/") ? "voice" : file.type === "application/pdf" ? "document" : "file",
+        id: tempId,
+        type: attType,
+        status: "uploading",
         name: file.name,
         size: file.size,
         mimeType: file.type,
@@ -4114,31 +4195,54 @@ export function ChatView({
         alert(`视频文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，桌面端最大支持 7MB（base64 编码后需 < 10MB）`);
         continue;
       }
-      if (att.type === "image" || att.type === "video") {
+      if (att.type === "image") {
         const reader = new FileReader();
         reader.onload = () => {
-          att.previewUrl = att.type === "image" ? reader.result as string : undefined;
-          att.url = reader.result as string;
-          setPendingAttachments((prev) => [...prev, att]);
+          att.previewUrl = reader.result as string;
+          setPendingAttachments((prev) => [...prev, { ...att }]);
+          uploadFile(file, file.name, att.type)
+            .then((uploaded) => {
+              setPendingAttachments((prev) =>
+                prev.map((a) => a.id === tempId
+                  ? { ...uploaded, previewUrl: att.previewUrl } : a)
+              );
+            })
+            .catch(() => {
+              setPendingAttachments((prev) =>
+                prev.map((a) => a.id === tempId ? { ...a, status: "failed", error: "upload_failed" } : a));
+            });
         };
         reader.readAsDataURL(file);
-      } else {
+      } else if (att.type === "video") {
         setPendingAttachments((prev) => [...prev, att]);
-        uploadFile(file, file.name)
-          .then((serverUrl) => {
+        uploadFile(file, file.name, att.type)
+          .then((uploaded) => {
             setPendingAttachments((prev) =>
-              prev.map((a) => a.name === att.name && a.type === att.type && !a.url
-                ? { ...a, url: `${apiBase}${serverUrl}` } : a)
+              prev.map((a) => a.id === tempId
+                ? { ...uploaded } : a)
             );
           })
           .catch(() => {
             setPendingAttachments((prev) =>
-              prev.filter((a) => !(a.name === att.name && a.type === att.type && !a.url)));
+              prev.map((a) => a.id === tempId ? { ...a, status: "failed", error: "upload_failed" } : a));
+          });
+      } else {
+        setPendingAttachments((prev) => [...prev, att]);
+        uploadFile(file, file.name, att.type)
+          .then((uploaded) => {
+            setPendingAttachments((prev) =>
+              prev.map((a) => a.id === tempId
+                ? { ...uploaded } : a)
+            );
+          })
+          .catch(() => {
+            setPendingAttachments((prev) =>
+              prev.map((a) => a.id === tempId ? { ...a, status: "failed", error: "upload_failed" } : a));
           });
       }
     }
     e.target.value = "";
-  }, []);
+  }, [uploadFile]);
 
   // ── 粘贴图片 ──
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
@@ -4151,19 +4255,35 @@ export function ChatView({
         if (!file) continue;
         const reader = new FileReader();
         reader.onload = () => {
-          setPendingAttachments((prev) => [...prev, {
+          const name = `粘贴图片-${Date.now()}.png`;
+          const tempId = `temp-${genId()}`;
+          const previewUrl = reader.result as string;
+          const tempAtt: ChatAttachment = {
+            id: tempId,
             type: "image",
-            name: `粘贴图片-${Date.now()}.png`,
-            previewUrl: reader.result as string,
-            url: reader.result as string,
+            status: "uploading",
+            name,
+            previewUrl,
             size: file.size,
             mimeType: file.type,
-          }]);
+          };
+          setPendingAttachments((prev) => [...prev, tempAtt]);
+          uploadFile(file, name, "image")
+            .then((uploaded) => {
+              setPendingAttachments((prev) =>
+                prev.map((a) => a.id === tempId
+                  ? { ...uploaded, previewUrl } : a)
+              );
+            })
+            .catch(() => {
+              setPendingAttachments((prev) =>
+                prev.map((a) => a.id === tempId ? { ...a, status: "failed", error: "upload_failed" } : a));
+            });
         };
         reader.readAsDataURL(file);
       }
     }
-  }, []);
+  }, [uploadFile]);
 
   // ── 拖拽图片/文件 (Tauri native or HTML5 drag-drop) ──
   const [dragOver, setDragOver] = useState(false);
@@ -4172,44 +4292,60 @@ export function ChatView({
     let cancelled = false;
     let unlisten: (() => void) | null = null;
 
-    const mimeMap: Record<string, string> = {
-      png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
-      gif: "image/gif", webp: "image/webp", bmp: "image/bmp", svg: "image/svg+xml",
-      mp4: "video/mp4", webm: "video/webm", avi: "video/x-msvideo",
-      mov: "video/quicktime", mkv: "video/x-matroska",
-      pdf: "application/pdf", txt: "text/plain", md: "text/plain",
-      json: "application/json", csv: "text/csv",
-    };
-
     const handleDroppedPaths = (paths: string[]) => {
       for (const filePath of paths) {
         const name = filePath.split(/[\\/]/).pop() || "file";
-        const ext = (name.split(".").pop() || "").toLowerCase();
-        const isImage = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"].includes(ext);
-        const isVideo = ["mp4", "webm", "avi", "mov", "mkv"].includes(ext);
-        const mimeType = mimeMap[ext] || "application/octet-stream";
-        readFileBase64(filePath)
-          .then((dataUrl) => {
+        const tempId = `temp-${genId()}`;
+        setPendingAttachments((prev) => [...prev, {
+          id: tempId,
+          type: "file",
+          status: "uploading",
+          name,
+          sourcePath: filePath,
+          displayPath: filePath,
+        }]);
+        inspectLocalPath(filePath)
+          .then(async (info) => {
             if (cancelled) return;
-            if (isVideo) {
-              const commaIdx = dataUrl.indexOf(",");
-              const base64Len = commaIdx >= 0 ? dataUrl.length - commaIdx - 1 : dataUrl.length;
-              const estimatedSize = base64Len * 3 / 4;
-              const VIDEO_MAX_SIZE = 7 * 1024 * 1024;
-              if (estimatedSize > VIDEO_MAX_SIZE) {
-                alert(`视频文件过大 (${(estimatedSize / 1024 / 1024).toFixed(1)}MB)，最大支持 7MB（base64 编码后需 < 10MB）`);
-                return;
-              }
+            if (info.kind === "directory") {
+              setPendingAttachments((prev) => prev.map((a) => a.id === tempId ? {
+                id: tempId,
+                type: "directory",
+                status: "ready",
+                name: info.name,
+                sourcePath: info.path,
+                displayPath: info.path,
+                entries: info.entries,
+              } : a));
+              return;
             }
-            setPendingAttachments((prev) => [...prev, {
-              type: isImage ? "image" : isVideo ? "video" : "file",
-              name,
-              previewUrl: isImage ? dataUrl : undefined,
-              url: dataUrl,
-              mimeType,
-            }]);
+            if (info.kind !== "file") {
+              throw new Error("unsupported_path");
+            }
+            const localFile = await readLocalFile(filePath);
+            const bytes = new Uint8Array(localFile.data.byteLength);
+            bytes.set(localFile.data);
+            const blob = new Blob([bytes.buffer], { type: localFile.mimeType });
+            const ext = (info.name.split(".").pop() || "").toLowerCase();
+            const isImage = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"].includes(ext);
+            const kind: ChatAttachment["type"] =
+              isImage ? "image"
+                : localFile.mimeType.startsWith("video/") ? "video"
+                  : localFile.mimeType.startsWith("audio/") ? "voice"
+                    : localFile.mimeType === "application/pdf" ? "document"
+                      : "file";
+            const previewUrl = isImage ? URL.createObjectURL(blob) : undefined;
+            const uploaded = await uploadFile(blob, info.name, kind);
+            if (cancelled) return;
+            setPendingAttachments((prev) => prev.map((a) => a.id === tempId ? {
+              ...uploaded,
+              previewUrl,
+            } : a));
           })
-          .catch((err) => logger.error("Chat", "DragDrop read_file_base64 failed", { name, error: String(err) }));
+          .catch((err) => {
+            logger.error("Chat", "DragDrop local_path_ingest failed", { name, error: String(err) });
+            setPendingAttachments((prev) => prev.map((a) => a.id === tempId ? { ...a, status: "failed", error: String(err) } : a));
+          });
       }
     };
 
@@ -4228,7 +4364,7 @@ export function ChatView({
       cancelled = true;
       unlisten?.();
     };
-  }, []);
+  }, [inspectLocalPath, readLocalFile, uploadFile]);
 
   // ── 语音录制 ──
   const toggleRecording = useCallback(async () => {
@@ -4249,9 +4385,12 @@ export function ChatView({
         const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
         const localPreview = URL.createObjectURL(blob);
         const filename = `voice-${Date.now()}.webm`;
+        const tempId = `temp-${genId()}`;
         // 立即添加为"上传中"状态（有预览但无 url）
         const tempAtt: ChatAttachment = {
+          id: tempId,
           type: "voice",
+          status: "uploading",
           name: filename,
           previewUrl: localPreview,
           size: blob.size,
@@ -4259,15 +4398,15 @@ export function ChatView({
         };
         setPendingAttachments((prev) => [...prev, tempAtt]);
         // 异步上传到后端
-        uploadFile(blob, filename)
-          .then((serverUrl) => {
+        uploadFile(blob, filename, "voice")
+          .then((uploaded) => {
             setPendingAttachments((prev) =>
-              prev.map((a) => a.name === filename && a.type === "voice"
-                ? { ...a, url: `${apiBase}${serverUrl}` } : a)
+              prev.map((a) => a.id === tempId
+                ? { ...uploaded, previewUrl: localPreview } : a)
             );
           })
           .catch(() => {
-            setPendingAttachments((prev) => prev.filter((a) => !(a.name === filename && a.type === "voice")));
+            setPendingAttachments((prev) => prev.map((a) => a.id === tempId ? { ...a, status: "failed", error: "upload_failed" } : a));
           });
         stream.getTracks().forEach((t) => t.stop());
       };
@@ -4277,7 +4416,7 @@ export function ChatView({
     } catch {
       setMessages((prev) => [...prev, { id: genId(), role: "system", content: "无法访问麦克风，请检查浏览器权限设置。", timestamp: Date.now() }]);
     }
-  }, [isRecording]);
+  }, [isRecording, uploadFile]);
 
   // ── 输入框键盘处理 ──
   const handleInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -5121,7 +5260,7 @@ export function ChatView({
                     data-slot="send"
                     onClick={() => sendMessage()}
                     className="chatInputSendBtn"
-                    disabled={!hasInputText && pendingAttachments.length === 0}
+                    disabled={(!hasInputText && pendingAttachments.length === 0) || hasUploadingAttachments || hasFailedAttachments}
                     title={t("chat.send")}
                   >
                     <IconSend size={14} />

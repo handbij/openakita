@@ -41,10 +41,16 @@ class ChatRequest(BaseModel):
 class AttachmentInfo(BaseModel):
     """Attachment metadata."""
 
-    type: str = Field(..., description="image | file | voice")
+    id: str | None = Field(None, description="Attachment ID in backend store")
+    type: str = Field(..., description="image | file | voice | video | document | directory")
     name: str = Field(..., description="Filename")
     url: str | None = Field(None, description="URL or data URI")
     mime_type: str | None = Field(None, description="MIME type")
+    size: int | None = Field(None, description="File size")
+    source_path: str | None = Field(None, description="Original local path for path references")
+    display_path: str | None = Field(None, description="Display path")
+    entries: list[str] | None = Field(None, description="Directory listing for directory references")
+    text_preview: str | None = Field(None, description="Short text preview for document/file references")
 
 
 # Fix forward reference

@@ -707,20 +707,14 @@ class LLMClient:
                     and (not require_vision or p.config.has_capability("vision"))
                 ]
 
-        # Vision 降级: 所有端点（含上面降级后的集合）都不支持 vision
-        # 与 video/audio/pdf 同理 — 放弃 vision 要求让请求继续走，
-        # 图片将由 convert_content_blocks 的 _degrade_image 替换为文本占位符
+        # Vision 是硬约束：图片请求绝不能回退到不支持 vision 的端点。
+        # 非 vision 端点不会可靠报错，而是可能静默忽略图片，导致用户误以为
+        # “系统把图片传丢了”。video/audio/pdf 可软降级，但 vision 不可。
         if not base_capability_matched and require_vision:
-            logger.warning(
-                "[LLM] No endpoint supports vision. "
-                "Image content will be degraded to text placeholder."
+            raise AllEndpointsFailedError(
+                "当前没有可用的图片识别模型，请启用或恢复支持 vision 的端点后再试。",
+                error_categories=frozenset({"vision_unavailable"}),
             )
-            require_vision = False
-            base_capability_matched = [
-                p
-                for p in providers_sorted
-                if (not require_tools or p.config.has_capability("tools"))
-            ]
 
         # thinking 降级标记 — 不立即修改 request，等确认确实需要降级时再改
         _thinking_downgraded = False
@@ -861,6 +855,12 @@ class LLMClient:
             )
 
         # ── 降级 4: 最终兜底 — 尝试所有端点 ──
+        # 仅适用于 text/tools/thinking 等场景；vision 绝不能绕过能力约束。
+        if require_vision:
+            raise AllEndpointsFailedError(
+                "当前没有可用的图片识别模型，请稍后重试或切换到支持 vision 的端点。",
+                error_categories=frozenset({"vision_unavailable"}),
+            )
         logger.warning(
             f"[LLM] No endpoint matches required capabilities "
             f"(tools={require_tools}, vision={require_vision}, video={require_video}). "
@@ -999,25 +999,17 @@ class LLMClient:
             if require_pdf and not cfg.has_capability("pdf"):
                 missing.append("pdf")
 
-            # Vision 特殊处理：与 tools/thinking/audio/pdf 不同，
-            # 不支持 vision 的端点收到 image_url 时不会报 API 错误，
-            # 而是静默忽略图片内容。这导致 "override-first → API 报错 →
-            # failover" 的假设完全失效。
-            # 因此当 require_vision 且 override 不支持 vision 时，
-            # 将 override 放到 eligible 列表的末尾（而非最前面），
-            # 让 vision 端点优先处理图片，override 作为 fallback。
+            # Vision 特殊处理：不支持 vision 的端点不能进入图片请求的 fallback 链。
+            # 否则一旦 vision 端点失败，后续会切回纯文本端点，图片被静默忽略。
             _vision_deprioritized = (
                 require_vision
                 and "vision" in missing
                 and eligible
             )
             if _vision_deprioritized:
-                eligible.append(override_provider)
                 logger.info(
                     f"[LLM] User-selected endpoint {override_provider.name} "
-                    f"lacks vision; prioritizing vision-capable endpoints for "
-                    f"this image-containing request. "
-                    f"Override kept as fallback (position={len(eligible)})."
+                    f"lacks vision; excluding it from this image-containing request."
                 )
             elif eligible:
                 eligible.insert(0, override_provider)

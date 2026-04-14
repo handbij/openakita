@@ -183,6 +183,93 @@ export async function readFileBase64(path: string): Promise<string> {
   return tauriInvoke<string>("read_file_base64", { path });
 }
 
+type LocalPathKind = "file" | "directory" | "other" | "missing";
+
+export type LocalPathInfo = {
+  kind: LocalPathKind;
+  name: string;
+  path: string;
+  size?: number;
+  entries?: string[];
+};
+
+const LOCAL_DIR_ENTRY_LIMIT = 200;
+
+function guessMimeTypeFromName(name: string): string {
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  switch (ext) {
+    case "png": return "image/png";
+    case "jpg":
+    case "jpeg": return "image/jpeg";
+    case "gif": return "image/gif";
+    case "webp": return "image/webp";
+    case "bmp": return "image/bmp";
+    case "svg": return "image/svg+xml";
+    case "mp4": return "video/mp4";
+    case "webm": return "video/webm";
+    case "avi": return "video/x-msvideo";
+    case "mov": return "video/quicktime";
+    case "mkv": return "video/x-matroska";
+    case "pdf": return "application/pdf";
+    case "txt":
+    case "md": return "text/plain";
+    case "json": return "application/json";
+    case "csv": return "text/csv";
+    case "mp3": return "audio/mpeg";
+    case "wav": return "audio/wav";
+    case "ogg": return "audio/ogg";
+    default: return "application/octet-stream";
+  }
+}
+
+function basenameFromPath(path: string): string {
+  return path.split(/[\\/]/).pop() || path;
+}
+
+export async function inspectLocalPath(path: string): Promise<LocalPathInfo> {
+  if (!IS_TAURI)
+    throw new Error("inspectLocalPath is only available in Tauri");
+  const fsMod = await import("@tauri-apps/plugin-fs");
+  const fsAny = fsMod as any;
+  const statResult = await fsAny.stat(path);
+  const name = basenameFromPath(path);
+  if (!statResult) return { kind: "missing", name, path };
+  if (statResult.isDirectory) {
+    const rawEntries = await fsAny.readDir(path);
+    const names = (Array.isArray(rawEntries) ? rawEntries : []).map((entry: any) =>
+      String(entry?.name || basenameFromPath(String(entry?.path || ""))),
+    ).filter(Boolean);
+    const entries = names.length > LOCAL_DIR_ENTRY_LIMIT
+      ? [...names.slice(0, LOCAL_DIR_ENTRY_LIMIT), `... and ${names.length - LOCAL_DIR_ENTRY_LIMIT} more entries`]
+      : names;
+    return { kind: "directory", name, path, entries };
+  }
+  if (statResult.isFile) {
+    return {
+      kind: "file",
+      name,
+      path,
+      size: typeof statResult.size === "number" ? statResult.size : undefined,
+    };
+  }
+  return { kind: "other", name, path };
+}
+
+export async function readLocalFile(path: string): Promise<{ name: string; data: Uint8Array; mimeType: string }> {
+  if (!IS_TAURI)
+    throw new Error("readLocalFile is only available in Tauri");
+  const fsMod = await import("@tauri-apps/plugin-fs");
+  const fsAny = fsMod as any;
+  const name = basenameFromPath(path);
+  const raw = await fsAny.readFile(path);
+  const data = raw instanceof Uint8Array ? raw : new Uint8Array(raw);
+  return {
+    name,
+    data,
+    mimeType: guessMimeTypeFromName(name),
+  };
+}
+
 /** Write text content to a local file. Only available in Tauri. */
 export async function writeTextFile(path: string, content: string): Promise<void> {
   if (!IS_TAURI)

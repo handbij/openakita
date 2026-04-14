@@ -251,12 +251,19 @@ export type ChatAskUser = {
 };
 
 export type ChatAttachment = {
-  type: "image" | "file" | "voice" | "video" | "document";
+  id?: string;
+  type: "image" | "file" | "voice" | "video" | "document" | "directory";
   name: string;
+  status?: "uploading" | "ready" | "failed";
   url?: string;
   previewUrl?: string;
   size?: number;
   mimeType?: string;
+  sourcePath?: string;
+  displayPath?: string;
+  entries?: string[];
+  textPreview?: string;
+  error?: string;
 };
 
 export type ConversationStatus = "idle" | "running" | "completed" | "error";

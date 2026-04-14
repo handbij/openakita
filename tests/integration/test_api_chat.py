@@ -8,13 +8,16 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from openakita.api.server import create_app
+from openakita.sessions import SessionManager
 
 
 @pytest.fixture
 def mock_agent():
     agent = MagicMock()
     agent.initialized = True
+    agent._initialized = True
     agent.state = MagicMock()
+    agent.agent_state = MagicMock()
     agent.state.has_active_task = False
     agent.state.is_task_cancelled = False
     agent.brain = MagicMock()
@@ -22,6 +25,7 @@ def mock_agent():
     agent.settings = MagicMock()
     agent.settings.max_iterations = 10
     agent.session_manager = None
+    agent.build_tool_trace_summary = MagicMock(return_value="")
 
     async def fake_stream(*args, **kwargs):
         yield "Hello from mock agent"
@@ -32,10 +36,11 @@ def mock_agent():
 
 
 @pytest.fixture
-def app(mock_agent):
+def app(mock_agent, tmp_path):
     return create_app(
         agent=mock_agent,
         shutdown_event=asyncio.Event(),
+        session_manager=SessionManager(storage_path=tmp_path),
     )
 
 
@@ -75,6 +80,102 @@ class TestChatEndpoint:
             json={"message": "", "conversation_id": "test-conv-1"},
         )
         assert resp.status_code == 200
+
+    async def test_chat_history_persists_user_attachments(self, app, client):
+        session = app.state.session_manager.get_session(
+            channel="desktop",
+            chat_id="test-conv-attachments",
+            user_id="desktop_user",
+            create_if_missing=True,
+        )
+        session.add_message(
+            "user",
+            "帮我看看这张图",
+            attachments=[
+                {
+                    "type": "image",
+                    "name": "demo.png",
+                    "url": "data:image/png;base64,ZmFrZQ==",
+                    "mime_type": "image/png",
+                }
+            ],
+        )
+
+        hist = await client.get("/api/sessions/test-conv-attachments/history")
+        assert hist.status_code == 200
+        data = hist.json()
+        user_msgs = [m for m in data["messages"] if m["role"] == "user"]
+        assert user_msgs
+        assert user_msgs[-1]["attachments"] == [
+            {
+                "type": "image",
+                "name": "demo.png",
+                "url": "data:image/png;base64,ZmFrZQ==",
+                "mime_type": "image/png",
+            }
+        ]
+
+    async def test_chat_history_keeps_attachment_only_user_message(self, app, client):
+        session = app.state.session_manager.get_session(
+            channel="desktop",
+            chat_id="test-conv-attachment-only",
+            user_id="desktop_user",
+            create_if_missing=True,
+        )
+        session.add_message(
+            "user",
+            "",
+            attachments=[
+                {
+                    "type": "image",
+                    "name": "only-image.png",
+                    "url": "data:image/png;base64,ZmFrZQ==",
+                    "mime_type": "image/png",
+                }
+            ],
+        )
+
+        hist = await client.get("/api/sessions/test-conv-attachment-only/history")
+        assert hist.status_code == 200
+        data = hist.json()
+        user_msgs = [m for m in data["messages"] if m["role"] == "user"]
+        assert user_msgs
+        assert user_msgs[-1]["content"] == ""
+        assert user_msgs[-1]["attachments"][0]["name"] == "only-image.png"
+
+    async def test_chat_history_keeps_inline_directory_attachment_metadata(self, app, client):
+        session = app.state.session_manager.get_session(
+            channel="desktop",
+            chat_id="test-conv-directory-attachment",
+            user_id="desktop_user",
+            create_if_missing=True,
+        )
+        session.add_message(
+            "user",
+            "看看这个目录结构",
+            attachments=[
+                {
+                    "type": "directory",
+                    "name": "project",
+                    "display_path": "C:/Users/demo/project",
+                    "entries": ["src", "tests", "README.md"],
+                }
+            ],
+        )
+
+        hist = await client.get("/api/sessions/test-conv-directory-attachment/history")
+        assert hist.status_code == 200
+        data = hist.json()
+        user_msgs = [m for m in data["messages"] if m["role"] == "user"]
+        assert user_msgs
+        assert user_msgs[-1]["attachments"] == [
+            {
+                "type": "directory",
+                "name": "project",
+                "display_path": "C:/Users/demo/project",
+                "entries": ["src", "tests", "README.md"],
+            }
+        ]
 
 
 class TestChatControlEndpoints:

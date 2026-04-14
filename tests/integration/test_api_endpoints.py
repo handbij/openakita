@@ -1,7 +1,7 @@
 """L3 Integration Tests: Remaining API endpoints (files, skills, token_stats, im, logs, upload, models)."""
 
-import pytest
 import httpx
+import pytest
 
 from openakita.api.server import create_app
 
@@ -90,9 +90,28 @@ class TestUploadEndpoint:
         resp = await client.post("/api/upload")
         assert resp.status_code in (422, 400)  # Missing required file
 
+    async def test_upload_returns_attachment_reference(self, client):
+        resp = await client.post(
+            "/api/upload",
+            files={"file": ("hello.txt", b"hello world", "text/plain")},
+            data={"conversation_id": "conv-upload"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["attachment"]["id"]
+        assert data["attachment"]["url"].startswith("/api/attachments/")
+        assert data["attachment"]["type"] == "document"
+
     async def test_serve_nonexistent_upload(self, client):
         resp = await client.get("/api/uploads/nonexistent.txt")
         assert resp.status_code in (404, 500)
+
+    async def test_create_local_path_reference_is_gone(self, client):
+        resp = await client.post(
+            "/api/attachments/reference",
+            json={"conversation_id": "conv-ref", "path": "C:/fake/path"},
+        )
+        assert resp.status_code == 410
 
 
 class TestFilesEndpoint:

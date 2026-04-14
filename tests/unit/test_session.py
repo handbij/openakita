@@ -123,14 +123,17 @@ class TestMetadataTrimming:
                 chain_summary=f"chain-{i}",
                 tool_summary=f"tool-{i}",
                 artifacts=[f"artifact-{i}"],
+                attachments=[{"type": "image", "name": f"img-{i}.png", "url": "data:image/png;base64,abc"}],
             )
         window = Session._METADATA_PRESERVE_WINDOW
         old_msg = s.context.messages[0]
         assert "chain_summary" not in old_msg
         assert "tool_summary" not in old_msg
         assert "artifacts" not in old_msg
+        assert old_msg.get("attachments")
         recent_msg = s.context.messages[-1]
         assert recent_msg.get("chain_summary") == f"chain-{80 - 1}"
+        assert recent_msg.get("attachments")
 
     def test_trim_preserves_base_content(self):
         """trim 后旧消息的 role/content/timestamp 必须完好。"""

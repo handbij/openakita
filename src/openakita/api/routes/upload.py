@@ -8,31 +8,16 @@ from __future__ import annotations
 
 import logging
 import mimetypes
-import time
-import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+
+from openakita.api.attachment_store import get_attachment_store
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-# Upload directory (inside workspace data)
-UPLOAD_DIR: Path | None = None
-
-
-def get_upload_dir() -> Path:
-    """Get or create the upload directory."""
-    global UPLOAD_DIR
-    if UPLOAD_DIR is None:
-        import os
-        root = os.environ.get("OPENAKITA_ROOT", "").strip()
-        base = Path(root) if root else Path.home() / ".openakita"
-        UPLOAD_DIR = base / "uploads"
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    return UPLOAD_DIR
 
 
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
@@ -40,21 +25,21 @@ BLOCKED_EXTENSIONS = {".exe", ".bat", ".cmd", ".com", ".scr", ".pif", ".msi", ".
 
 
 @router.post("/api/upload")
-async def upload_file(file: UploadFile = File(...)):  # noqa: B008
+async def upload_file(  # noqa: B008
+    file: UploadFile = File(...),
+    conversation_id: str | None = Form(None),
+    type: str | None = Form(None),
+):
     """
     Upload a file (image, audio, document).
     Returns the file URL for use in chat messages.
     """
-    upload_dir = get_upload_dir()
+    store = get_attachment_store()
 
     # 安全检查：阻止危险文件扩展名
     ext = Path(file.filename or "file").suffix.lower()
     if ext in BLOCKED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"不允许上传该类型文件: {ext}")
-
-    # Generate unique filename
-    unique_name = f"{int(time.time())}_{uuid.uuid4().hex[:8]}{ext}"
-    filepath = upload_dir / unique_name
 
     # Save file（带大小限制）
     content = await file.read()
@@ -63,15 +48,24 @@ async def upload_file(file: UploadFile = File(...)):  # noqa: B008
             status_code=413,
             detail=f"文件过大: {len(content) / 1024 / 1024:.1f} MB（最大 {MAX_UPLOAD_SIZE // 1024 // 1024} MB）",
         )
-    filepath.write_bytes(content)
+    attachment_record = store.save_uploaded_file(
+        content=content,
+        filename=file.filename or "file",
+        mime_type=file.content_type,
+        conversation_id=conversation_id,
+        hinted_type=type,
+    )
+    attachment = store.build_client_attachment(attachment_record)
 
     return {
         "status": "ok",
-        "filename": unique_name,
+        "filename": attachment_record["name"],
         "original_name": file.filename,
         "size": len(content),
         "content_type": file.content_type,
-        "url": f"/api/uploads/{unique_name}",
+        "url": attachment_record["content_url"],
+        "attachment_id": attachment_record["id"],
+        "attachment": attachment,
     }
 
 
@@ -80,7 +74,13 @@ async def serve_upload(filename: str):
     """
     Serve an uploaded file by its unique filename.
     """
-    upload_dir = get_upload_dir()
+    # Legacy compatibility endpoint. Chat attachments now use /api/attachments/{id}/content.
+    try:
+        from openakita.config import settings
+
+        upload_dir = Path(settings.data_dir) / "uploads"
+    except Exception:
+        upload_dir = Path.home() / ".openakita" / "uploads"
     filepath = (upload_dir / filename).resolve()
 
     # 防止路径穿越：确保文件在 upload_dir 内
@@ -97,3 +97,26 @@ async def serve_upload(filename: str):
     # 推断 MIME 类型
     media_type = mimetypes.guess_type(str(filepath))[0] or "application/octet-stream"
     return FileResponse(filepath, media_type=media_type)
+
+
+@router.get("/api/attachments/{attachment_id}/content")
+async def serve_attachment_content(attachment_id: str):
+    record = get_attachment_store().get(attachment_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    content_path = get_attachment_store().resolve_content_path(record)
+    if not content_path:
+        raise HTTPException(status_code=404, detail="Attachment has no stored file")
+    media_type = record.get("mime_type") or mimetypes.guess_type(str(content_path))[0]
+    return FileResponse(content_path, media_type=media_type or "application/octet-stream")
+
+
+@router.post("/api/attachments/reference")
+async def create_local_path_reference():
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "该接口已停用。请改为直接上传文件内容；"
+            "目录引用请由本地桌面端先解析目录元数据后再随聊天请求发送。"
+        ),
+    )

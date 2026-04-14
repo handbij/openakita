@@ -8,13 +8,38 @@ DELETE /api/sessions/{conversation_id}, POST /api/sessions/generate-title
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
+from openakita.api.attachment_store import get_attachment_store
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _enrich_attachment_history_item(item: dict[str, Any]) -> dict[str, Any]:
+    result = dict(item)
+    att_id = result.get("id")
+    if not att_id:
+        return result
+    record = get_attachment_store().get(att_id)
+    if not record:
+        return result
+    result["type"] = result.get("type") or record.get("type")
+    result["name"] = result.get("name") or record.get("name")
+    result["mime_type"] = result.get("mime_type") or record.get("mime_type")
+    result["size"] = result.get("size") or record.get("size")
+    result["display_path"] = result.get("display_path") or record.get("display_path")
+    if record.get("content_url"):
+        result["url"] = record.get("content_url")
+    if record.get("entries"):
+        result["entries"] = record.get("entries")
+    if record.get("text_preview"):
+        result["text_preview"] = record.get("text_preview")
+    return result
 
 
 async def _broadcast_session_event(event: str, data: dict) -> None:
@@ -161,6 +186,13 @@ async def get_session_history(
         artifacts = msg.get("artifacts")
         if artifacts:
             entry["artifacts"] = artifacts
+        attachments = msg.get("attachments")
+        if attachments:
+            entry["attachments"] = [
+                _enrich_attachment_history_item(att)
+                for att in attachments
+                if isinstance(att, dict)
+            ]
         ask_user = msg.get("ask_user")
         if ask_user:
             entry["ask_user"] = ask_user
@@ -201,6 +233,7 @@ async def delete_session(
 
     session_key = f"{channel}:{conversation_id}:{user_id}"
     removed = session_manager.close_session(session_key)
+    deleted_attachments = get_attachment_store().delete_conversation(conversation_id)
     if removed:
         logger.info(f"[Sessions] Deleted session via API: {session_key}")
         await _broadcast_session_event(
@@ -212,7 +245,7 @@ async def delete_session(
     else:
         logger.debug(f"[Sessions] Session not found for deletion: {session_key}")
 
-    return {"ok": True, "removed": removed}
+    return {"ok": True, "removed": removed, "deleted_attachments": deleted_attachments}
 
 
 def _cancel_tasks_for_session(request: Request, conversation_id: str, session_id: str) -> None:

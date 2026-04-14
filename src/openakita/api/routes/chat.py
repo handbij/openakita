@@ -16,6 +16,7 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from openakita.api.attachment_store import get_attachment_store
 from openakita.core.engine_bridge import engine_stream, is_dual_loop, to_engine
 
 from ..schemas import ChatAnswerRequest, ChatControlRequest, ChatRequest
@@ -388,6 +389,9 @@ async def _stream_chat(
     _agent_done = asyncio.Event()
     _agent_queue: asyncio.Queue = asyncio.Queue()
     _save_done = False
+    session = None
+    session_messages_history: list[dict] = []
+    conversation_id = chat_request.conversation_id or ""
 
     try:
         actual_agent = _resolve_agent(agent)
@@ -410,8 +414,6 @@ async def _stream_chat(
         import uuid as _uuid
 
         conversation_id = chat_request.conversation_id or f"api_{_uuid.uuid4().hex[:12]}"
-        session = None
-        session_messages_history: list[dict] = []
 
         if session_manager and conversation_id:
             try:
@@ -425,8 +427,34 @@ async def _stream_chat(
                     if chat_request.agent_profile_id and _is_multi_agent_enabled():
                         _apply_agent_profile(session, chat_request.agent_profile_id)
 
-                    if chat_request.message:
-                        session.add_message("user", chat_request.message)
+                    _user_msg_meta: dict = {}
+                    if chat_request.attachments:
+                        store = get_attachment_store()
+                        _user_msg_meta["attachments"] = []
+                        for att in chat_request.attachments:
+                            item = {
+                                "id": att.id,
+                                "type": att.type,
+                                "name": att.name,
+                                "url": att.url,
+                                "mime_type": att.mime_type,
+                                "size": att.size,
+                                "display_path": att.display_path,
+                            }
+                            if not att.id:
+                                if att.entries:
+                                    item["entries"] = list(att.entries)
+                                if att.text_preview:
+                                    item["text_preview"] = att.text_preview
+                            _user_msg_meta["attachments"].append(item)
+                        for item in _user_msg_meta["attachments"]:
+                            if item.get("id"):
+                                reassigned = store.assign_to_conversation(item["id"], conversation_id)
+                                if reassigned:
+                                    item["url"] = reassigned.get("content_url") or item.get("url")
+                                    item["display_path"] = reassigned.get("display_path") or item.get("display_path")
+                    if chat_request.message or chat_request.attachments:
+                        session.add_message("user", chat_request.message or "", **_user_msg_meta)
                     session_messages_history = (
                         list(session.context.messages) if hasattr(session, "context") else []
                     )

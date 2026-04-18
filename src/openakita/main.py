@@ -1081,45 +1081,45 @@ async def stop_im_channels(*, graceful: bool = True, drain_timeout: float = 30.0
 
 
 def print_welcome():
-    """打印欢迎信息"""
+    """Print welcome message"""
     welcome_text = """
-# OpenAkita - 全能自进化AI助手
+# OpenAkita - Self-Evolving AI Assistant
 
-基于 **Ralph Wiggum 模式**，永不放弃。
+Powered by the **Ralph Wiggum mode** — never gives up.
 
-## 核心特性
-- 🔄 任务未完成绝不终止
-- 🧠 自动学习和进化
-- 🔧 动态安装新技能
-- 📝 持续记录经验
+## Core Features
+- 🔄 Never terminates until task is complete
+- 🧠 Automatic learning and evolution
+- 🔧 Dynamic skill installation
+- 📝 Continuous experience recording
 
-## 命令
-- 直接输入消息与 Agent 对话
-- `/help` - 显示帮助
-- `/status` - 显示状态
-- `/selfcheck` - 运行自检
-- `/clear` - 清空对话
-- `/exit` 或 `/quit` - 退出
+## Commands
+- Type any message to chat with the Agent
+- `/help` - Show help
+- `/status` - Show status
+- `/selfcheck` - Run self-check
+- `/clear` - Clear conversation
+- `/exit` or `/quit` - Exit
 """
     console.print(Panel(Markdown(welcome_text), title="Welcome", border_style="blue"))
 
 
 def print_help():
-    """打印帮助信息"""
-    table = Table(title="可用命令")
-    table.add_column("命令", style="cyan")
-    table.add_column("描述", style="green")
+    """Print help message"""
+    table = Table(title="Available Commands")
+    table.add_column("Command", style="cyan")
+    table.add_column("Description", style="green")
 
     commands = [
-        ("/help", "显示此帮助信息"),
-        ("/status", "显示 Agent 状态"),
-        ("/selfcheck", "运行自检"),
-        ("/memory", "显示记忆状态"),
-        ("/skills", "列出已安装技能"),
-        ("/channels", "显示 IM 通道状态"),
-        ("/agents", "显示 Agent 协同状态 (协同模式)"),
-        ("/clear", "清空对话历史"),
-        ("/exit, /quit", "退出程序"),
+        ("/help", "Show this help message"),
+        ("/status", "Show Agent status"),
+        ("/selfcheck", "Run self-check"),
+        ("/memory", "Show memory state"),
+        ("/skills", "List installed skills"),
+        ("/channels", "Show IM channel status"),
+        ("/agents", "Show Agent collaboration status (multi-agent mode)"),
+        ("/clear", "Clear conversation history"),
+        ("/exit, /quit", "Exit the program"),
     ]
 
     for cmd, desc in commands:
@@ -1129,18 +1129,18 @@ def print_help():
 
 
 def show_channels():
-    """显示 IM 通道状态"""
-    table = Table(title="IM 通道状态")
-    table.add_column("通道", style="cyan")
-    table.add_column("启用", style="green")
-    table.add_column("状态", style="yellow")
+    """Show IM channel status"""
+    table = Table(title="IM Channel Status")
+    table.add_column("Channel", style="cyan")
+    table.add_column("Enabled", style="green")
+    table.add_column("Status", style="yellow")
 
     channels = [
         ("Telegram", settings.telegram_enabled, settings.telegram_bot_token),
-        ("飞书", settings.feishu_enabled, settings.feishu_app_id),
-        ("企业微信(HTTP)", settings.wework_enabled, settings.wework_corp_id),
-        ("企业微信(WS)", settings.wework_ws_enabled, settings.wework_ws_bot_id),
-        ("钉钉", settings.dingtalk_enabled, settings.dingtalk_client_id),
+        ("Feishu", settings.feishu_enabled, settings.feishu_app_id),
+        ("WeCom (HTTP)", settings.wework_enabled, settings.wework_corp_id),
+        ("WeCom (WS)", settings.wework_ws_enabled, settings.wework_ws_bot_id),
+        ("DingTalk", settings.dingtalk_enabled, settings.dingtalk_client_id),
         (
             "OneBot",
             settings.onebot_enabled,
@@ -1148,16 +1148,16 @@ def show_channels():
             if settings.onebot_mode == "forward"
             else f"{settings.onebot_reverse_host}:{settings.onebot_reverse_port}",
         ),
-        ("QQ 官方机器人", settings.qqbot_enabled, settings.qqbot_app_id),
-        ("微信", settings.wechat_enabled, settings.wechat_token),
+        ("QQ Official Bot", settings.qqbot_enabled, settings.qqbot_app_id),
+        ("WeChat", settings.wechat_enabled, settings.wechat_token),
     ]
 
     for name, enabled, token in channels:
         enabled_str = "✓" if enabled else "✗"
         if enabled and token:
-            status = "已连接" if _message_gateway else "待启动"
+            status = "Connected" if _message_gateway else "Pending start"
         elif enabled:
-            status = "缺少配置"
+            status = "Missing config"
         else:
             status = "-"
         table.add_row(name, enabled_str, status)
@@ -1166,7 +1166,7 @@ def show_channels():
 
     if _message_gateway:
         adapters = _message_gateway.list_adapters()
-        console.print(f"\n[green]活跃适配器:[/green] {', '.join(adapters) if adapters else '无'}")
+        console.print(f"\n[green]Active adapters:[/green] {', '.join(adapters) if adapters else 'none'}")
 
 
 async def run_interactive():
@@ -1183,21 +1183,21 @@ async def run_interactive():
 
     async def _background_init():
         """Background: initialize agent, core services, and IM channels."""
-        console.print("[dim]正在初始化 Agent...[/dim]")
+        console.print("[dim]Initializing Agent...[/dim]")
         try:
             await agent.initialize()
-            console.print("[green]✓[/green] Agent 已准备就绪")
+            console.print("[green]✓[/green] Agent is ready")
         except Exception as e:
-            console.print(f"[red]✗ Agent 初始化失败: {e}[/red]")
+            console.print(f"[red]✗ Agent initialization failed: {e}[/red]")
             shutdown_event.set()
             init_done.set()
             return
 
-        console.print("[dim]正在初始化核心服务...[/dim]")
+        console.print("[dim]Initializing core services...[/dim]")
         try:
             await init_core_services(agent)
         except Exception as e:
-            console.print(f"[red]✗ 核心服务初始化失败: {e}[/red]")
+            console.print(f"[red]✗ Core services initialization failed: {e}[/red]")
             logger.error(f"Core services init failed: {e}", exc_info=True)
 
         # Session recovery (depends on _session_manager from init_core_services)
@@ -1220,7 +1220,7 @@ async def run_interactive():
                 agent._cli_session = cs
                 mc = len(cs.context.get_messages())
                 if mc > 0 and not _cli_force_new_session:
-                    console.print(f"[green]✓[/green] 已恢复上次会话 ({mc} 条消息)")
+                    console.print(f"[green]✓[/green] Resumed last session ({mc} messages)")
                 _cli_sf.parent.mkdir(parents=True, exist_ok=True)
                 _cli_sf.write_text(json.dumps({"chat_id": _cid}), encoding="utf-8")
 
@@ -1228,7 +1228,7 @@ async def run_interactive():
             try:
                 channels = await start_im_channels(agent)
                 if channels:
-                    console.print(f"[green]✓[/green] IM 通道已启动: {', '.join(channels)}")
+                    console.print(f"[green]✓[/green] IM channels started: {', '.join(channels)}")
             except Exception as e:
                 logger.warning(f"IM channel start failed: {e}")
 
@@ -1244,7 +1244,7 @@ async def run_interactive():
 
     _init_task = asyncio.create_task(_background_init())
 
-    console.print("[dim]可以开始输入，初始化完成后将自动处理[/dim]")
+    console.print("[dim]You can start typing now; messages will be queued until initialization completes[/dim]")
     console.print()
 
     # 注册信号处理器用于优雅关闭
@@ -1254,7 +1254,7 @@ async def run_interactive():
         nonlocal _shutdown_triggered
         if not _shutdown_triggered:
             _shutdown_triggered = True
-            console.print("\n[yellow]收到停止信号，正在优雅关闭...[/yellow]")
+            console.print("\n[yellow]Stop signal received, shutting down gracefully...[/yellow]")
             try:
                 loop = asyncio.get_running_loop()
                 loop.call_soon_threadsafe(shutdown_event.set)
@@ -1324,7 +1324,7 @@ async def run_interactive():
     try:
         while not shutdown_event.is_set():
             try:
-                prompt_prefix = "You> " if init_done.is_set() else "(初始化中) You> "
+                prompt_prefix = "You> " if init_done.is_set() else "(initializing) You> "
                 user_input = await prompt_input(pt_session, prompt_prefix)
 
                 if not user_input.strip():
@@ -1336,12 +1336,12 @@ async def run_interactive():
                         "/exit",
                         "/quit",
                     ):
-                        console.print("[yellow]再见！[/yellow]")
+                        console.print("[yellow]Goodbye![/yellow]")
                         shutdown_event.set()
                         break
                     early_input_queue.append(user_input.strip())
                     console.print(
-                        f"[dim]已缓存消息 ({len(early_input_queue)})，Agent 就绪后将自动处理[/dim]"
+                        f"[dim]Message queued ({len(early_input_queue)}); will be processed once Agent is ready[/dim]"
                     )
                     continue
 
@@ -1349,10 +1349,10 @@ async def run_interactive():
                 if early_input_queue:
                     queued = early_input_queue.copy()
                     early_input_queue.clear()
-                    console.print(f"[green]正在处理 {len(queued)} 条缓存消息...[/green]")
+                    console.print(f"[green]Processing {len(queued)} queued messages...[/green]")
                     for q in queued:
                         if q.startswith("/"):
-                            console.print(f"[dim]跳过缓存命令: {q}[/dim]")
+                            console.print(f"[dim]Skipping queued command: {q}[/dim]")
                             continue
                         console.print(f"[dim]>>> {q}[/dim]")
                         await _process_message(q)
@@ -1362,7 +1362,7 @@ async def run_interactive():
                     cmd = user_input.lower().strip()
 
                     if cmd in ("/exit", "/quit"):
-                        console.print("[yellow]再见！[/yellow]")
+                        console.print("[yellow]Goodbye![/yellow]")
                         break
 
                     elif cmd == "/help":
@@ -1419,7 +1419,7 @@ async def run_interactive():
                         _cli_session_file.write_text(
                             json.dumps({"chat_id": _cli_chat_id}), encoding="utf-8"
                         )
-                        console.print("[green]对话历史已清空，已开启新会话[/green]")
+                        console.print("[green]Conversation history cleared; new session started[/green]")
                         continue
 
                     elif cmd == "/sessions":
@@ -1430,16 +1430,16 @@ async def run_interactive():
                                 reverse=True,
                             )
                             if not cli_sessions:
-                                console.print("[yellow]没有历史 CLI 会话[/yellow]")
+                                console.print("[yellow]No CLI session history found[/yellow]")
                             else:
                                 from rich.table import Table as _Tbl
 
-                                tbl = _Tbl(title="CLI 会话列表")
+                                tbl = _Tbl(title="CLI Sessions")
                                 tbl.add_column("#", style="cyan", width=4)
-                                tbl.add_column("会话 ID", style="green")
-                                tbl.add_column("消息数", justify="right")
-                                tbl.add_column("创建时间")
-                                tbl.add_column("当前", justify="center")
+                                tbl.add_column("Session ID", style="green")
+                                tbl.add_column("Messages", justify="right")
+                                tbl.add_column("Created")
+                                tbl.add_column("Current", justify="center")
                                 for i, s in enumerate(cli_sessions, 1):
                                     is_cur = "✓" if (cli_session and s.id == cli_session.id) else ""
                                     tbl.add_row(
@@ -1452,21 +1452,21 @@ async def run_interactive():
                                         is_cur,
                                     )
                                 console.print(tbl)
-                                console.print("[dim]输入 /session <#> 切换到对应会话[/dim]")
+                                console.print("[dim]Type /session <#> to switch to a session[/dim]")
                         else:
-                            console.print("[yellow]SessionManager 未启动[/yellow]")
+                            console.print("[yellow]SessionManager is not running[/yellow]")
                         continue
 
                     elif cmd == "/session":
                         console.print(
-                            "[yellow]用法: /session <序号>  (先用 /sessions 查看列表)[/yellow]"
+                            "[yellow]Usage: /session <number>  (use /sessions to see the list first)[/yellow]"
                         )
                         continue
 
                     elif cmd.startswith("/session "):
                         parts = cmd.split(maxsplit=1)
                         if not _session_manager:
-                            console.print("[yellow]SessionManager 未启动[/yellow]")
+                            console.print("[yellow]SessionManager is not running[/yellow]")
                         elif len(parts) == 2:
                             try:
                                 idx = int(parts[1]) - 1
@@ -1486,22 +1486,22 @@ async def run_interactive():
                                     )
                                     msg_count = len(target.context.get_messages())
                                     console.print(
-                                        f"[green]已切换到会话 ({msg_count} 条消息)[/green]"
+                                        f"[green]Switched to session ({msg_count} messages)[/green]"
                                     )
                                 else:
-                                    console.print("[red]序号超出范围[/red]")
+                                    console.print("[red]Index out of range[/red]")
                             except ValueError:
-                                console.print("[red]请输入有效的会话序号[/red]")
+                                console.print("[red]Please enter a valid session number[/red]")
                         continue
 
                     else:
                         known = find_command(cmd)
                         if known:
                             console.print(
-                                f"[yellow]命令 /{known.name} 暂不支持 CLI，请在 Desktop 中使用[/yellow]"
+                                f"[yellow]Command /{known.name} is not supported in CLI; please use it in the Desktop app[/yellow]"
                             )
                         else:
-                            console.print(f"[red]未知命令: {cmd}[/red]")
+                            console.print(f"[red]Unknown command: {cmd}[/red]")
                             print_help()
                         continue
 
@@ -1509,54 +1509,53 @@ async def run_interactive():
                 await _process_message(user_input)
 
             except EOFError:
-                console.print("\n[yellow]再见！[/yellow]")
+                console.print("\n[yellow]Goodbye![/yellow]")
                 break
             except KeyboardInterrupt:
-                console.print("\n[yellow]使用 /exit 退出[/yellow]")
+                console.print("\n[yellow]Use /exit to quit[/yellow]")
             except Exception as e:
                 logger.error(f"Error: {e}", exc_info=True)
-                console.print(f"[red]错误: {e}[/red]")
+                console.print(f"[red]Error: {e}[/red]")
     finally:
         if not _init_task.done():
             _init_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await _init_task
-        with console.status("[bold yellow]正在停止服务...", spinner="dots"):
+        with console.status("[bold yellow]Stopping services...", spinner="dots"):
             await stop_im_channels(graceful=True, drain_timeout=30.0)
-        console.print("[green]✓[/green] 服务已停止")
+        console.print("[green]✓[/green] Services stopped")
 
 
 async def show_status(agent: Agent):
-    """显示 Agent 状态"""
-    table = Table(title="Agent 状态")
-    table.add_column("属性", style="cyan")
-    table.add_column("值", style="green")
+    """Show Agent status"""
+    table = Table(title="Agent Status")
+    table.add_column("Property", style="cyan")
+    table.add_column("Value", style="green")
 
-    table.add_row("名称", agent.name)
-    table.add_row("已初始化", "✓" if agent.is_initialized else "✗")
-    table.add_row("对话轮数", str(len(agent.conversation_history) // 2))
-    table.add_row("模型", settings.default_model)
-    table.add_row("最大迭代", str(settings.max_iterations))
+    table.add_row("Name", agent.name)
+    table.add_row("Initialized", "✓" if agent.is_initialized else "✗")
+    table.add_row("Conversation turns", str(len(agent.conversation_history) // 2))
+    table.add_row("Model", settings.default_model)
+    table.add_row("Max iterations", str(settings.max_iterations))
 
     console.print(table)
 
 
 async def run_selfcheck(agent: Agent):
-    """运行自检"""
-    console.print("[bold]运行自检...[/bold]\n")
+    """Run self-check"""
+    console.print("[bold]Running self-check...[/bold]\n")
 
-    with console.status("[bold green]检查中...", spinner="dots"):
+    with console.status("[bold green]Checking...", spinner="dots"):
         results = await agent.self_check()
 
-    # 显示结果
     status_color = "green" if results["status"] == "healthy" else "red"
-    console.print(f"状态: [{status_color}]{results['status']}[/{status_color}]")
+    console.print(f"Status: [{status_color}]{results['status']}[/{status_color}]")
     console.print()
 
-    table = Table(title="检查项目")
-    table.add_column("检查项", style="cyan")
-    table.add_column("状态", style="green")
-    table.add_column("消息", style="white")
+    table = Table(title="Check Items")
+    table.add_column("Check", style="cyan")
+    table.add_column("Status", style="green")
+    table.add_column("Message", style="white")
 
     for name, check in results["checks"].items():
         status_icon = (
@@ -1579,7 +1578,7 @@ async def run_selfcheck(agent: Agent):
 
 
 def show_memory():
-    """显示记忆状态"""
+    """Show memory state"""
     try:
         content = settings.memory_path.read_text(encoding="utf-8")
         console.print(
@@ -1590,11 +1589,11 @@ def show_memory():
             )
         )
     except Exception as e:
-        console.print(f"[red]无法读取 MEMORY.md: {e}[/red]")
+        console.print(f"[red]Cannot read MEMORY.md: {e}[/red]")
 
 
 def show_skills():
-    """显示已安装技能（建议 4）"""
+    """Show installed skills"""
     try:
         from .skills.catalog import SkillCatalog
 
@@ -1604,15 +1603,15 @@ def show_skills():
             console.print(
                 Panel(
                     Markdown(skills_text),
-                    title="已安装技能",
+                    title="Installed Skills",
                     border_style="green",
                 )
             )
         else:
-            console.print("[yellow]暂无已安装技能[/yellow]")
-            console.print("使用 install_skill 工具安装技能，或在 skills/ 目录下创建技能")
+            console.print("[yellow]No installed skills yet[/yellow]")
+            console.print("Use the install_skill tool to install skills, or create skills in the skills/ directory")
     except Exception as e:
-        console.print(f"[red]无法加载技能列表: {e}[/red]")
+        console.print(f"[red]Cannot load skills list: {e}[/red]")
 
 
 _cli_force_new_session = False
@@ -1621,13 +1620,13 @@ _cli_force_new_session = False
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
-    version: bool = typer.Option(False, "--version", "-v", help="显示版本信息"),
-    new_session: bool = typer.Option(False, "--new", help="强制开启新 CLI 会话，不恢复上次对话"),
+    version: bool = typer.Option(False, "--version", "-v", help="Show version information"),
+    new_session: bool = typer.Option(False, "--new", help="Force a new CLI session; do not restore the last conversation"),
 ):
     """
-    OpenAkita - 全能自进化AI助手
+    OpenAkita - Self-Evolving AI Assistant
 
-    直接运行进入交互模式
+    Run without a subcommand to enter interactive mode
     """
     global _cli_force_new_session
     _cli_force_new_session = new_session
@@ -1638,16 +1637,16 @@ def main(
         console.print(f"OpenAkita v{__version__}")
         raise typer.Exit(0)
 
-    # 如果没有子命令，进入交互模式
+    # If no subcommand was given, enter interactive mode
     if ctx.invoked_subcommand is None:
-        # 检查是否至少有一个可用的 LLM 端点
+        # Check that at least one LLM endpoint is configured
         from .llm.config import get_default_config_path
 
         has_endpoint = settings.anthropic_api_key or get_default_config_path().exists()
         if not has_endpoint:
-            console.print("[red]错误: 未配置任何 LLM 端点[/red]")
+            console.print("[red]Error: no LLM endpoint configured[/red]")
             console.print(
-                "请设置 ANTHROPIC_API_KEY，或运行 'openakita init' 配置 data/llm_endpoints.json"
+                "Set ANTHROPIC_API_KEY, or run 'openakita init' to configure data/llm_endpoints.json"
             )
             raise typer.Exit(1)
 

@@ -249,3 +249,6 @@ claude_code/
 
 # QQ Bot SDK logs
 botpy.log*
+
+openakita.service
+notes.md

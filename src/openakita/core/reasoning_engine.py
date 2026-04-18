@@ -254,7 +254,7 @@ class Checkpoint:
     """
     决策检查点，用于多路径探索和回滚。
 
-    在关键决策点保存消息历史和任务状态的快照，
+    在关键决策点保存消息历史和任务State的快照，
     当检测到循环、连续失败等问题时可回滚到之前的检查点，
     附加失败经验提示后重新推理。
     """
@@ -356,7 +356,7 @@ class ReasoningEngine:
         # 在 session 结束时清理以释放内存
         self._max_working_messages_kept = 0  # 清理时保留的条数（0=全部释放）
 
-        # 浏览器"读页面状态"工具
+        # Browser"读页面State"工具
         self._browser_page_read_tools = frozenset(
             {
                 "browser_get_content",
@@ -441,7 +441,7 @@ class ReasoningEngine:
 
         Args:
             question: 要发送给用户的问题文本
-            state: 当前任务状态（用于取消检查）
+            state: 当前任务State（用于取消检查）
             timeout_seconds: 每轮等待超时（秒）
             max_reminders: 最大追问提醒次数
             poll_interval: 轮询间隔（秒）
@@ -674,7 +674,7 @@ class ReasoningEngine:
 
         # 附加失败经验
         failure_hint = (
-            f"[系统提示] 之前的方案失败了（原因: {reason}）。"
+            f"[系统提示] 之前的方案失败了（Reason: {reason}）。"
             f"失败的决策: {cp.decision_summary}。"
             f"请尝试完全不同的方法来完成任务。"
             f"避免使用与之前相同的工具参数组合。"
@@ -995,11 +995,11 @@ class ReasoningEngine:
                         conversation_id=conversation_id,
                     )
                 except _CtxCancelledError:
-                    # 仅当任务状态明确为“用户取消”时，才把压缩取消升级为任务取消。
+                    # 仅当任务State明确为“用户取消”时，才把压缩取消升级为任务取消。
                     # 否则按压缩失败降级处理，避免误报 "Context compression cancelled by user"。
                     if state.cancelled or bool((state.cancel_reason or "").strip()):
                         raise UserCancelledError(
-                            reason=state.cancel_reason or "用户请求停止",
+                            reason=state.cancel_reason or "user requested stop",
                             source="context_compress",
                         )
                     logger.warning(
@@ -1130,7 +1130,7 @@ class ReasoningEngine:
                             pass
                     if _cw in _done:
                         raise UserCancelledError(
-                            reason=state.cancel_reason or "用户请求停止", source="retry_sleep"
+                            reason=state.cancel_reason or "user requested stop", source="retry_sleep"
                         )
                     continue
                 elif isinstance(retry_result, tuple):
@@ -1696,7 +1696,7 @@ class ReasoningEngine:
                     except Exception as _hook_err:
                         logger.debug(f"on_tool_result hook error: {_hook_err}")
 
-                # 记录工具成功/失败状态 + IM 进度
+                # 记录工具成功/失败State + IM 进度
                 # 使用 decision.tool_calls / tool_results 对齐遍历，
                 # 避免 executed（仅含成功名）与 tool_results 长度不一致
                 for i, tc in enumerate(decision.tool_calls):
@@ -1802,7 +1802,7 @@ class ReasoningEngine:
                     _hint = (
                         f"[系统提示] 工具 {_tool_names} 累计失败已达 {self.PERSISTENT_FAIL_LIMIT} 次"
                         f"（含跨回滚），通常是因为参数过长被 API 截断。"
-                        "你必须改用完全不同的策略：\n"
+                        "你必须改用完全不同的Strategy:\n"
                         "- 使用 run_shell 执行 Python 脚本来生成大文件\n"
                         "- 将内容拆分成多次小写入\n"
                         "- 先写骨架，再逐步填充\n"
@@ -1869,7 +1869,7 @@ class ReasoningEngine:
                 if _has_truncation and self._consecutive_truncation_count >= 2:
                     _split_guidance = (
                         "⚠️ 你的工具调用参数因内容过长被 API 反复截断（已连续 "
-                        f"{self._consecutive_truncation_count} 次）。你必须立即改变策略：\n"
+                        f"{self._consecutive_truncation_count} 次）。你必须立即改变Strategy:\n"
                         "1. 将大文件拆分为多次 write_file 调用（每次不超过 2000 行）\n"
                         "2. 先创建文件框架，再用 edit_file 逐段补充内容\n"
                         "3. 减少内联 CSS/JS，使用简洁实现\n"
@@ -2342,7 +2342,7 @@ class ReasoningEngine:
                     self._save_react_trace(
                         react_trace, conversation_id, session_type, "cancelled", _trace_started_at
                     )
-                    yield {"type": "text_delta", "content": "✅ 任务已停止。"}
+                    yield {"type": "text_delta", "content": "✅ Task stopped."}
                     yield {"type": "done"}
                     return
 
@@ -2399,7 +2399,7 @@ class ReasoningEngine:
                     f"[ReAct-Stream] Iter {_iteration + 1}/{max_iterations} — REASON (model={current_model})"
                 )
 
-                # --- 状态转换: REASONING（与 run() 一致） ---
+                # --- State转换: REASONING（与 run() 一致） ---
                 if state.status != TaskStatus.REASONING:
                     state.transition(TaskStatus.REASONING)
 
@@ -3253,8 +3253,8 @@ class ReasoningEngine:
 
                         _non_denied_tool_names.append(tool_name)
 
-                        # 将工具执行与 cancel_event / skip_event 三路竞速
-                        # 注意: 不在此处 clear_skip()，让已到达的 skip 信号自然被竞速消费
+                        # Race tool execution against cancel_event / skip_event (three-way)
+                        # Note: do not clear_skip() here; let any already-arrived skip signal be consumed naturally by the race
                         try:
                             tool_exec_task = asyncio.create_task(
                                 self._tool_executor.execute_tool_with_policy(
@@ -3286,13 +3286,13 @@ class ReasoningEngine:
                                     pass
 
                             if cancel_waiter in done_set and tool_exec_task not in done_set:
-                                result_text = f"[工具 {tool_name} 被用户中断]"
+                                result_text = f"[Tool {tool_name} interrupted by user]"
                                 _stream_cancelled = True
                             elif skip_waiter in done_set and tool_exec_task not in done_set:
-                                _skip_reason = state.skip_reason if state else "用户请求跳过"
+                                _skip_reason = state.skip_reason if state else "user requested skip"
                                 if state:
                                     state.clear_skip()
-                                result_text = f"[用户跳过了此步骤: {_skip_reason}]"
+                                result_text = f"[User skipped this step: {_skip_reason}]"
                                 _stream_skipped = True
                                 logger.info(
                                     f"[SkipStep-Stream] Tool {tool_name} skipped: {_skip_reason}"
@@ -3301,7 +3301,7 @@ class ReasoningEngine:
                                 result_text = tool_exec_task.result()
                                 result_text = str(result_text) if result_text else ""
                             else:
-                                result_text = f"[工具 {tool_name} 被用户中断]"
+                                result_text = f"[Tool {tool_name} interrupted by user]"
                                 _stream_cancelled = True
                         except Exception as exc:
                             result_text = f"Tool error: {exc}"
@@ -3381,7 +3381,7 @@ class ReasoningEngine:
                         ):
                             try:
                                 _rt = result_text
-                                _lm = "\n\n[执行日志]"
+                                _lm = "\n\n[Execution log]"
                                 if _lm in _rt:
                                     _rt = _rt[: _rt.index(_lm)]
                                 _receipts_data = json.loads(_rt)
@@ -3541,7 +3541,7 @@ class ReasoningEngine:
                             state.record_tool_execution(_non_denied_tool_names)
                             self._budget.record_tool_calls(len(_non_denied_tool_names))
 
-                        # 记录工具成功/失败状态（遍历 decision.tool_calls 保持索引对齐，
+                        # 记录工具成功/失败State（遍历 decision.tool_calls 保持索引对齐，
                         # 包含策略拒绝的工具，与 run() 一致）
                         for i, tc_rec in enumerate(decision.tool_calls):
                             _tc_name = tc_rec.get("name", "")
@@ -3631,7 +3631,7 @@ class ReasoningEngine:
                     if _has_truncation and self._consecutive_truncation_count >= 2:
                         _split_guidance = (
                             "⚠️ 你的工具调用参数因内容过长被 API 反复截断（已连续 "
-                            f"{self._consecutive_truncation_count} 次）。你必须立即改变策略：\n"
+                            f"{self._consecutive_truncation_count} 次）。你必须立即改变Strategy:\n"
                             "1. 将大文件拆分为多次 write_file 调用（每次不超过 2000 行）\n"
                             "2. 先创建文件框架，再用 edit_file 逐段补充内容\n"
                             "3. 减少内联 CSS/JS，使用简洁实现\n"
@@ -4248,7 +4248,7 @@ class ReasoningEngine:
         LLM API 会返回 400：'tool_calls must be followed by tool messages'。
         这可能出现在尾部（中断时最后一轮未完成）或中间（rollback 后残留）。
 
-        策略：全量扫描，收集所有 tool_call_id 及其 tool result 匹配情况，
+        Strategy:全量扫描，收集所有 tool_call_id 及其 tool result 匹配情况，
         移除所有未闭合的 assistant(tool_calls) 及其孤立的 tool result。
         """
         if not messages:
@@ -4281,7 +4281,7 @@ class ReasoningEngine:
                 result.append(msg)
 
         if not result:
-            result = [{"role": "user", "content": "（对话上下文不可用）"}]
+            result = [{"role": "user", "content": "（Conversation context不可用）"}]
 
         return result
 
@@ -4295,13 +4295,13 @@ class ReasoningEngine:
         """非流式场景下的取消收尾：立即返回默认文本，后台异步发起 LLM 收尾。"""
         self._yield_missing_tool_results(working_messages)
 
-        cancel_reason = (state.cancel_reason if state else "") or "用户请求停止"
+        cancel_reason = (state.cancel_reason if state else "") or "user requested stop"
         logger.info(
             f"[ReAct][CancelFarewell] 进入收尾流程: cancel_reason={cancel_reason!r}, "
             f"model={current_model}, msg_count={len(working_messages)}"
         )
 
-        default_farewell = "✅ 好的，已停止当前任务。"
+        default_farewell = "✅ Got it, current task stopped."
 
         asyncio.create_task(
             self._background_cancel_farewell(
@@ -4327,7 +4327,7 @@ class ReasoningEngine:
         """
         self._yield_missing_tool_results(working_messages)
 
-        cancel_reason = (state.cancel_reason if state else "") or "用户请求停止"
+        cancel_reason = (state.cancel_reason if state else "") or "user requested stop"
         logger.info(
             f"[ReAct-Stream][CancelFarewell] 进入收尾流程: cancel_reason={cancel_reason!r}, "
             f"model={current_model}, msg_count={len(working_messages)}"
@@ -4342,7 +4342,7 @@ class ReasoningEngine:
             logger.info(f"[ReAct-Stream][CancelFarewell] 回传用户指令文本: {user_text!r}")
             yield {"type": "user_insert", "content": user_text}
 
-        default_farewell = "✅ 好的，已停止当前任务。"
+        default_farewell = "✅ Got it, current task stopped."
         yield {"type": "text_delta", "content": default_farewell}
 
         asyncio.create_task(
@@ -4362,7 +4362,7 @@ class ReasoningEngine:
         try:
             self._yield_missing_tool_results(working_messages)
             cancel_msg = (
-                f"[系统通知] 用户发送了停止指令「{cancel_reason}」，"
+                f"[System notice] User sent stop command "{cancel_reason}","
                 "请立即停止当前操作，简要告知用户已停止以及当前进度（1~2 句话即可）。"
                 "不要调用任何工具。"
             )
@@ -4424,7 +4424,7 @@ class ReasoningEngine:
 
         参考 Claude Code (claude.ts) 的 for-await 事件循环模式：
         - 每个 LLM token 到达时即通过 StreamAccumulator 产出高层事件
-        - 流结束后从累积状态构建 Decision 对象
+        - 流结束后从累积State构建 Decision 对象
 
         Yields:
             {"type": "text_delta", "content": "..."}
@@ -4485,7 +4485,7 @@ class ReasoningEngine:
                 agent_profile_id=agent_profile_id,
             ):
                 if cancel_event.is_set():
-                    cancel_reason = state.cancel_reason if state else "用户请求停止"
+                    cancel_reason = state.cancel_reason if state else "user requested stop"
                     raise UserCancelledError(
                         reason=cancel_reason,
                         source="llm_stream",
@@ -4597,7 +4597,7 @@ class ReasoningEngine:
                 if typ == "heartbeat":
                     yield {"type": "heartbeat"}
                 elif typ == "cancelled":
-                    cancel_reason = state.cancel_reason if state else "用户请求停止"
+                    cancel_reason = state.cancel_reason if state else "user requested stop"
                     raise UserCancelledError(
                         reason=cancel_reason,
                         source="llm_call_stream",
@@ -4832,7 +4832,7 @@ class ReasoningEngine:
         executed_tool_names: list[str],
         delivery_receipts: list[dict],
     ) -> str | None:
-        """当 LLM 多次未返回可见文本时，从工具执行记录构建 fallback 摘要。"""
+        """When the LLM repeatedly fails to return visible text, build a fallback summary from the tool-execution records."""
         parts: list[str] = []
 
         if delivery_receipts:
@@ -4841,14 +4841,14 @@ class ReasoningEngine:
                 if desc:
                     parts.append(f"• {desc}")
             if parts:
-                return "已完成以下操作：\n" + "\n".join(parts)
+                return "Completed the following operations:\n" + "\n".join(parts)
 
         if executed_tool_names:
             unique = list(dict.fromkeys(executed_tool_names))
             tool_summary = "、".join(unique[:10])
             if len(unique) > 10:
-                tool_summary += f" 等共 {len(unique)} 项"
-            return f"任务已执行完毕（使用了工具：{tool_summary}），但模型未生成文本总结。如需详情请重新提问。"
+                tool_summary += f", {len(unique)} items in total"
+            return f"Task execution finished (tools used: {tool_summary}), but the model produced no text summary. Please re-ask if you need details."
 
         return None
 
@@ -5214,7 +5214,7 @@ class ReasoningEngine:
             }
         )
 
-        # 注意：_check_model_switch 不做状态转换，因为它不使用 continue，
+        # 注意：_check_model_switch 不做State转换，因为它不使用 continue，
         # 执行后自然走到主循环的 REASONING 转换逻辑。
         state.reset_for_model_switch()
         return new_model, new_messages
@@ -5586,7 +5586,7 @@ class ReasoningEngine:
                         return "retry"
 
                     # 方案 C2: 单条截断无效（多条小消息累积溢出）
-                    # 强制按当前上下文预算的 50% 做硬截断
+                    # 强制按当前上下文预算的 50% 做hard truncation
                     if len(working_messages) > 3:
                         cm = self._context_manager
                         budget = cm.get_max_context_tokens() if cm else 60000

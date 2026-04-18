@@ -589,18 +589,18 @@ Rules:
 
     async def run_daily_check(self, since: datetime | None = None) -> DailyReport:
         """
-        执行系统自检（LLM 驱动）
+        Execute system self-check (LLM-driven)
 
-        流程:
-        1. 本地匹配提取 ERROR 日志（从 since 时间开始）
-        2. 生成错误摘要
-        3. LLM 分析错误并决定修复策略
-        4. 根据 LLM 决策执行修复
-        5. 修复后自测验证
-        6. 生成报告
+        Flow:
+        1. Locally extract ERROR logs (starting from `since`)
+        2. Generate error summary
+        3. LLM analyzes errors and decides on fix strategies
+        4. Execute fixes based on LLM decisions
+        5. Self-test verification after fix
+        6. Generate report
 
         Args:
-            since: 只分析此时间之后的日志和复盘记录。None 表示分析全部（首次运行）。
+            since: Only analyze logs and retrospect records after this time. None means analyze everything (first run).
 
         Returns:
             DailyReport
@@ -617,9 +617,9 @@ Rules:
             timestamp=datetime.now(),
         )
 
-        # === 阶段 1: 收集所有问题信息（日志 + 记忆 + 复盘） ===
+        # === Phase 1: Collect all issue information (logs + memory + retrospect) ===
 
-        # 1.1 提取日志错误（支持增量：only since last check）
+        # 1.1 Extract log errors (supports incremental: only since last check)
         log_analyzer = LogAnalyzer(settings.log_dir_path)
         errors = log_analyzer.extract_errors_only(since=since)
         error_summary = ""
@@ -633,7 +633,7 @@ Rules:
         else:
             logger.info("No errors found in logs")
 
-        # 1.2 加载任务复盘汇总（在 LLM 分析之前）
+        # 1.2 Load task retrospect summary (before LLM analysis)
         retrospect_info = ""
         try:
             from ..core.task_monitor import get_retrospect_storage
@@ -645,12 +645,12 @@ Rules:
                 logger.info(
                     f"Loaded retrospect summary: {report.retrospect_summary['total_tasks']} tasks"
                 )
-                # 构建复盘信息摘要
+                # Build retrospect info summary
                 retrospect_info = self._build_retrospect_summary_for_llm(report.retrospect_summary)
         except Exception as e:
             logger.warning(f"Failed to load retrospect summary: {e}")
 
-        # 1.3 从记忆系统提取错误教训（在 LLM 分析之前）
+        # 1.3 Extract error lessons from memory system (before LLM analysis)
         memory_info = ""
         try:
             report.memory_insights = await self._extract_memory_insights()
@@ -658,14 +658,14 @@ Rules:
                 logger.info(
                     f"Extracted memory insights: {report.memory_insights.get('total_errors', 0)} errors"
                 )
-                # 构建记忆信息摘要
+                # Build memory info summary
                 memory_info = self._build_memory_summary_for_llm(report.memory_insights)
         except Exception as e:
             logger.warning(f"Failed to extract memory insights: {e}")
 
-        # === 阶段 2: 综合分析（日志 + 记忆 + 复盘 一起提交给 LLM） ===
+        # === Phase 2: Comprehensive analysis (logs + memory + retrospect submitted to LLM together) ===
 
-        # 构建完整的分析输入
+        # Build the full analysis input
         full_analysis_input = self._build_full_analysis_input(
             error_summary=error_summary,
             retrospect_info=retrospect_info,
@@ -678,21 +678,21 @@ Rules:
             return report
 
         try:
-            # LLM 综合分析（如果有 brain）
+            # LLM comprehensive analysis (if brain is available)
             if self.brain:
                 analysis_results = await self._analyze_errors_with_llm(full_analysis_input)
                 logger.info(f"LLM analyzed {len(analysis_results)} issues")
             else:
-                # 没有 brain，使用规则匹配（降级模式）
+                # No brain, use rule-based matching (fallback mode)
                 logger.warning("No brain available, using rule-based analysis")
                 analysis_results = self._analyze_errors_with_rules(patterns)
 
-            # === 阶段 3: 根据分析结果处理错误 ===
-            # 只允许“直接修复”的错误类型：
-            # - tool: 内置工具
-            # - skill: skills 目录技能
-            # - mcp: MCP 相关（mcps/ 目录、连接/调用）
-            # - channel: IM 通道适配器（属于工具层的一部分）
+            # === Phase 3: Process errors based on analysis results ===
+            # Only allow "direct fix" for these error types:
+            # - tool: built-in tools
+            # - skill: skills under the skills directory
+            # - mcp: MCP related (mcps/ directory, connections/calls)
+            # - channel: IM channel adapters (part of the tool layer)
             allowed_fix_types = {"tool", "skill", "mcp", "channel"}
             autofix_enabled = settings.selfcheck_autofix
             if not autofix_enabled:
@@ -740,7 +740,7 @@ Rules:
                             f"max fix attempts ({MAX_FIX_ATTEMPTS}) reached"
                         )
 
-                    # 记录工具错误模式（无论是否修复都记录）
+                    # Record tool error patterns (recorded regardless of fix status)
                     report.tool_error_patterns.append(
                         {
                             "pattern": result.get("error_id", ""),
@@ -760,85 +760,85 @@ Rules:
         except Exception as e:
             logger.error(f"Daily check failed: {e}", exc_info=True)
 
-        # 保存报告
+        # Save report
         self._save_daily_report(report)
 
         return report
 
     def _build_retrospect_summary_for_llm(self, retrospect_summary: dict) -> str:
         """
-        构建复盘信息摘要（给 LLM 分析）
+        Build retrospect info summary (for LLM analysis)
 
         Args:
-            retrospect_summary: 复盘汇总数据
+            retrospect_summary: Retrospect summary data
 
         Returns:
-            Markdown 格式摘要
+            Markdown-formatted summary
         """
         if not retrospect_summary or retrospect_summary.get("total_tasks", 0) == 0:
             return ""
 
         lines = [
-            "## 任务复盘信息",
+            "## Task Retrospect Information",
             "",
-            f"- 今日复盘任务数: {retrospect_summary.get('total_tasks', 0)}",
-            f"- 总耗时: {retrospect_summary.get('total_duration', 0):.0f}秒",
-            f"- 平均耗时: {retrospect_summary.get('avg_duration', 0):.1f}秒",
-            f"- 模型切换次数: {retrospect_summary.get('model_switches', 0)}",
+            f"- Today's retrospect task count: {retrospect_summary.get('total_tasks', 0)}",
+            f"- Total duration: {retrospect_summary.get('total_duration', 0):.0f}s",
+            f"- Average duration: {retrospect_summary.get('avg_duration', 0):.1f}s",
+            f"- Model switches: {retrospect_summary.get('model_switches', 0)}",
             "",
         ]
 
-        # 常见问题
+        # Common issues
         common_issues = retrospect_summary.get("common_issues", [])
         if common_issues:
-            lines.append("### 复盘发现的常见问题")
+            lines.append("### Common Issues Found in Retrospect")
             for issue in common_issues:
-                lines.append(f"- [{issue.get('count', 0)}次] {issue.get('issue', '')}")
+                lines.append(f"- [{issue.get('count', 0)} times] {issue.get('issue', '')}")
             lines.append("")
 
-        # 复盘详情
+        # Retrospect details
         records = retrospect_summary.get("records", [])
         if records:
-            lines.append("### 复盘详情")
+            lines.append("### Retrospect Details")
             for r in records:
                 desc = r.get("description", "")
                 result = r.get("retrospect_result", "")
                 lines.append(f"- **{desc}**")
                 if result:
-                    lines.append(f"  - 分析: {result}")
+                    lines.append(f"  - Analysis: {result}")
             lines.append("")
 
         return "\n".join(lines)
 
     def _build_memory_summary_for_llm(self, memory_insights: dict) -> str:
         """
-        构建记忆信息摘要（给 LLM 分析）
+        Build memory info summary (for LLM analysis)
 
         Args:
-            memory_insights: 记忆优化建议数据
+            memory_insights: Memory optimization suggestions data
 
         Returns:
-            Markdown 格式摘要
+            Markdown-formatted summary
         """
         if not memory_insights:
             return ""
 
-        lines = ["## 记忆系统中的错误教训", ""]
+        lines = ["## Error Lessons in Memory System", ""]
 
-        # 错误教训
+        # Error lessons
         error_list = memory_insights.get("error_list", [])
         if error_list:
-            lines.append("### 历史错误教训（最近记录）")
+            lines.append("### Historical Error Lessons (recent records)")
             for err in error_list:
                 source = err.get("source", "unknown")
                 content = err.get("content", "")
                 lines.append(f"- [{source}] {content}")
             lines.append("")
 
-        # 规则约束
+        # Rule constraints
         rule_list = memory_insights.get("rule_list", [])
         if rule_list:
-            lines.append("### 系统规则约束")
+            lines.append("### System Rule Constraints")
             for rule in rule_list:
                 content = rule.get("content", "")
                 lines.append(f"- {content}")
@@ -853,15 +853,15 @@ Rules:
         memory_info: str,
     ) -> str:
         """
-        构建完整的分析输入（日志 + 复盘 + 记忆）
+        Build the full analysis input (logs + retrospect + memory)
 
         Args:
-            error_summary: 日志错误摘要
-            retrospect_info: 复盘信息摘要
-            memory_info: 记忆信息摘要
+            error_summary: Log error summary
+            retrospect_info: Retrospect info summary
+            memory_info: Memory info summary
 
         Returns:
-            完整的分析输入（Markdown 格式）
+            Full analysis input (Markdown format)
         """
         sections = []
 
@@ -877,15 +877,15 @@ Rules:
         if not sections:
             return ""
 
-        # 添加综合分析说明
-        header = """# 系统自检综合分析
+        # Add comprehensive analysis description
+        header = """# System Self-Check Comprehensive Analysis
 
-以下信息来源：
-1. **日志错误** - 今日 ERROR/CRITICAL 级别日志
-2. **任务复盘** - 长时间任务的执行分析
-3. **错误教训** - 记忆系统中记录的历史问题
+The following information comes from:
+1. **Log errors** - Today's ERROR/CRITICAL level logs
+2. **Task retrospect** - Execution analysis of long-running tasks
+3. **Error lessons** - Historical issues recorded in the memory system
 
-请综合分析这些信息，识别需要修复的问题。
+Please analyze this information comprehensively and identify issues that need fixing.
 
 ---
 
@@ -894,14 +894,14 @@ Rules:
 
     async def _extract_memory_insights(self) -> dict:
         """
-        从记忆系统提取优化相关的信息
+        Extract optimization-related information from the memory system
 
-        提取的记忆类型:
-        - ERROR: 错误教训（来自复盘、任务失败等）
-        - RULE: 规则约束（用户设定的规则）
+        Memory types extracted:
+        - ERROR: Error lessons (from retrospects, task failures, etc.)
+        - RULE: Rule constraints (rules set by the user)
 
         Returns:
-            记忆优化建议字典
+            Memory optimization suggestions dictionary
         """
         try:
             from ..memory import MemoryManager, MemoryType
@@ -917,19 +917,19 @@ Rules:
                     embedding_api_model=settings.embedding_api_model,
                 )
 
-            # 提取 ERROR 类型记忆
+            # Extract ERROR-type memories
             error_memories = memory_manager.search_memories(
                 memory_type=MemoryType.ERROR,
                 limit=50,
             )
 
-            # 提取 RULE 类型记忆
+            # Extract RULE-type memories
             rule_memories = memory_manager.search_memories(
                 memory_type=MemoryType.RULE,
                 limit=20,
             )
 
-            # 转换为字典格式
+            # Convert to dict format
             error_list = [
                 {
                     "id": m.id,
@@ -952,7 +952,7 @@ Rules:
                 for m in rule_memories
             ]
 
-            # 如果有足够的错误记忆，让 LLM 提取优化建议
+            # If there are enough error memories, let the LLM extract optimization suggestions
             optimization_suggestions = []
             if len(error_list) >= 3 and self.brain:
                 optimization_suggestions = await self._generate_optimization_suggestions(
@@ -975,41 +975,41 @@ Rules:
         self, error_memories: list[dict], rule_memories: list[dict]
     ) -> list[str]:
         """
-        使用 LLM 从记忆中生成优化建议
+        Use LLM to generate optimization suggestions from memory
 
         Args:
-            error_memories: 错误记忆列表
-            rule_memories: 规则记忆列表
+            error_memories: List of error memories
+            rule_memories: List of rule memories
 
         Returns:
-            优化建议列表
+            List of optimization suggestions
         """
-        # 构建错误摘要
+        # Build error summary
         error_summary = "\n".join(
             [f"- [{m.get('source', 'unknown')}] {m.get('content', '')}" for m in error_memories]
         )
 
         rule_summary = "\n".join([f"- {m.get('content', '')}" for m in rule_memories])
 
-        prompt = f"""请分析以下系统记录的错误教训和规则约束，提取出最重要的优化建议。
+        prompt = f"""Please analyze the following system-recorded error lessons and rule constraints, and extract the most important optimization suggestions.
 
-## 错误教训（最近记录）
-{error_summary if error_summary else "暂无"}
+## Error Lessons (recent records)
+{error_summary if error_summary else "None"}
 
-## 规则约束
-{rule_summary if rule_summary else "暂无"}
+## Rule Constraints
+{rule_summary if rule_summary else "None"}
 
-请从这些信息中提取 3-5 条最重要的优化建议，每条建议简洁明了（不超过 50 字）。
-用 JSON 数组格式输出，如：["建议1", "建议2", "建议3"]
+Extract 3-5 most important optimization suggestions from this information, each concise (no more than 50 chars).
+Output as a JSON array, e.g.: ["suggestion1", "suggestion2", "suggestion3"]
 """
 
         try:
             response = await self.brain.think(
                 prompt,
-                system="你是一个系统优化专家。请从错误记录中提取可行的优化建议。只输出 JSON 数组，不要其他内容。",
+                system="You are a system optimization expert. Extract actionable optimization suggestions from error records. Output only a JSON array, nothing else.",
             )
 
-            # 解析 JSON
+            # Parse JSON
             import re
 
             json_match = re.search(r"\[.*\]", response.content, re.DOTALL)
@@ -1026,15 +1026,15 @@ Rules:
 
     async def _analyze_errors_with_llm(self, error_summary: str) -> list[dict]:
         """
-        使用 LLM 分析错误并决定修复策略（支持分批处理）
+        Use LLM to analyze errors and decide fix strategies (supports batch processing)
 
         Args:
-            error_summary: 错误摘要（Markdown 格式）
+            error_summary: Error summary (Markdown format)
 
         Returns:
-            分析结果列表
+            List of analysis results
         """
-        # 加载专用提示词
+        # Load dedicated prompt
         prompt_path = settings.project_root / "prompts" / "selfcheck_system.md"
         if prompt_path.exists():
             system_prompt = prompt_path.read_text(encoding="utf-8")
@@ -1042,34 +1042,34 @@ Rules:
             system_prompt = self.DEFAULT_SELFCHECK_PROMPT
             logger.warning("Using default selfcheck prompt")
 
-        # 追加环境标识，让 LLM 知道当前环境类型
+        # Append environment indicator so the LLM knows the current environment type
         env_hint = (
-            "production" if settings.selfcheck_autofix else "development（自动修复已关闭，仅分析）"
+            "production" if settings.selfcheck_autofix else "development (auto-fix disabled, analysis only)"
         )
-        system_prompt += f"\n\n当前环境: {env_hint}"
+        system_prompt += f"\n\nCurrent environment: {env_hint}"
 
-        # 检查摘要大小，如果太大则分批处理
-        MAX_CHARS_PER_BATCH = 8000  # 每批最大字符数（约 2000 tokens）
+        # Check summary size; if too large, process in batches
+        MAX_CHARS_PER_BATCH = 8000  # Max chars per batch (approximately 2000 tokens)
 
         if len(error_summary) <= MAX_CHARS_PER_BATCH:
-            # 摘要较小，直接处理
+            # Summary is small, process directly
             return await self._analyze_single_batch(error_summary, system_prompt)
 
-        # 摘要太大，分批处理
+        # Summary too large, process in batches
         logger.info(f"Error summary too large ({len(error_summary)} chars), splitting into batches")
 
-        # 按 "### [" 分割成独立的错误块
+        # Split into independent error blocks by "### ["
         import re
 
         error_blocks = re.split(r"(?=### \[)", error_summary)
 
-        # 保留头部信息
+        # Preserve header info
         header = ""
         if error_blocks and not error_blocks[0].startswith("### ["):
             header = error_blocks[0]
             error_blocks = error_blocks[1:]
 
-        # 分批
+        # Batch
         batches = []
         current_batch = header
 
@@ -1086,7 +1086,7 @@ Rules:
 
         logger.info(f"Split into {len(batches)} batches for LLM analysis")
 
-        # 分批调用 LLM
+        # Call LLM in batches
         all_results = []
         for i, batch in enumerate(batches):
             logger.info(f"Analyzing batch {i + 1}/{len(batches)} ({len(batch)} chars)")
@@ -1101,20 +1101,20 @@ Rules:
 
     async def _analyze_single_batch(self, error_summary: str, system_prompt: str) -> list[dict]:
         """
-        分析单个批次的错误
+        Analyze a single batch of errors
 
         Args:
-            error_summary: 错误摘要
-            system_prompt: 系统提示词
+            error_summary: Error summary
+            system_prompt: System prompt
 
         Returns:
-            分析结果列表
+            List of analysis results
         """
-        user_prompt = f"""请分析以下错误日志摘要，针对每个错误输出分析结果（JSON 数组格式）：
+        user_prompt = f"""Analyze the following error log summary, and for each error output an analysis result (JSON array format):
 
 {error_summary}
 
-请直接输出 JSON 数组，不要其他内容。"""
+Output the JSON array directly, nothing else."""
 
         try:
             response = await self.brain.think(
@@ -1122,7 +1122,7 @@ Rules:
                 system=system_prompt,
             )
 
-            # 解析 JSON 结果
+            # Parse JSON result
             return self._parse_llm_analysis(response.content)
 
         except Exception as e:
@@ -1131,25 +1131,25 @@ Rules:
 
     def _parse_llm_analysis(self, content: str) -> list[dict]:
         """
-        解析 LLM 返回的分析结果
+        Parse the analysis result returned by the LLM
 
         Args:
-            content: LLM 返回的内容
+            content: Content returned by the LLM
 
         Returns:
-            分析结果列表
+            List of analysis results
         """
         try:
-            # 尝试提取 JSON 数组
+            # Try to extract JSON array
             import re
 
-            # 查找 JSON 数组
+            # Look for a JSON array
             json_match = re.search(r"\[[\s\S]*\]", content)
             if json_match:
                 json_str = json_match.group()
                 return json.loads(json_str)
 
-            # 尝试直接解析
+            # Try to parse directly
             return json.loads(content)
 
         except json.JSONDecodeError as e:
@@ -1159,13 +1159,13 @@ Rules:
 
     def _analyze_errors_with_rules(self, patterns: dict) -> list[dict]:
         """
-        使用规则分析错误（降级模式，当没有 LLM 时使用）
+        Analyze errors using rules (fallback mode, used when no LLM is available)
 
         Args:
-            patterns: 错误模式字典
+            patterns: Error patterns dictionary
 
         Returns:
-            分析结果列表
+            List of analysis results
         """
         results = []
 
@@ -1174,31 +1174,31 @@ Rules:
             module = sample.logger_name if sample else "unknown"
             message = sample.message if sample else ""
 
-            # 判断是否是核心组件
+            # Check if it's a core component
             is_core = pattern.component_type == "core"
 
-            # 判断修复策略和生成修复指令
+            # Determine fix strategy and generate fix instruction
             fix_instruction = None
             can_fix = False
 
             if not is_core:
                 message_lower = message.lower()
                 if "permission" in message_lower or "access denied" in message_lower:
-                    # 避免涉及操作系统层面的权限调整（尤其是 Windows）
+                    # Avoid OS-level permission adjustments (especially on Windows)
                     fix_instruction = None
                     can_fix = False
                 elif "not found" in message_lower or "no such file" in message_lower:
-                    fix_instruction = "使用 file 工具创建缺失的目录：确保 data/、data/cache/、data/sessions/、logs/ 目录存在"
+                    fix_instruction = "Use the file tool to create missing directories: ensure data/, data/cache/, data/sessions/, logs/ directories exist"
                     can_fix = True
                 elif "cache" in message_lower or "corrupt" in message_lower:
-                    fix_instruction = "使用 shell 工具清理缓存目录：删除 data/cache/ 下的所有文件，然后重新创建目录"
+                    fix_instruction = "Use the shell tool to clean cache directory: delete all files under data/cache/, then recreate the directory"
                     can_fix = True
                 elif "timeout" in message_lower:
-                    # 进程清理通常涉及系统层面操作，报告给用户即可
+                    # Process cleanup usually involves OS-level operations; just report to the user
                     fix_instruction = None
                     can_fix = False
                 elif "connection" in message_lower:
-                    # 连接错误通常需要人工检查
+                    # Connection errors usually require manual check
                     fix_instruction = None
                     can_fix = False
 
@@ -1211,9 +1211,9 @@ Rules:
                     "severity": "high" if is_core else "medium",
                     "can_fix": can_fix,
                     "fix_instruction": fix_instruction,
-                    "fix_reason": "规则匹配（降级模式）",
+                    "fix_reason": "Rule matching (fallback mode)",
                     "requires_restart": is_core,
-                    "note_to_user": "需要人工检查" if is_core else None,
+                    "note_to_user": "Manual check required" if is_core else None,
                 }
             )
 
@@ -1223,11 +1223,11 @@ Rules:
 
     async def _execute_fix_by_llm_decision(self, analysis: dict, max_retries: int = 1) -> FixRecord:
         """
-        根据 LLM 决策执行修复（使用主 Agent，带超时保护）
+        Execute fix based on LLM decision (uses main Agent, with timeout protection)
 
         Args:
-            analysis: LLM 分析结果（包含 fix_instruction）
-            max_retries: 最大重试次数（默认 1 = 不重试）
+            analysis: LLM analysis result (contains fix_instruction)
+            max_retries: Max retries (default 1 = no retry)
 
         Returns:
             FixRecord
@@ -1244,11 +1244,11 @@ Rules:
         fix_instruction = analysis.get("fix_instruction")
 
         if not fix_instruction or not analysis.get("can_fix", False):
-            fix_record.fix_action = f"跳过修复: {analysis.get('fix_reason', '无法自动修复')}"
+            fix_record.fix_action = f"Skip fix: {analysis.get('fix_reason', 'cannot auto-fix')}"
             fix_record.success = False
             return fix_record
 
-        fix_record.fix_action = f"Agent 执行: {fix_instruction}"
+        fix_record.fix_action = f"Agent executing: {fix_instruction}"
 
         for attempt in range(max_retries):
             agent = None
@@ -1257,11 +1257,11 @@ Rules:
 
                 agent = Agent()
                 await agent.initialize(start_scheduler=False)
-                # === 自检自动修复护栏 ===
-                # 目标：只允许 LLM “直接修复”工具层 / skills / MCP / channels
-                # Akita 核心系统代码（core/llm/memory/scheduler/storage/agents 等）一律不允许自动修改。
+                # === Self-check auto-fix guardrails ===
+                # Goal: only allow the LLM to "directly fix" the tool layer / skills / MCP / channels.
+                # Akita core system code (core/llm/memory/scheduler/storage/agents, etc.) may never be auto-modified.
                 #
-                # 具体执行在 FilesystemHandler 中做硬拦截；这里仅注入策略。
+                # The actual enforcement happens in FilesystemHandler as a hard block; this only injects policy.
                 from pathlib import Path as _Path
 
                 from ..config import settings as _settings
@@ -1269,16 +1269,16 @@ Rules:
                 project_root = _Path(_settings.project_root).resolve()
                 agent._selfcheck_fix_policy = {
                     "enabled": True,
-                    # 允许读取范围（用于排查）
+                    # Allowed read scope (for investigation)
                     "read_roots": [str(project_root)],
-                    # 允许写入范围（用于“直接修复”）
+                    # Allowed write scope (for "direct fix")
                     "write_roots": [
                         str((project_root / "skills").resolve()),
                         str((project_root / "mcps").resolve()),
                         str((project_root / "src" / "openakita" / "tools").resolve()),
                         str((project_root / "src" / "openakita" / "channels").resolve()),
                     ],
-                    # 禁止的 shell 关键词（尽量避免 OS/Windows 层操作）
+                    # Denied shell keywords (avoid OS/Windows layer operations as much as possible)
                     "deny_shell_patterns": [
                         r"\bpowershell\b",
                         r"\bpwsh\b",
@@ -1306,28 +1306,28 @@ Rules:
                     f"(timeout={self.FIX_TIMEOUT_SECONDS}s)"
                 )
 
-                # 构建修复 prompt
-                fix_prompt = f"""你是系统自检修复助手。请根据以下分析执行修复任务：
+                # Build fix prompt
+                fix_prompt = f"""You are the system self-check fix assistant. Execute the fix task based on the following analysis:
 
-## 错误信息
-- 错误ID: {analysis.get("error_id", "unknown")}
-- 模块: {analysis.get("module", "unknown")}
-- 分析: {analysis.get("analysis", "")}
+## Error Information
+- Error ID: {analysis.get("error_id", "unknown")}
+- Module: {analysis.get("module", "unknown")}
+- Analysis: {analysis.get("analysis", "")}
 
-## 修复指令
+## Fix Instruction
 {fix_instruction}
 
-## 要求
-1. 你需要 **直接修复** 工具层问题（内置工具/skills/MCP/channels 等），可以使用工具（shell、file、skills、call_mcp_tool 等）
-2. **禁止** 修改 Akita 核心系统代码（`src/openakita/core/`、`src/openakita/llm/`、`src/openakita/memory/`、`src/openakita/scheduler/`、`src/openakita/storage/`、`src/openakita/agents/` 等）
-3. **禁止** 进行 Windows/系统层面优化与命令操作（注册表、计划任务、权限修复、服务/进程管理等）；如果需要这些操作，请写入“需人工处理”的结论
-4. 修复后验证结果是否正确（能用轻量验证就做，如 list_skills、list_mcp_servers、读取文件等）
-5. 完成后简要报告修复结果（做了什么、改了哪些文件、验证结果）
-6. 快速定位并修复，无法修复的直接报告"需人工处理"
+## Requirements
+1. You must **directly fix** tool layer issues (built-in tools/skills/MCP/channels, etc.), using tools (shell, file, skills, call_mcp_tool, etc.)
+2. **Do not** modify Akita core system code (`src/openakita/core/`, `src/openakita/llm/`, `src/openakita/memory/`, `src/openakita/scheduler/`, `src/openakita/storage/`, `src/openakita/agents/`, etc.)
+3. **Do not** perform Windows/system-level optimization or command operations (registry, scheduled tasks, permission fixes, service/process management, etc.); if such operations are needed, write a "manual handling required" conclusion
+4. After fixing, verify the result (do a lightweight verification when possible, e.g. list_skills, list_mcp_servers, reading files, etc.)
+5. When done, briefly report the fix result (what was done, which files were changed, verification result)
+6. Locate and fix quickly; if it can't be fixed, directly report "manual handling required"
 
-请开始执行修复。"""
+Please begin executing the fix."""
 
-                # 带超时执行修复 Agent
+                # Execute fix Agent with timeout
                 try:
                     if hasattr(agent, "execute_task_from_message"):
                         result = await asyncio.wait_for(
@@ -1338,7 +1338,7 @@ Rules:
                         result_msg = (
                             result.data
                             if result and result.success
-                            else (result.error if result else "无结果")
+                            else (result.error if result else "no result")
                         )
                     else:
                         result_msg = await asyncio.wait_for(
@@ -1351,7 +1351,7 @@ Rules:
                         f"Fix attempt {attempt + 1} timed out after {self.FIX_TIMEOUT_SECONDS}s"
                     )
                     success = False
-                    result_msg = f"修复超时（{self.FIX_TIMEOUT_SECONDS}s）"
+                    result_msg = f"Fix timed out ({self.FIX_TIMEOUT_SECONDS}s)"
 
                 await agent.shutdown()
                 agent = None
@@ -1386,12 +1386,12 @@ Rules:
 
     async def _try_script_level_fix(self, analysis: dict, fix_record: FixRecord) -> FixRecord:
         """
-        脚本级降级修复（建议 5）
+        Script-level fallback fix (suggestion 5)
 
-        当 Agent 修复失败时，尝试简单的脚本级操作：
-        - 重启服务
-        - 清理缓存
-        - 重置配置
+        When the Agent fix fails, try simple script-level operations:
+        - Restart service
+        - Clean cache
+        - Reset config
         """
         module = analysis.get("module", "")
         error_id = analysis.get("error_id", "")
@@ -1399,49 +1399,49 @@ Rules:
         logger.info(f"Attempting script-level fix for {module}/{error_id}")
 
         try:
-            # 根据模块类型选择降级策略
+            # Choose fallback strategy based on module type
             if "browser" in module.lower():
-                # 浏览器相关：尝试关闭所有浏览器进程
-                fix_record.fix_action = "脚本降级: 清理浏览器进程"
-                # 不实际执行危险操作，只记录
-                fix_record.verification_result = "已标记需要手动重启浏览器"
+                # Browser-related: try to close all browser processes
+                fix_record.fix_action = "Script fallback: clean browser processes"
+                # Don't actually perform dangerous operations, just record
+                fix_record.verification_result = "Marked as needing manual browser restart"
                 fix_record.success = False
 
             elif "memory" in module.lower() or "database" in module.lower():
-                # 数据库相关：清理临时文件
-                fix_record.fix_action = "脚本降级: 清理临时文件"
+                # Database-related: clean temp files
+                fix_record.fix_action = "Script fallback: clean temp files"
                 temp_dir = Path("data/temp")
                 if temp_dir.exists():
                     for f in temp_dir.glob("*.tmp"):
                         f.unlink()
-                fix_record.verification_result = "已清理临时文件"
+                fix_record.verification_result = "Temp files cleaned"
                 fix_record.success = True
 
             elif "config" in module.lower():
-                # 配置相关：备份并重置
-                fix_record.fix_action = "脚本降级: 建议手动检查配置"
-                fix_record.verification_result = "配置问题需要手动检查 .env 或 llm_endpoints.json"
+                # Config-related: back up and reset
+                fix_record.fix_action = "Script fallback: suggest manual config check"
+                fix_record.verification_result = "Config issue requires manual check of .env or llm_endpoints.json"
                 fix_record.success = False
 
             else:
-                # 其他：通用降级
-                fix_record.fix_action = "脚本降级: 无法自动修复"
-                fix_record.verification_result = f"建议手动检查 {module} 模块"
+                # Other: generic fallback
+                fix_record.fix_action = "Script fallback: cannot auto-fix"
+                fix_record.verification_result = f"Suggest manual check of {module} module"
                 fix_record.success = False
 
         except Exception as e:
             logger.error(f"Script-level fix failed: {e}")
-            fix_record.fix_action = f"脚本降级失败: {str(e)}"
+            fix_record.fix_action = f"Script fallback failed: {str(e)}"
             fix_record.success = False
 
         return fix_record
 
     async def _try_auto_fix(self, pattern: ErrorPattern) -> FixRecord:
         """
-        尝试自动修复工具错误
+        Attempt to auto-fix tool error
 
         Args:
-            pattern: 错误模式
+            pattern: Error pattern
 
         Returns:
             FixRecord
@@ -1456,35 +1456,35 @@ Rules:
             fix_time=datetime.now(),
         )
 
-        # 根据错误类型选择修复策略
+        # Choose fix strategy based on error type
         error_msg = sample.message.lower() if sample else ""
 
         try:
             if "permission" in error_msg or "access denied" in error_msg:
-                fix_record.fix_action = "尝试修复文件权限"
+                fix_record.fix_action = "Attempt to fix file permissions"
                 success = await self._fix_permission_error(sample)
 
             elif "not found" in error_msg or "no such file" in error_msg:
-                fix_record.fix_action = "尝试创建缺失的目录/文件"
+                fix_record.fix_action = "Attempt to create missing directories/files"
                 success = await self._fix_missing_file_error(sample)
 
             elif "timeout" in error_msg:
-                fix_record.fix_action = "清理可能的死锁进程"
+                fix_record.fix_action = "Clean up potential deadlocked processes"
                 success = await self._fix_timeout_error(sample)
 
             elif "connection" in error_msg or "connect" in error_msg:
-                fix_record.fix_action = "尝试重置连接"
+                fix_record.fix_action = "Attempt to reset connection"
                 success = await self._fix_connection_error(sample)
 
             elif "cache" in error_msg or "corrupt" in error_msg:
-                fix_record.fix_action = "清理缓存"
+                fix_record.fix_action = "Clean cache"
                 success = await self._fix_cache_error(sample)
 
             else:
-                fix_record.fix_action = "无法自动修复"
+                fix_record.fix_action = "Cannot auto-fix"
                 success = False
 
-            # 验证修复
+            # Verify fix
             if success:
                 verified, result = await self._verify_fix(component)
                 fix_record.verified = verified
@@ -1494,24 +1494,24 @@ Rules:
                 fix_record.success = False
 
         except Exception as e:
-            fix_record.fix_action = f"修复失败: {str(e)}"
+            fix_record.fix_action = f"Fix failed: {str(e)}"
             fix_record.success = False
 
         return fix_record
 
-    # ==================== 降级修复方法（备用） ====================
-    # 以下方法为旧的硬编码修复逻辑，现在主要通过 Agent 执行修复
-    # 保留这些方法作为降级备用或快速修复场景使用
+    # ==================== Fallback fix methods (backup) ====================
+    # The following methods are the old hardcoded fix logic; fixes now primarily execute via Agent
+    # These methods are retained for fallback backup or quick-fix scenarios
 
     async def _fix_permission_error(self, sample) -> bool:
-        """[降级备用] 修复权限错误"""
-        # 提取文件路径
+        """[Fallback backup] Fix permission error"""
+        # Extract file path
 
-        # 尝试修复 data 目录权限
+        # Try to fix data directory permissions
         data_dir = settings.project_root / "data"
         if data_dir.exists():
             try:
-                # Windows 下使用 icacls，Linux 下使用 chmod
+                # Use icacls on Windows, chmod on Linux
                 import platform
 
                 if platform.system() == "Windows":
@@ -1526,8 +1526,8 @@ Rules:
         return False
 
     async def _fix_missing_file_error(self, sample) -> bool:
-        """[降级备用] 修复缺失文件/目录错误"""
-        # 确保常用目录存在
+        """[Fallback backup] Fix missing file/directory error"""
+        # Ensure common directories exist
         dirs_to_check = [
             settings.project_root / "data",
             settings.project_root / "data" / "cache",
@@ -1549,16 +1549,16 @@ Rules:
         return created
 
     async def _fix_timeout_error(self, sample) -> bool:
-        """[降级备用] 修复超时错误（清理僵尸进程）"""
+        """[Fallback backup] Fix timeout error (clean up zombie processes)"""
         try:
             import platform
 
             if platform.system() == "Windows":
-                # Windows 下杀死可能的僵尸 Python 进程（谨慎）
-                # 这里只是示例，实际需要更精确的筛选
+                # On Windows, kill potentially zombie Python processes (with care)
+                # This is just an example; actual filtering needs to be more precise
                 pass
             else:
-                # Linux/Mac 下清理僵尸进程
+                # On Linux/Mac, clean up zombie processes
                 await self.shell.run("pkill -9 -f 'openakita.*timeout' || true")
 
             return True
@@ -1566,13 +1566,13 @@ Rules:
             return False
 
     async def _fix_connection_error(self, sample) -> bool:
-        """[降级备用] 修复连接错误"""
-        # 对于连接错误，通常需要重试或切换端点
-        # 这里返回 False，让系统自然重试
+        """[Fallback backup] Fix connection error"""
+        # For connection errors, usually need to retry or switch endpoints
+        # Return False here and let the system retry naturally
         return False
 
     async def _fix_cache_error(self, sample) -> bool:
-        """[降级备用] 修复缓存错误（清理缓存）"""
+        """[Fallback backup] Fix cache error (clean cache)"""
         cache_dirs = [
             settings.project_root / "data" / "cache",
             settings.project_root / ".cache",
@@ -1594,12 +1594,12 @@ Rules:
         return cleaned
 
     async def _fix_config_error(self, sample) -> bool:
-        """[降级备用] 修复配置错误"""
-        # 确保配置目录和基本文件存在
+        """[Fallback backup] Fix config error"""
+        # Ensure config directories and basic files exist
         config_checks = [
-            (settings.identity_path, True),  # identity 目录
-            (settings.project_root / "data", True),  # data 目录
-            (settings.project_root / ".env", False),  # .env 文件（不自动创建）
+            (settings.identity_path, True),  # identity directory
+            (settings.project_root / "data", True),  # data directory
+            (settings.project_root / ".env", False),  # .env file (not auto-created)
         ]
 
         fixed = False
@@ -1616,57 +1616,57 @@ Rules:
 
     async def _verify_fix(self, component: str) -> tuple[bool, str]:
         """
-        验证修复是否成功
+        Verify whether the fix succeeded
 
         Args:
-            component: 组件名称
+            component: Component name
 
         Returns:
-            (是否通过, 验证结果描述)
+            (passed, verification result description)
         """
         try:
             if "tools.file" in component or "file" in component.lower():
-                # 测试文件读写
+                # Test file read/write
                 test_file = settings.project_root / "data" / "test_verify.tmp"
                 await self.file_tool.write(str(test_file), "verify_test")
                 content = await self.file_tool.read(str(test_file))
                 test_file.unlink(missing_ok=True)
 
                 if content == "verify_test":
-                    return True, "文件读写测试通过"
-                return False, f"文件读写测试失败: {content}"
+                    return True, "File read/write test passed"
+                return False, f"File read/write test failed: {content}"
 
             elif "tools.shell" in component or "shell" in component.lower():
-                # 测试 Shell 命令
+                # Test shell command
                 result = await self.shell.run("echo verify_test")
                 if result.returncode == 0 and "verify_test" in result.stdout:
-                    return True, "Shell 命令测试通过"
-                return False, f"Shell 命令测试失败: {result.stderr}"
+                    return True, "Shell command test passed"
+                return False, f"Shell command test failed: {result.stderr}"
 
             elif "tools.mcp" in component or "mcp" in component.lower():
-                # MCP 测试需要特殊处理
-                return True, "MCP 组件需要手动验证"
+                # MCP testing requires special handling
+                return True, "MCP component requires manual verification"
 
             elif "channel" in component.lower():
-                # 通道测试需要特殊处理
-                return True, "通道组件需要手动验证"
+                # Channel testing requires special handling
+                return True, "Channel component requires manual verification"
 
             else:
-                # 通用验证：检查目录是否存在
+                # Generic verification: check if directory exists
                 data_dir = settings.project_root / "data"
                 if data_dir.exists():
-                    return True, "数据目录检查通过"
-                return False, "数据目录不存在"
+                    return True, "Data directory check passed"
+                return False, "Data directory does not exist"
 
         except Exception as e:
-            return False, f"验证失败: {str(e)}"
+            return False, f"Verification failed: {str(e)}"
 
     def _save_daily_report(self, report: DailyReport) -> None:
-        """保存每日报告"""
+        """Save daily report"""
         selfcheck_dir = settings.selfcheck_dir
         selfcheck_dir.mkdir(parents=True, exist_ok=True)
 
-        # 保存 JSON 格式
+        # Save in JSON format
         json_file = selfcheck_dir / f"{report.date}_report.json"
         try:
             with open(json_file, "w", encoding="utf-8") as f:
@@ -1675,7 +1675,7 @@ Rules:
         except Exception as e:
             logger.error(f"Failed to save report JSON: {e}")
 
-        # 保存 Markdown 格式
+        # Save in Markdown format
         md_file = selfcheck_dir / f"{report.date}_report.md"
         try:
             with open(md_file, "w", encoding="utf-8") as f:
@@ -1686,16 +1686,16 @@ Rules:
 
     def get_pending_report(self) -> str | None:
         """
-        获取未提交的报告（供早上主动汇报）
+        Get unsubmitted report (for morning proactive reporting)
 
         Returns:
-            报告内容（Markdown），如果没有则返回 None
+            Report content (Markdown), or None if not available
         """
         selfcheck_dir = settings.selfcheck_dir
         if not selfcheck_dir.exists():
             return None
 
-        # 查找昨天的报告
+        # Look for yesterday's report
         yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
         json_file = selfcheck_dir / f"{yesterday}_report.json"
         md_file = selfcheck_dir / f"{yesterday}_report.md"
@@ -1707,16 +1707,16 @@ Rules:
             with open(json_file, encoding="utf-8") as f:
                 data = json.load(f)
 
-            # 检查是否已提交
+            # Check if already submitted
             if data.get("reported"):
                 return None
 
-            # 读取 Markdown 报告
+            # Read Markdown report
             if md_file.exists():
                 with open(md_file, encoding="utf-8") as f:
                     return f.read()
 
-            # 如果没有 MD 文件，从 JSON 生成
+            # If no MD file, generate from JSON
             report = DailyReport(
                 date=data["date"],
                 timestamp=datetime.fromisoformat(data["timestamp"]),
@@ -1738,13 +1738,13 @@ Rules:
 
     def mark_report_as_reported(self, date: str | None = None) -> bool:
         """
-        标记报告为已提交
+        Mark report as submitted
 
         Args:
-            date: 日期，默认昨天
+            date: Date; defaults to yesterday
 
         Returns:
-            是否成功
+            Whether successful
         """
         if not date:
             date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")

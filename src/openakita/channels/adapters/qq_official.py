@@ -1499,7 +1499,7 @@ class QQBotAdapter(ChannelAdapter):
                 )
                 result_id = result_id or media_id
 
-        # 循环发送剩余图片
+        # Loop through the remaining images
         for extra_img in message.content.images[1:]:
             extra_url = extra_img.url if extra_img.url else None
             extra_path = extra_img.local_path if not extra_url and extra_img.local_path else None
@@ -1523,7 +1523,7 @@ class QQBotAdapter(ChannelAdapter):
             except Exception as e:
                 logger.warning(f"QQ: send extra image failed: {e}")
 
-        # 发送文件附件 (file_type=4, 频道不支持)
+        # Send file attachments (file_type=4, not supported by channels)
         if chat_type != "channel":
             for file_media in message.content.files:
                 file_url = file_media.url if file_media.url else None
@@ -1554,14 +1554,14 @@ class QQBotAdapter(ChannelAdapter):
         caption: str | None = None,
         **kwargs,
     ) -> str:
-        """发送文件（file_type=4），支持群聊和 C2C。
+        """Send a file (file_type=4), supported for groups and C2C.
 
-        优先将本地文件转为公网 URL 上传（QQ API 可从 URL 获取扩展名），
-        当 public_api_url 未配置时降级为 base64 上传（QQ 可能无法识别文件类型）。
+        Prefers converting the local file into a public URL for upload (QQ API can derive the extension from the URL);
+        falls back to base64 upload when public_api_url is not configured (QQ may fail to recognize the file type).
         """
         chat_type = self._resolve_chat_type(chat_id)
         if chat_type == "channel":
-            raise NotImplementedError("QQ 频道暂不支持通过富媒体 API 发送文件")
+            raise NotImplementedError("Sending files via the rich-media API is not currently supported for QQ channels")
         msg_id = self._resolve_msg_id(chat_id)
 
         if caption:
@@ -1570,7 +1570,7 @@ class QQBotAdapter(ChannelAdapter):
             except Exception as e:
                 logger.warning(f"QQ: send file caption failed: {e}")
 
-        # 优先走 URL 上传：QQ 从 URL 路径识别扩展名，文件可正常打开
+        # Prefer URL upload: QQ derives the extension from the URL path so the file opens properly
         public_url = self._local_path_to_public_url(file_path)
         if public_url:
             return await self._send_rich_media(
@@ -1581,7 +1581,7 @@ class QQBotAdapter(ChannelAdapter):
                 msg_id=msg_id,
             )
 
-        # 降级：base64 上传（QQ 无法从二进制推断文件扩展名，接收方可能无法打开）
+        # Fallback: base64 upload (QQ cannot infer the extension from binary data, so the recipient may be unable to open it)
         if not self.public_api_url:
             logger.warning(
                 "QQ: send_file falling back to base64 upload — "
@@ -1602,11 +1602,11 @@ class QQBotAdapter(ChannelAdapter):
         voice_path: str,
         caption: str | None = None,
     ) -> str:
-        """发送语音消息 (file_type=3, SILK 格式 + base64 上传)。
+        """Send a voice message (file_type=3, SILK format + base64 upload).
 
-        QQ 官方 API 语音要求 SILK 格式。自动检测输入格式:
-        - .silk/.slk 文件直接上传
-        - 其他格式尝试用 pilk 转码为 SILK
+        The QQ Official API requires SILK format for voice. Input format is auto-detected:
+        - .silk/.slk files are uploaded directly
+        - Other formats are transcoded to SILK via pilk
         """
         import base64 as b64
         from pathlib import Path as _Path
@@ -1617,7 +1617,7 @@ class QQBotAdapter(ChannelAdapter):
 
         chat_type = self._resolve_chat_type(chat_id)
         if chat_type == "channel":
-            raise NotImplementedError("QQ 频道暂不支持语音发送")
+            raise NotImplementedError("Sending voice is not currently supported for QQ channels")
         msg_id = self._resolve_msg_id(chat_id)
 
         ext = src.suffix.lower()
@@ -1659,7 +1659,7 @@ class QQBotAdapter(ChannelAdapter):
                     if tmp_silk:
                         _Path(tmp_silk).unlink(missing_ok=True)
             except ImportError:
-                raise ImportError("pilk 未安装，无法将音频转为 SILK 格式。请运行: pip install pilk")
+                raise ImportError("pilk is not installed, unable to transcode audio to SILK format. Run: pip install pilk")
 
         if not silk_data:
             raise RuntimeError("Failed to prepare SILK voice data")
@@ -1687,21 +1687,21 @@ class QQBotAdapter(ChannelAdapter):
             msg_id,
         )
 
-    # ==================== Typing 提示 ====================
+    # ==================== Typing indicator ====================
 
     async def send_typing(self, chat_id: str, thread_id: str | None = None) -> None:
-        """发送输入状态提示。
+        """Send a typing-status indicator.
 
-        C2C 单聊先发 msg_type=6 原生输入状态通知（每次调用续期），同时发送
-        一条可见的"正在思考中..."占位消息（幂等，只发一次），在 clear_typing 时撤回。
-        群聊/频道使用 msg_type=0 文本消息"正在思考中..."（幂等，只发一次）。
+        C2C direct chats first send a native msg_type=6 typing notification (renewed on each call) and also
+        send a visible "Thinking..." placeholder message (idempotent, sent once) that is recalled on clear_typing.
+        Group chats/channels use an msg_type=0 "Thinking..." text message (idempotent, sent once).
         """
         if chat_id not in self._typing_start_time:
             self._typing_start_time[chat_id] = time.time()
 
         chat_type = self._resolve_chat_type(chat_id)
 
-        # C2C: 使用 msg_type=6 输入状态通知，每 4 秒续期一次
+        # C2C: use msg_type=6 typing notification, renewed every 4 seconds
         if chat_type == "c2c":
             self._typing_c2c_active.add(chat_id)
             try:
@@ -1709,7 +1709,7 @@ class QQBotAdapter(ChannelAdapter):
             except Exception as e:
                 logger.debug(f"QQ Official Bot: send_typing (input_notify) failed: {e}")
 
-        # 群聊/频道/C2C: 幂等发送文本消息
+        # Group/channel/C2C: idempotent text message send
         if chat_id in self._typing_msg_ids:
             return
 
@@ -1724,7 +1724,7 @@ class QQBotAdapter(ChannelAdapter):
             logger.debug(f"QQ Official Bot: send_typing failed: {e}")
 
     async def _send_input_notify(self, chat_id: str) -> None:
-        """C2C 发送 msg_type=6 输入状态通知（QQ 客户端显示"对方正在输入..."）。"""
+        """Send a C2C msg_type=6 typing notification (QQ client shows "The other party is typing...")."""
         import httpx as hx
 
         headers = await self._build_api_headers()
@@ -1751,7 +1751,7 @@ class QQBotAdapter(ChannelAdapter):
         chat_type: str,
         msg_id: str | None,
     ) -> str:
-        """通过 HTTP API 发送思考提示"""
+        """Send a thinking indicator via the HTTP API."""
         try:
             import httpx as hx
         except ImportError:
@@ -1760,7 +1760,7 @@ class QQBotAdapter(ChannelAdapter):
         headers = await self._build_api_headers()
         base_url = self._api_base_url()
 
-        body: dict[str, Any] = {"msg_type": 0, "content": "正在思考中..."}
+        body: dict[str, Any] = {"msg_type": 0, "content": "Thinking..."}
         if msg_id:
             body["msg_id"] = msg_id
         seq_key = msg_id or chat_id
@@ -1780,12 +1780,13 @@ class QQBotAdapter(ChannelAdapter):
             return str(data.get("id", ""))
 
     async def clear_typing(self, chat_id: str, thread_id: str | None = None) -> None:
-        """清除输入状态提示。
+        """Clear the typing-status indicator.
 
-        仅清理内部状态标记，不撤回"正在思考中..."占位消息。
-        QQ IM 不支持折叠思考过程，撤回反而会显示"对方撤回了一条消息"，
-        保留占位消息作为思考过程的可见指示更合理。
-        C2C 的 msg_type=6 输入状态通知自动过期。
+        Only clears internal state flags; the "Thinking..." placeholder message is not recalled.
+        QQ IM doesn't support collapsing the thinking process, and recalling the message would display
+        "The other party recalled a message," so keeping the placeholder as a visible indication of the
+        thinking process is preferable.
+        C2C's msg_type=6 typing notification expires automatically.
         """
         self._typing_c2c_active.discard(chat_id)
         self._typing_start_time.pop(chat_id, None)
@@ -1797,7 +1798,7 @@ class QQBotAdapter(ChannelAdapter):
         chat_type: str,
         message_id: str,
     ) -> None:
-        """通过 HTTP API 撤回消息"""
+        """Recall a message via the HTTP API."""
         try:
             import httpx as hx
         except ImportError:
@@ -1816,13 +1817,13 @@ class QQBotAdapter(ChannelAdapter):
         async with hx.AsyncClient(base_url=base_url, headers=headers) as client:
             await client.delete(url)
 
-    # ==================== 媒体下载/上传 ====================
+    # ==================== Media download/upload ====================
 
     async def download_media(self, media: MediaFile) -> Path:
-        """下载媒体文件。
+        """Download a media file.
 
-        语音文件优先使用 voice_wav_url（WAV 格式，STT 兼容性更好）。
-        所有请求携带 Bot Token 鉴权头以防 QQ CDN 要求验证。
+        For voice, voice_wav_url is preferred (WAV format offers better STT compatibility).
+        All requests carry the Bot Token auth header in case the QQ CDN requires verification.
         """
         if media.local_path and Path(media.local_path).exists():
             return Path(media.local_path)
@@ -1863,7 +1864,7 @@ class QQBotAdapter(ChannelAdapter):
             return local_path
 
     async def upload_media(self, path: Path, mime_type: str) -> MediaFile:
-        """上传媒体文件"""
+        """Upload a media file."""
         return MediaFile.create(
             filename=path.name,
             mime_type=mime_type,

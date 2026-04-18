@@ -1,18 +1,18 @@
 """
-Prompt Builder - 消息组装模块
+Prompt Builder - message assembly module
 
-组装最终的系统提示词，整合编译产物、清单和记忆。
+Assembles the final system prompt by integrating compiled artifacts, catalogs, and memory.
 
-组装顺序:
-1. Base Prompt: per-model 基础指令
-2. Core Rules: 行为规则 + 提问准则 + 安全约束
+Assembly order:
+1. Base Prompt: per-model base instructions
+2. Core Rules: behavior rules + questioning guidelines + safety constraints
 3. Identity: SOUL.md + agent.core
-4. Mode Rules: Ask/Plan/Agent 模式专属规则
-5. Persona 层: 当前人格描述
-6. Runtime 层: runtime_facts (OS/CWD/时间)
-7. Catalogs 层: tools + skills + mcp 清单
-8. Memory 层: retriever 输出
-9. User 层: user.summary
+4. Mode Rules: rules specific to Ask/Plan/Agent modes
+5. Persona layer: current persona description
+6. Runtime layer: runtime_facts (OS/CWD/time)
+7. Catalogs layer: tools + skills + mcp catalogs
+8. Memory layer: retriever output
+9. User layer: user.summary
 """
 
 import logging
@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Per-section 缓存 — 静态段跨轮缓存，动态段每轮重算
+# Per-section cache — static sections are cached across turns; dynamic sections are recomputed every turn
 # ---------------------------------------------------------------------------
 _section_cache: dict[str, str | None] = {}
 _STATIC_SECTIONS = frozenset(
@@ -61,7 +61,7 @@ def _cached_section(
     *,
     force_recompute: bool = False,
 ) -> str | None:
-    """Per-section 内存缓存。静态段缓存到 clear，动态段每轮重算。"""
+    """Per-section in-memory cache. Static sections persist until clear; dynamic sections are recomputed every turn."""
     if name in _STATIC_SECTIONS and not force_recompute:
         cached = _section_cache.get(name)
         if cached is not None:
@@ -73,7 +73,7 @@ def _cached_section(
 
 
 def clear_prompt_section_cache() -> None:
-    """清除所有 section 缓存。在 /clear、context compression、identity 文件变更时调用。"""
+    """Clear all section caches. Called on /clear, context compression, or identity file changes."""
     _section_cache.clear()
     _static_prompt_cache.clear()
     global _runtime_section_cache
@@ -100,8 +100,8 @@ def _apply_plugin_prompt_hooks(prompt: str) -> str:
     return prompt
 
 
-# 静态/动态边界标记（借鉴 Claude Code 的 SYSTEM_PROMPT_DYNAMIC_BOUNDARY）
-# 用于 LLM API 缓存优化：标记之前的内容在 session 内不变，可缓存。
+# Static/dynamic boundary marker (borrowed from Claude Code's SYSTEM_PROMPT_DYNAMIC_BOUNDARY)
+# Used for LLM API cache optimization: content before the marker is stable within a session and can be cached.
 SYSTEM_PROMPT_DYNAMIC_BOUNDARY = "<!-- DYNAMIC_BOUNDARY -->"
 
 
@@ -121,18 +121,18 @@ def split_static_dynamic(prompt: str) -> tuple[str, str]:
 
 
 class PromptMode(Enum):
-    """Prompt 注入级别，控制子 agent 的提示词精简程度"""
+    """Prompt injection level; controls how much the sub-agent prompt is trimmed"""
 
-    FULL = "full"  # 主 agent：所有段落
-    MINIMAL = "minimal"  # 子 agent：仅 Core Rules + Runtime + Catalogs
-    NONE = "none"  # 极简：仅一行身份声明
+    FULL = "full"  # Main agent: all sections
+    MINIMAL = "minimal"  # Sub-agent: only Core Rules + Runtime + Catalogs
+    NONE = "none"  # Minimal: a single-line identity declaration
 
 
 class PromptProfile(Enum):
-    """产品场景 profile，决定注入哪些类别的内容。
+    """Product scenario profile; decides which categories of content to inject.
 
-    org_agent 不在此枚举中——组织场景通过
-    _override_system_prompt_for_org() 完全绕过此管线。
+    org_agent is not in this enum — organizational scenarios fully bypass this pipeline
+    via _override_system_prompt_for_org().
     """
 
     CONSUMER_CHAT = "consumer_chat"
@@ -141,7 +141,7 @@ class PromptProfile(Enum):
 
 
 class PromptTier(Enum):
-    """上下文窗口分档，决定注入深度。"""
+    """Context window tier; determines injection depth."""
 
     SMALL = "small"  # <8K context
     MEDIUM = "medium"  # 8K-32K
@@ -149,7 +149,7 @@ class PromptTier(Enum):
 
 
 def resolve_tier(context_window: int) -> PromptTier:
-    """根据模型上下文窗口大小判定 tier。"""
+    """Determine the tier based on the model's context window size."""
     if context_window <= 0 or context_window > 64000:
         return PromptTier.LARGE
     if context_window < 8000:
@@ -160,11 +160,11 @@ def resolve_tier(context_window: int) -> PromptTier:
 
 
 # ---------------------------------------------------------------------------
-# 核心行为规则（代码硬编码，升级自动生效，用户不可删除）
-# 合并自原 _SYSTEM_POLICIES + _DEFAULT_USER_POLICIES，消除冗余。
-# 提问准则提升到最前，正面指引优先。
+# Core behavior rules (hard-coded; upgrades take effect automatically; users cannot delete them)
+# Merged from the original _SYSTEM_POLICIES + _DEFAULT_USER_POLICIES to remove redundancy.
+# Questioning guidelines are moved to the top — positive guidance takes priority.
 # ---------------------------------------------------------------------------
-# _ALWAYS_ON_RULES: 所有 profile/tier 都注入 (~350 token)
+# _ALWAYS_ON_RULES: injected for every profile/tier (~350 tokens)
 _ALWAYS_ON_RULES = """\
 ## Language Rules (highest priority)
 - **Always respond in English.** Do not switch to another language unless the user explicitly writes to you in that language first.
@@ -214,7 +214,7 @@ Before executing an operation, assess its reversibility and impact scope:
 - Do not claim "everything is fine" when problems exist
 - The goal is **accurate reporting**, not defensive reporting"""
 
-# _EXTENDED_RULES: 仅在 LOCAL_AGENT profile 或 MEDIUM/LARGE tier 时注入 (~600 token)
+# _EXTENDED_RULES: injected only for the LOCAL_AGENT profile or MEDIUM/LARGE tier (~600 tokens)
 _EXTENDED_RULES = """\
 ## Task Management
 
@@ -284,8 +284,8 @@ Completion Standards:
 
 
 # ---------------------------------------------------------------------------
-# 安全约束（独立段落，不受 SOUL.md 编辑影响）
-# 参考 OpenClaw/Anthropic Constitution 风格
+# Safety constraints (standalone section, unaffected by SOUL.md edits)
+# Inspired by OpenClaw/Anthropic Constitution style
 # ---------------------------------------------------------------------------
 _SAFETY_SECTION = """\
 ## Safety Constraints
@@ -308,9 +308,9 @@ When a tool call is rejected by a safety policy or requires user confirmation:
 
 
 # ---------------------------------------------------------------------------
-# AGENTS.md — 项目级开发规范（行业标准，https://agents.md）
-# 从当前工作目录向上查找，自动注入系统提示词。
-# 非代码项目不会有此文件，读取逻辑静默跳过。
+# AGENTS.md — project-level development guidelines (industry standard, https://agents.md)
+# Searches upward from the current working directory and auto-injects into the system prompt.
+# Non-code projects won't have this file; the read logic silently skips.
 # ---------------------------------------------------------------------------
 _agents_md_cache: dict[str, tuple[float, str | None]] = {}
 _AGENTS_MD_CACHE_TTL = 60.0
@@ -432,31 +432,31 @@ def build_system_prompt(
     prompt_tier: "PromptTier | None" = None,
 ) -> str:
     """
-    组装系统提示词
+    Assemble the system prompt
 
     Args:
-        identity_dir: identity 目录路径
-        tools_enabled: 是否启用工具
-        tool_catalog: ToolCatalog 实例
-        skill_catalog: SkillCatalog 实例
-        mcp_catalog: MCPCatalog 实例
-        memory_manager: MemoryManager 实例
-        task_description: 任务描述（用于记忆检索）
-        budget_config: 预算配置
-        include_tools_guide: 是否包含工具使用指南
-        session_type: 会话类型 "cli" 或 "im"
-        precomputed_memory: 预计算的记忆文本
-        persona_manager: PersonaManager 实例
-        is_sub_agent: 是否是子 agent（向后兼容）
-        memory_keywords: 记忆检索关键词
-        prompt_mode: 提示词注入级别 (full/minimal/none)
-        mode: 当前模式 (ask/plan/agent)
-        model_id: 模型标识（用于 per-model 基础 prompt）
-        prompt_profile: 产品场景 profile（None 回退到 LOCAL_AGENT）
-        prompt_tier: 上下文窗口分档（None 回退到 LARGE）
+        identity_dir: Path to the identity directory
+        tools_enabled: Whether tools are enabled
+        tool_catalog: ToolCatalog instance
+        skill_catalog: SkillCatalog instance
+        mcp_catalog: MCPCatalog instance
+        memory_manager: MemoryManager instance
+        task_description: Task description (used for memory retrieval)
+        budget_config: Budget configuration
+        include_tools_guide: Whether to include the tool usage guide
+        session_type: Session type, "cli" or "im"
+        precomputed_memory: Precomputed memory text
+        persona_manager: PersonaManager instance
+        is_sub_agent: Whether this is a sub-agent (backward compatible)
+        memory_keywords: Memory retrieval keywords
+        prompt_mode: Prompt injection level (full/minimal/none)
+        mode: Current mode (ask/plan/agent)
+        model_id: Model identifier (used for per-model base prompt)
+        prompt_profile: Product scenario profile (falls back to LOCAL_AGENT when None)
+        prompt_tier: Context window tier (falls back to LARGE when None)
 
     Returns:
-        完整的系统提示词
+        The complete system prompt
     """
     # Resolve profile & tier defaults
     _profile = prompt_profile or PromptProfile.LOCAL_AGENT
@@ -465,11 +465,11 @@ def build_system_prompt(
     if budget_config is None:
         budget_config = BudgetConfig()
 
-    # 向后兼容 skip_catalogs：映射到 profile 体系
+    # Backward compatibility for skip_catalogs: map into the profile system
     if skip_catalogs and _profile == PromptProfile.LOCAL_AGENT:
         _profile = PromptProfile.CONSUMER_CHAT
 
-    # 向后兼容：is_sub_agent=True 且无显式 prompt_mode 时，使用 MINIMAL
+    # Backward compatibility: when is_sub_agent=True without an explicit prompt_mode, use MINIMAL
     if prompt_mode is None:
         prompt_mode = PromptMode.MINIMAL if is_sub_agent else PromptMode.FULL
 
@@ -485,13 +485,13 @@ def build_system_prompt(
     if base_prompt:
         system_parts.append(base_prompt)
 
-    # 2. Core Rules — ALWAYS_ON 始终注入；EXTENDED 按 profile/tier 决定
+    # 2. Core Rules — ALWAYS_ON is always injected; EXTENDED depends on profile/tier
     system_parts.append(_ALWAYS_ON_RULES)
     system_parts.append(_SAFETY_SECTION)
     if _profile == PromptProfile.LOCAL_AGENT or _tier != PromptTier.SMALL:
         system_parts.append(_EXTENDED_RULES)
 
-    # 3. 检查并加载编译产物（带缓存）
+    # 3. Check and load compiled artifacts (with caching)
     _id_dir_key = str(identity_dir)
     _compiled_cache = _static_prompt_cache.get(f"compiled:{_id_dir_key}")
     _now_ts = time.time()
@@ -504,7 +504,7 @@ def build_system_prompt(
         compiled = get_compiled_content(identity_dir)
         _static_prompt_cache[f"compiled:{_id_dir_key}"] = (_now_ts, compiled)
 
-    # 4. Identity 层（SOUL.md + agent.core）
+    # 4. Identity layer (SOUL.md + agent.core)
     if prompt_mode == PromptMode.FULL:
         identity_section = _cached_section(
             "identity",
@@ -522,7 +522,7 @@ def build_system_prompt(
         if identity_section:
             system_parts.append(identity_section)
 
-        # Persona 层
+        # Persona layer
         if persona_manager:
             persona_section = _build_persona_section(persona_manager)
             if persona_section:
@@ -531,16 +531,16 @@ def build_system_prompt(
     elif prompt_mode == PromptMode.NONE:
         system_parts.append("You are OpenAkita, an AI assistant.")
 
-    # 5. Mode Rules（Ask/Plan/Agent 模式专属规则）
+    # 5. Mode Rules (rules specific to Ask/Plan/Agent modes)
     mode_rules = build_mode_rules(mode)
     if mode_rules:
         system_parts.append(mode_rules)
 
-    # 6. Runtime 层（所有 prompt_mode 都注入）
+    # 6. Runtime layer (injected for all prompt_mode values)
     runtime_section = _build_runtime_section()
     system_parts.append(runtime_section)
 
-    # 6.5 会话元数据（session_context 和 model_display_name）
+    # 6.5 Session metadata (session_context and model_display_name)
     session_meta = _build_session_metadata_section(
         session_context=session_context,
         model_display_name=model_display_name,
@@ -548,7 +548,7 @@ def build_system_prompt(
     if session_meta:
         system_parts.append(session_meta)
 
-    # 6.6 架构概况（powered by {model}，区分主/子 Agent）
+    # 6.6 Architecture overview (powered by {model}; distinguishes main/sub agent)
     from ..config import settings as _arch_settings
 
     arch_section = _build_arch_section(
@@ -559,10 +559,10 @@ def build_system_prompt(
     if arch_section:
         system_parts.append(arch_section)
 
-    # 7. 会话类型规则
+    # 7. Session type rules
     if prompt_mode in (PromptMode.FULL, PromptMode.MINIMAL):
         if mode == "ask":
-            # Ask 模式：仅注入核心对话约定（时间戳/[最新消息]/系统消息识别）
+            # Ask mode: inject only core conversation conventions (timestamps / [Latest Message] / system message recognition)
             core_rules = _build_conversation_context_rules()
             if core_rules:
                 developer_parts.append(core_rules)
@@ -572,7 +572,7 @@ def build_system_prompt(
             if session_rules:
                 developer_parts.append(session_rules)
 
-    # 8. 项目 AGENTS.md（FULL 和 MINIMAL 都注入，ask 模式跳过——纯聊天不需要开发规范）
+    # 8. Project AGENTS.md (injected for both FULL and MINIMAL; skipped in ask mode — pure chat doesn't need dev guidelines)
     if prompt_mode in (PromptMode.FULL, PromptMode.MINIMAL) and mode != "ask":
         agents_md_content = _cached_section("agents_md", _read_agents_md)
         if agents_md_content:
@@ -585,7 +585,7 @@ def build_system_prompt(
                 + agents_md_content
             )
 
-    # 9. Catalogs 层（skip_catalogs=True 时完全跳过，CHAT 意图无需工具描述）
+    # 9. Catalogs layer (fully skipped when skip_catalogs=True; CHAT intent needs no tool descriptions)
     if not skip_catalogs:
         _msg_count = 0
         if session_context:
@@ -605,7 +605,7 @@ def build_system_prompt(
         if catalogs_section:
             tool_parts.append(catalogs_section)
 
-    # 9.5 Skill Recommendation Hint（CONSUMER_CHAT / IM_ASSISTANT 时注入动态 hint）
+    # 9.5 Skill Recommendation Hint (inject dynamic hint for CONSUMER_CHAT / IM_ASSISTANT)
     if (
         _profile in (PromptProfile.CONSUMER_CHAT, PromptProfile.IM_ASSISTANT)
         and skill_catalog
@@ -625,7 +625,7 @@ def build_system_prompt(
         except Exception:
             pass
 
-    # 10. Memory 层（仅 FULL 模式）
+    # 10. Memory layer (FULL mode only)
     if prompt_mode == PromptMode.FULL:
         if precomputed_memory is not None:
             memory_section = precomputed_memory
@@ -650,7 +650,7 @@ def build_system_prompt(
         if memory_section:
             developer_parts.append(memory_section)
 
-    # 11. User 层（仅 FULL 模式）
+    # 11. User layer (FULL mode only)
     if prompt_mode == PromptMode.FULL:
         user_section = _build_user_section(
             compiled=compiled,
@@ -660,14 +660,14 @@ def build_system_prompt(
         if user_section:
             user_parts.append(user_section)
 
-    # 组装最终提示词
+    # Assemble the final prompt
     sections: list[str] = []
     if system_parts:
         sections.append("## System\n\n" + "\n\n".join(system_parts))
 
     # === STATIC / DYNAMIC BOUNDARY ===
-    # 上方 system_parts 在 session 内不变（Rules + Safety + Identity + Persona + Mode rules + Runtime）
-    # 下方 developer_parts / tool_parts / user_parts 每轮可能变化
+    # system_parts above is stable within a session (Rules + Safety + Identity + Persona + Mode rules + Runtime)
+    # developer_parts / tool_parts / user_parts below may change every turn
     sections.append(SYSTEM_PROMPT_DYNAMIC_BOUNDARY)
 
     if developer_parts:
@@ -691,15 +691,15 @@ def build_system_prompt(
 
 def _build_persona_section(persona_manager: "PersonaManager") -> str:
     """
-    构建 Persona 层
+    Build the Persona layer
 
-    位于 Identity 和 Runtime 之间，注入当前人格描述。
+    Sits between Identity and Runtime; injects the current persona description.
 
     Args:
-        persona_manager: PersonaManager 实例
+        persona_manager: PersonaManager instance
 
     Returns:
-        人格描述文本
+        Persona description text
     """
     try:
         return persona_manager.get_persona_prompt_section()
@@ -709,9 +709,9 @@ def _build_persona_section(persona_manager: "PersonaManager") -> str:
 
 
 def _select_base_prompt(model_id: str) -> str:
-    """根据模型 ID 选择 per-model 基础提示词。
+    """Select the per-model base prompt based on the model ID.
 
-    查找 prompt/models/ 目录下的 .txt 文件，按模型族匹配。
+    Looks for .txt files under prompt/models/ and matches by model family.
     """
     if not model_id:
         return ""
@@ -722,7 +722,7 @@ def _select_base_prompt(model_id: str) -> str:
 
     model_lower = model_id.lower()
 
-    # 按模型族匹配
+    # Match by model family
     if any(k in model_lower for k in ("claude", "anthropic")):
         target = "anthropic.txt"
     elif any(k in model_lower for k in ("gpt", "o1", "o3", "o4", "chatgpt")):
@@ -866,7 +866,7 @@ The user expects planning before execution. Even if the user asks to edit a file
 
 
 # ---------------------------------------------------------------------------
-# 内置默认内容 — 仅当源文件不存在时使用，绝不覆盖用户文件
+# Built-in defaults — used only when source files don't exist; never overrides user files
 # ---------------------------------------------------------------------------
 _BUILT_IN_DEFAULTS: dict[str, str] = {
     "soul": """\
@@ -894,10 +894,10 @@ You are OpenAkita, an all-capable, self-evolving AI assistant. Your mission is t
 
 
 def _read_with_fallback(path: Path, fallback_key: str) -> str:
-    """读取源文件，文件不存在或为空时使用内置默认。
+    """Read a source file; fall back to the built-in default when missing or empty.
 
-    链路 1（主链路）：读源文件 → 用户修改立即生效
-    链路 2（兜底链路）：源文件缺失 → 用内置默认保证基本功能
+    Path 1 (primary): read the source file → user edits take effect immediately
+    Path 2 (fallback): source file missing → built-in defaults preserve basic functionality
     """
     try:
         if path.exists():
@@ -919,11 +919,11 @@ def _build_identity_section(
     tools_enabled: bool,
     budget_tokens: int,
 ) -> str:
-    """构建 Identity 层 — 双链路设计
+    """Build the Identity layer — dual-path design
 
-    SOUL.md / AGENT.md 直接注入源文件（不编译不转换），用户修改立即生效。
-    源文件缺失时使用 _BUILT_IN_DEFAULTS 兜底。
-    用户自定义策略（policies.md）如存在则追加。
+    SOUL.md / AGENT.md are injected directly from the source files (no compilation or transformation); user edits take effect immediately.
+    When source files are missing, _BUILT_IN_DEFAULTS is used as a fallback.
+    User-defined policies (policies.md), if present, are appended.
     """
     import re
 
@@ -932,7 +932,7 @@ def _build_identity_section(
     parts.append("# OpenAkita System")
     parts.append("")
 
-    # SOUL — 直接注入（~60% 预算）
+    # SOUL — injected directly (~60% budget)
     soul_content = _read_with_fallback(identity_dir / "SOUL.md", "soul")
     if soul_content:
         soul_clean = re.sub(r"<!--.*?-->", "", soul_content, flags=re.DOTALL).strip()
@@ -940,7 +940,7 @@ def _build_identity_section(
         parts.append(soul_result.content)
         parts.append("")
 
-    # AGENT — 直接注入（~25% 预算）
+    # AGENT — injected directly (~25% budget)
     agent_content = _read_with_fallback(identity_dir / "AGENT.md", "agent_core")
     if agent_content:
         agent_clean = re.sub(r"<!--.*?-->", "", agent_content, flags=re.DOTALL).strip()
@@ -948,7 +948,7 @@ def _build_identity_section(
         parts.append(core_result.content)
         parts.append("")
 
-    # User policies (~15%) — 用户自定义策略文件
+    # User policies (~15%) — user-defined policy file
     policies_path = identity_dir / "prompts" / "policies.md"
     if policies_path.exists():
         try:
@@ -965,7 +965,7 @@ def _build_identity_section(
 
 
 def _get_current_time(timezone_name: str = "Asia/Shanghai") -> str:
-    """获取指定时区的当前时间，避免依赖服务器本地时区"""
+    """Get the current time in the specified timezone, avoiding reliance on the server's local timezone"""
     from datetime import timedelta, timezone
 
     try:
@@ -982,7 +982,7 @@ _RUNTIME_CACHE_TTL = 30.0
 
 
 def _build_runtime_section() -> str:
-    """构建 Runtime 层，带 30s TTL 缓存（减少 which_command 等 I/O）。"""
+    """Build the Runtime layer with a 30s TTL cache (reduces which_command and other I/O)."""
     global _runtime_section_cache
     cwd = os.getcwd()
     now = _time.monotonic()
@@ -996,7 +996,7 @@ def _build_runtime_section() -> str:
 
 
 def _build_runtime_section_uncached() -> str:
-    """构建 Runtime 层（运行时信息）"""
+    """Build the Runtime layer (runtime information)"""
     import locale as _locale
     import sys as _sys
 
@@ -1011,7 +1011,7 @@ def _build_runtime_section_uncached() -> str:
 
     current_time = _get_current_time(settings.scheduler_timezone)
 
-    # --- 部署模式与 Python 环境 ---
+    # --- Deployment mode and Python environment ---
     deploy_mode = _detect_deploy_mode()
     ext_python = get_python_executable()
     pip_ok = can_pip_install()
@@ -1019,7 +1019,7 @@ def _build_runtime_section_uncached() -> str:
 
     python_info = _build_python_info(IS_FROZEN, ext_python, pip_ok, settings, venv_path)
 
-    # --- 版本号 ---
+    # --- Version ---
     try:
         from .. import get_version_string
 
@@ -1027,38 +1027,38 @@ def _build_runtime_section_uncached() -> str:
     except Exception:
         version_str = "unknown"
 
-    # --- 工具可用性 ---
+    # --- Tool availability ---
     tool_status = []
     try:
         browser_lock = settings.project_root / "data" / "browser.lock"
         if browser_lock.exists():
-            tool_status.append("- **浏览器**: 可能已启动（检测到 lock 文件）")
+            tool_status.append("- **Browser**: May be running (lock file detected)")
         else:
-            tool_status.append("- **浏览器**: 未启动（需要先调用 browser_open）")
+            tool_status.append("- **Browser**: Not running (call browser_open first)")
     except Exception:
-        tool_status.append("- **浏览器**: 状态未知")
+        tool_status.append("- **Browser**: Status unknown")
 
     try:
         mcp_config = settings.project_root / "data" / "mcp_servers.json"
         if mcp_config.exists():
-            tool_status.append("- **MCP 服务**: 配置已存在")
+            tool_status.append("- **MCP services**: Configuration present")
         else:
-            tool_status.append("- **MCP 服务**: 未配置")
+            tool_status.append("- **MCP services**: Not configured")
     except Exception:
-        tool_status.append("- **MCP 服务**: 状态未知")
+        tool_status.append("- **MCP services**: Status unknown")
 
-    tool_status_text = "\n".join(tool_status) if tool_status else "- 工具状态: 正常"
+    tool_status_text = "\n".join(tool_status) if tool_status else "- Tool status: OK"
 
-    # --- Shell 提示 ---
+    # --- Shell hint ---
     shell_hint = ""
     if platform.system() == "Windows":
         shell_hint = (
-            "\n- **Shell 注意**: Windows 环境，复杂文本处理（正则匹配、JSON/HTML 解析、批量文件操作）"
-            "请使用 `write_file` 写 Python 脚本 + `run_shell python xxx.py` 执行，避免 PowerShell 转义问题。"
-            "简单系统查询（进程/服务/文件列表）可直接使用 PowerShell cmdlet。"
+            "\n- **Shell note**: On Windows, for complex text processing (regex matching, JSON/HTML parsing, batch file operations),"
+            " use `write_file` to write a Python script and run it with `run_shell python xxx.py` to avoid PowerShell escaping issues."
+            " For simple system queries (processes/services/file listings), PowerShell cmdlets can be used directly."
         )
 
-    # --- 系统环境 ---
+    # --- System environment ---
     system_encoding = _sys.getdefaultencoding()
     try:
         default_locale = _locale.getdefaultlocale()
@@ -1083,39 +1083,39 @@ def _build_runtime_section_uncached() -> str:
         if cmd == "pip" and _sys.platform == "win32" and not _python_in_path_ok:
             continue
         path_tools.append(cmd)
-    path_tools_str = ", ".join(path_tools) if path_tools else "无"
+    path_tools_str = ", ".join(path_tools) if path_tools else "none"
 
-    return f"""## 运行环境
+    return f"""## Runtime Environment
 
-- **OpenAkita 版本**: {version_str}
-- **部署模式**: {deploy_mode}
-- **当前时间**: {current_time}
-- **操作系统**: {platform.system()} {platform.release()} ({platform.machine()})
-- **当前工作目录**: {os.getcwd()}
-- **OpenAkita 数据根目录**: {settings.openakita_home}
-- **工作区信息**: 需要操作系统文件（日志/配置/数据/截图等）时，先调用 `get_workspace_map` 获取目录布局
-- **临时目录**: data/temp/{shell_hint}
+- **OpenAkita version**: {version_str}
+- **Deployment mode**: {deploy_mode}
+- **Current time**: {current_time}
+- **Operating system**: {platform.system()} {platform.release()} ({platform.machine()})
+- **Current working directory**: {os.getcwd()}
+- **OpenAkita data root**: {settings.openakita_home}
+- **Workspace info**: When you need to work with OS files (logs/config/data/screenshots, etc.), call `get_workspace_map` first to get the directory layout
+- **Temporary directory**: data/temp/{shell_hint}
 
-### Python 环境
+### Python Environment
 {python_info}
 
-### 系统环境
-- **系统编码**: {system_encoding}
-- **默认语言环境**: {locale_str}
+### System Environment
+- **System encoding**: {system_encoding}
+- **Default locale**: {locale_str}
 - **Shell**: {shell_type}
-- **PATH 可用工具**: {path_tools_str}
+- **Tools on PATH**: {path_tools_str}
 
-### 工具执行域（必读）
+### Tool Execution Domain (MUST READ)
 
-- `run_shell`、`pip install`、打开带窗口的程序、浏览器自动化等：**全部发生在当前 OpenAkita 进程所在的主机及其图形会话/无头环境中**。
-- **默认不等于**用户发消息时所用的设备：IM/手机、另一台电脑、飞书/钉钉客户端所在环境与此**不是同一执行域**；图形窗口**不会**自动出现在用户屏幕上，软件也**不会**自动装到用户个人电脑上。
-- 若用户要的是「在我这台电脑上看到窗口 / 本机安装 / 游戏内 overlay」等**用户侧可观测效果**：须通过 **可交付产物**（如脚本、`deliver_artifacts`）、**用户在本机可复制执行的命令/步骤**，或说明需要 **本地运行的 OpenAkita / 远程桌面到同一台机器** 等产品能力；**禁止**仅因宿主侧命令退出码为 0 就声称用户已在其设备上看到效果。
+- `run_shell`, `pip install`, launching windowed programs, browser automation, etc.: **all occur on the host where the current OpenAkita process is running, in its graphical session / headless environment**.
+- **This is NOT the same** as the device the user sends messages from: IM/phone, another computer, the environment where the Feishu/DingTalk client runs is a **different execution domain**; graphical windows will **NOT** automatically appear on the user's screen, and software will **NOT** automatically install on the user's personal computer.
+- If the user wants **user-side observable effects** such as "see the window on my computer / install locally / in-game overlay": you must go through **deliverable artifacts** (scripts, `deliver_artifacts`), **commands/steps the user can copy and run locally**, or explain that product capabilities like **running OpenAkita locally / remote desktop to the same machine** are needed; **do NOT** claim the user sees an effect on their device just because the host-side command exited with code 0.
 
-## 工具可用性
+## Tool Availability
 {tool_status_text}
 
-⚠️ **重要**：服务重启后浏览器、变量、连接等状态会丢失，执行任务前必须通过工具检查实时状态。
-如果工具不可用，允许纯文本回复并说明限制。"""
+⚠️ **Important**: After a service restart, browser, variable, and connection state is lost. Always check real-time status via tools before executing tasks.
+If a tool is unavailable, plain-text responses are allowed — explain the limitation."""
 
 
 def _build_session_metadata_section(
@@ -1220,7 +1220,7 @@ def _build_arch_section(
 
 
 def _detect_deploy_mode() -> str:
-    """检测当前部署模式"""
+    """Detect the current deployment mode"""
     import importlib.metadata
     import sys as _sys
 
@@ -1229,7 +1229,7 @@ def _detect_deploy_mode() -> str:
     if IS_FROZEN:
         return "bundled (PyInstaller)"
 
-    # 检查 editable install (pip install -e)
+    # Check for editable install (pip install -e)
     try:
         dist = importlib.metadata.distribution("openakita")
         direct_url = dist.read_text("direct_url.json")
@@ -1238,11 +1238,11 @@ def _detect_deploy_mode() -> str:
     except Exception:
         pass
 
-    # 检查是否在虚拟环境 + 源码目录中
+    # Check if running in a virtual environment + source directory
     if _sys.prefix != _sys.base_prefix:
         return "source (venv)"
 
-    # 检查是否通过 pip 安装
+    # Check if installed via pip
     try:
         importlib.metadata.version("openakita")
         return "pip install"
@@ -1259,7 +1259,7 @@ def _build_python_info(
     settings,
     venv_path: str | None = None,
 ) -> str:
-    """根据部署模式构建 Python 环境信息"""
+    """Build Python environment info based on the deployment mode"""
     import sys as _sys
 
     if not is_frozen:
@@ -1277,7 +1277,7 @@ def _build_python_info(
         )
         return "\n".join(lines)
 
-    # 打包模式
+    # Bundled mode
     if ext_python:
         lines = [
             "- **Python**: Available (External environment automatically configured)",
@@ -1291,7 +1291,7 @@ def _build_python_info(
         )
         return "\n".join(lines)
 
-    # 打包模式 + 无外置 Python
+    # Bundled mode + no external Python
     fallback_venv = settings.project_root / "data" / "venv"
     if platform.system() == "Windows":
         install_cmd = "winget install Python.Python.3.12"
@@ -1435,11 +1435,11 @@ Call the `ask_user` tool:
 {"question": "Which plan do you choose?", "options": [{"id":"a","label":"Plan One"},{"id":"b","label":"Plan Two"},{"id":"c","label":"Plan Three"}]}
 ```
 
-### 选项设计原则
+### Option Design Principles
 
-- 如果你有推荐的选项，把它放在**第一位**，并在标签末尾标注 **（推荐）**
-- 不要问许可型问题：不要问"可以开始了吗？""我的计划可以吗？" — 如果你认为应该执行，就执行
-- 问题应该是**阻塞性的**：只有无法自己判断时才提问，不要为了"友好"而提问
+- If you have a recommended option, put it **first** and mark it with **(recommended)** at the end of the label
+- Do not ask permission-style questions: do not ask "Can I start?" or "Is my plan OK?" — if you think you should act, act
+- Questions should be **blocking**: only ask when you truly cannot decide on your own; do not ask just to be "polite"
 
 """
     )
@@ -1492,14 +1492,14 @@ def _build_catalogs_section(
     prompt_profile: "PromptProfile | None" = None,
     prompt_tier: "PromptTier | None" = None,
 ) -> str:
-    """构建 Catalogs 层（工具/技能/插件/MCP 清单）
+    """Build the Catalogs layer (tools/skills/plugins/MCP catalogs)
 
     Progressive disclosure:
-    - CONSUMER_CHAT profile 或 SMALL tier → 仅索引（index-only）
-    - 对话前 4 轮或非 agent 模式 → 仅索引
-    - 其他 → 完整清单
+    - CONSUMER_CHAT profile or SMALL tier → index-only
+    - First 4 turns of conversation or non-agent mode → index-only
+    - Otherwise → full catalog
 
-    每个 catalog 用 try/except 隔离，确保单个 catalog 构建失败不会击穿整个系统提示。
+    Each catalog is isolated with try/except so that a single catalog's build failure does not break the entire system prompt.
     """
     _profile = prompt_profile or PromptProfile.LOCAL_AGENT
     _tier = prompt_tier or PromptTier.LARGE
@@ -1607,7 +1607,7 @@ def _build_catalogs_section(
     return "\n\n".join(parts)
 
 
-# 精简版 Memory Guide（~200 token，用于 CONSUMER_CHAT 和 SMALL tier）
+# Compact Memory Guide (~200 tokens; used for CONSUMER_CHAT and SMALL tier)
 _MEMORY_SYSTEM_GUIDE_COMPACT = """## Your Memory System
 
 ### Information Priority
@@ -1623,7 +1623,7 @@ _MEMORY_SYSTEM_GUIDE_COMPACT = """## Your Memory System
 ### Currently Injected Information
 Below are user core profiles and high-weight experiences."""
 
-# 完整版 Memory Guide（~815 token，用于 LOCAL_AGENT + MEDIUM/LARGE tier）
+# Full Memory Guide (~815 tokens; used for LOCAL_AGENT + MEDIUM/LARGE tier)
 _MEMORY_SYSTEM_GUIDE = """## Your Memory System
 
 You have a three-layer hierarchical memory network with bidirectional associations between layers.
@@ -1716,11 +1716,11 @@ def _build_memory_section(
     use_compact_guide: bool = False,
 ) -> str:
     """
-    构建 Memory 层 — 渐进式披露:
-    0. 记忆系统自描述 (告知 LLM 记忆系统的运作方式)
-    1. Scratchpad (当前任务 + 近期完成)
-    2. Core Memory (MEMORY.md 用户基本信息 + 永久规则)
-    3. Experience Hints (高权重经验记忆) — skipped under high input pressure
+    Build the Memory layer — progressive disclosure:
+    0. Memory system self-description (tells the LLM how the memory system works)
+    1. Scratchpad (current task + recently completed)
+    2. Core Memory (MEMORY.md user basic info + permanent rules)
+    3. Experience Hints (high-weight experience memories) — skipped under high input pressure
     4. Active Retrieval (if memory_keywords provided by IntentAnalyzer)
     5. Relational graph retrieval — skipped under medium+ input pressure
     """
@@ -1729,20 +1729,20 @@ def _build_memory_section(
 
     parts: list[str] = []
 
-    # Layer 0: 记忆系统自描述（compact 版 ~200 token，完整版 ~600 token）
+    # Layer 0: memory system self-description (compact ~200 tokens, full ~600 tokens)
     parts.append(_MEMORY_SYSTEM_GUIDE_COMPACT if use_compact_guide else _MEMORY_SYSTEM_GUIDE)
 
-    # Layer 1: Scratchpad (当前任务)
+    # Layer 1: Scratchpad (current task)
     scratchpad_text = _build_scratchpad_section(memory_manager)
     if scratchpad_text:
         parts.append(scratchpad_text)
 
-    # Layer 1.5: Pinned Rules — 从 SQLite 查询 RULE 类型记忆，独立注入，不受裁剪
+    # Layer 1.5: Pinned Rules — query RULE-type memories from SQLite and inject separately; not subject to trimming
     pinned_rules = _build_pinned_rules_section(memory_manager)
     if pinned_rules:
         parts.append(pinned_rules)
 
-    # Layer 2: Core Memory (MEMORY.md — 用户基本信息 + 永久规则)
+    # Layer 2: Core Memory (MEMORY.md — user basic info + permanent rules)
     from openakita.memory.types import MEMORY_MD_MAX_CHARS as _MD_MAX
 
     core_budget = min(budget_tokens // 2, 500)
@@ -1750,7 +1750,7 @@ def _build_memory_section(
     if core_memory:
         parts.append(f"## Core Memory\n\n{core_memory}")
 
-    # Layer 3: Experience Hints (高权重经验/教训/技能记忆)
+    # Layer 3: Experience Hints (high-weight experience/lesson/skill memories)
     if not skip_experience:
         experience_text = _build_experience_section(
             memory_manager, max_items=5, task_description=task_description
@@ -1847,7 +1847,7 @@ def _retrieve_relational(
 
 
 def _build_scratchpad_section(memory_manager: Optional["MemoryManager"]) -> str:
-    """从 UnifiedStore 读取 Scratchpad，注入当前任务 + 近期完成"""
+    """Read the Scratchpad from UnifiedStore and inject the current task + recent completions"""
     store = getattr(memory_manager, "store", None)
     if store is None:
         return ""
@@ -1869,10 +1869,10 @@ _PINNED_RULES_CHARS_PER_TOKEN = 3
 def _build_pinned_rules_section(
     memory_manager: Optional["MemoryManager"],
 ) -> str:
-    """从 SQLite 查询所有活跃的 RULE 类型记忆，作为独立段落注入 system prompt。
+    """Query all active RULE-type memories from SQLite and inject them as a standalone section of the system prompt.
 
-    这些规则不受 memory_budget 裁剪，确保用户设定的行为规则始终可见。
-    设置独立的 token 上限防止异常膨胀。
+    These rules are not subject to memory_budget trimming, ensuring user-defined behavior rules are always visible.
+    A separate token cap prevents unexpected bloat.
     """
     store = getattr(memory_manager, "store", None)
     if store is None:
@@ -1920,9 +1920,9 @@ def _build_pinned_rules_section(
 
 
 def _get_core_memory(memory_manager: Optional["MemoryManager"], max_chars: int = 600) -> str:
-    """获取 MEMORY.md 核心记忆（损坏时自动 fallback 到 .bak）
+    """Get MEMORY.md core memory (automatically falls back to .bak if corrupted).
 
-    截断策略委托给 ``truncate_memory_md``：按段落拆分，规则段落优先保留。
+    Truncation is delegated to ``truncate_memory_md``: split by section, prioritizing rule sections.
     """
     from openakita.memory.types import truncate_memory_md
 
@@ -2044,7 +2044,7 @@ def _retrieve_top_experiences(store: Any, max_items: int) -> list:
 
 
 def _clean_user_content(raw: str) -> str:
-    """清洗 USER.md：去掉占位符、空 section、HTML 注释。"""
+    """Clean USER.md: remove placeholders, empty sections, and HTML comments."""
     import re
 
     content = re.sub(r"<!--.*?-->", "", raw, flags=re.DOTALL)
@@ -2060,10 +2060,10 @@ def _build_user_section(
     budget_tokens: int,
     identity_dir: Path | None = None,
 ) -> str:
-    """构建 User 层 — 直接读取 USER.md 并运行时清洗。
+    """Build the User layer — read USER.md directly and clean it at runtime.
 
-    不再依赖编译产物，用户修改后下一轮对话立即生效。
-    保留 compiled 参数以向后兼容。
+    No longer depends on compiled artifacts; user edits take effect on the next turn.
+    The compiled parameter is kept for backward compatibility.
     """
     if identity_dir is not None:
         user_path = identity_dir / "USER.md"
@@ -2129,16 +2129,16 @@ def get_prompt_debug_info(
     task_description: str = "",
 ) -> dict:
     """
-    获取 prompt 调试信息
+    Get prompt debug info
 
-    用于 `openakita prompt-debug` 命令。
+    Used by the `openakita prompt-debug` command.
 
     Returns:
-        包含各部分 token 统计的字典
+        A dict containing per-section token statistics
     """
     budget_config = BudgetConfig()
 
-    # 获取编译产物
+    # Fetch compiled artifacts
     compiled = get_compiled_content(identity_dir)
 
     info = {
@@ -2152,7 +2152,7 @@ def get_prompt_debug_info(
         "total": 0,
     }
 
-    # 清单统计
+    # Catalog statistics
     if tool_catalog:
         tools_text = tool_catalog.get_catalog()
         info["catalogs"]["tools"] = estimate_tokens(tools_text)

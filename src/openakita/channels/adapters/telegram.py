@@ -719,16 +719,16 @@ class TelegramAdapter(ChannelAdapter):
             user_id = _fu.id if _fu else "unknown"
             logger.debug(f"Received message from user {user_id} in chat {chat_id}: {message.text}")
 
-            # 匿名用户（频道签名/匿名管理员）跳过配对
+            # Skip pairing for anonymous users (channel signatures / anonymous admins)
             if not _fu:
                 logger.debug(f"Skipping pairing for anonymous message in chat {chat_id}")
             elif self.require_pairing:
-                # 检查是否已配对
+                # Check whether paired
                 if not self.pairing_manager.is_paired(chat_id):
                     logger.debug(f"Chat {chat_id} is not paired, checking pairing status...")
-                    # 检查是否在等待配对
+                    # Check whether waiting for pairing
                     if self.pairing_manager.is_pending_pairing(chat_id):
-                        # 尝试验证配对码
+                        # Try to verify the pairing code
                         code = message.text.strip() if message.text else ""
                         user_info = {
                             "user_id": _fu.id,
@@ -738,7 +738,7 @@ class TelegramAdapter(ChannelAdapter):
                         }
 
                         if self.pairing_manager.verify_code(chat_id, code, user_info):
-                            # 配对成功
+                            # Pairing successful
                             await message.reply_text(
                                 "✅ Paired successfully!\n\n"
                                 "You can now use OpenAkita.\n"
@@ -751,14 +751,14 @@ class TelegramAdapter(ChannelAdapter):
                             )
                             logger.info(f"Chat {chat_id} paired: {user_info}")
                         else:
-                            # 配对码错误
+                            # Wrong pairing code
                             code_file = self.pairing_manager.code_file.absolute()
                             await message.reply_text(
                                 f"❌ Wrong pairing code. Please try again.\n\n📁 Pairing code file:\n`{code_file}`"
                             )
                         return
                     else:
-                        # 未开始配对流程，提示用户
+                        # Pairing flow not started; prompt the user
                         self.pairing_manager.start_pairing(chat_id)
                         code_file = self.pairing_manager.code_file.absolute()
                         await message.reply_text(
@@ -768,14 +768,14 @@ class TelegramAdapter(ChannelAdapter):
                         )
                         return
 
-            # 已配对，正常处理消息
-            # 转换为统一消息格式
+            # Paired; handle the message normally
+            # Convert to unified message format
             unified = await self._convert_message(message)
 
-            # 记录日志
+            # Log
             self._log_message(unified)
 
-            # 触发回调
+            # Trigger callback
             await self._emit_message(unified)
 
         except Exception as e:
@@ -783,7 +783,7 @@ class TelegramAdapter(ChannelAdapter):
 
     @staticmethod
     def _duration_secs(d: Any) -> float:
-        """将 PTB duration 转为秒数（兼容 int 和 v22.2+ timedelta）。"""
+        """Convert a PTB duration to seconds (compatible with int and v22.2+ timedelta)."""
         if d is None:
             return 0.0
         if hasattr(d, "total_seconds"):
@@ -791,18 +791,18 @@ class TelegramAdapter(ChannelAdapter):
         return float(d)
 
     async def _convert_message(self, message: Any) -> UnifiedMessage:
-        """将 Telegram 消息转换为统一格式"""
+        """Convert a Telegram message to the unified format"""
         content = MessageContent()
 
-        # 文本
+        # Text
         if message.text:
             content.text = message.text
             if message.text.startswith("/"):
                 pass
 
-        # 图片
+        # Image
         if message.photo:
-            # 获取最大尺寸的图片
+            # Use the largest-sized image
             photo = message.photo[-1]
             media = await self._create_media_from_file(
                 photo.file_id,
@@ -814,7 +814,7 @@ class TelegramAdapter(ChannelAdapter):
             media.height = photo.height
             content.images.append(media)
 
-        # 语音
+        # Voice
         if message.voice:
             voice = message.voice
             media = await self._create_media_from_file(
@@ -826,7 +826,7 @@ class TelegramAdapter(ChannelAdapter):
             media.duration = self._duration_secs(voice.duration)
             content.voices.append(media)
 
-        # 音频文件（非语音条，作为附件处理，避免走 STT 转写流程）
+        # Audio file (not a voice note; handled as an attachment to avoid the STT transcription flow)
         if message.audio:
             audio = message.audio
             media = await self._create_media_from_file(
@@ -838,7 +838,7 @@ class TelegramAdapter(ChannelAdapter):
             media.duration = self._duration_secs(audio.duration)
             content.files.append(media)
 
-        # 视频
+        # Video
         if message.video:
             video = message.video
             media = await self._create_media_from_file(
@@ -852,7 +852,7 @@ class TelegramAdapter(ChannelAdapter):
             media.height = video.height
             content.videos.append(media)
 
-        # 文档
+        # Document
         if message.document:
             doc = message.document
             media = await self._create_media_from_file(
@@ -863,7 +863,7 @@ class TelegramAdapter(ChannelAdapter):
             )
             content.files.append(media)
 
-        # video_note (圆形短视频)
+        # video_note (round short video)
         if message.video_note:
             vn = message.video_note
             media = await self._create_media_from_file(
@@ -886,11 +886,11 @@ class TelegramAdapter(ChannelAdapter):
             )
             content.videos.append(media)
 
-        # 统一提取 caption（对所有媒体类型生效）
+        # Unified caption extraction (applies to all media types)
         if message.caption and not content.text:
             content.text = message.caption
 
-        # 位置
+        # Location
         if message.location:
             loc = message.location
             content.location = {
@@ -898,7 +898,7 @@ class TelegramAdapter(ChannelAdapter):
                 "lng": loc.longitude,
             }
 
-        # 表情包
+        # Sticker
         if message.sticker:
             sticker = message.sticker
             content.sticker = {
@@ -907,7 +907,7 @@ class TelegramAdapter(ChannelAdapter):
                 "set_name": sticker.set_name,
             }
 
-        # 确定聊天类型
+        # Determine the chat type
         chat = message.chat
         chat_type = "private"
         if chat.type == "group" or chat.type == "supergroup":
@@ -917,7 +917,7 @@ class TelegramAdapter(ChannelAdapter):
 
         is_direct_message = chat_type == "private"
 
-        # 检测 @机器人 提及
+        # Detect @bot mentions
         is_mentioned = False
         bot_username = getattr(self._bot, "username", None) if self._bot else None
         if bot_username:
@@ -933,7 +933,7 @@ class TelegramAdapter(ChannelAdapter):
                 if is_mentioned:
                     break
 
-        # 隐式 mention：回复机器人消息视为提及
+        # Implicit mention: a reply to a bot message counts as a mention
         if not is_mentioned and chat_type == "group" and message.reply_to_message:
             reply_from = message.reply_to_message.from_user
             bot_id = getattr(self._bot, "id", None) if self._bot else None
@@ -981,7 +981,7 @@ class TelegramAdapter(ChannelAdapter):
         mime_type: str,
         size: int,
     ) -> MediaFile:
-        """创建媒体文件对象"""
+        """Create a media file object"""
         return MediaFile.create(
             filename=filename,
             mime_type=mime_type,
@@ -989,10 +989,10 @@ class TelegramAdapter(ChannelAdapter):
             size=size,
         )
 
-    # ==================== RetryAfter 通用重试 ====================
+    # ==================== RetryAfter Generic Retry ====================
 
     async def _api_retry(self, fn, *args, **kwargs):
-        """执行 Telegram API 调用，遇到 429 RetryAfter 时自动等待重试一次。"""
+        """Execute a Telegram API call; on 429 RetryAfter, wait and retry once."""
         _import_telegram()
         try:
             return await fn(*args, **kwargs)
@@ -1001,7 +1001,7 @@ class TelegramAdapter(ChannelAdapter):
             await asyncio.sleep(e.retry_after)
             return await fn(*args, **kwargs)
 
-    # ==================== 流式思考 / 回复 ====================
+    # ==================== Streaming Thinking / Reply ====================
 
     async def stream_thinking(
         self,
@@ -1012,7 +1012,7 @@ class TelegramAdapter(ChannelAdapter):
         is_group: bool = False,
         duration_ms: int = 0,
     ) -> None:
-        """接收思考内容，Edit-in-Place 更新思考占位消息。"""
+        """Receive thinking content and update the thinking placeholder message in-place."""
         sk = self._make_session_key(chat_id, thread_id)
         self._streaming_thinking[sk] = thinking_text
         self._typing_status[sk] = "deep thinking"
@@ -1051,7 +1051,7 @@ class TelegramAdapter(ChannelAdapter):
         thread_id: str | None = None,
         is_group: bool = False,
     ) -> None:
-        """将工具调用描述/结果摘要等 chain 文本追加到思考占位消息。"""
+        """Append chain text (tool call descriptions, result summaries, etc.) to the thinking placeholder message."""
         sk = self._make_session_key(chat_id, thread_id)
         self._streaming_chain.setdefault(sk, []).append(text)
         self._typing_status[sk] = "running tools"
@@ -1088,7 +1088,7 @@ class TelegramAdapter(ChannelAdapter):
         thread_id: str | None = None,
         is_group: bool = False,
     ) -> None:
-        """累积回复 token；有思考/chain 内容时定期刷新占位消息。"""
+        """Accumulate reply tokens; periodically refresh the placeholder message when thinking/chain content exists."""
         sk = self._make_session_key(chat_id, thread_id)
         self._streaming_buffers[sk] = self._streaming_buffers.get(sk, "") + token
         self._typing_status[sk] = "generating"
@@ -1121,7 +1121,7 @@ class TelegramAdapter(ChannelAdapter):
                 logger.debug(f"Telegram: stream_token edit failed: {e}")
 
     def _compose_thinking_display(self, sk: str) -> str:
-        """构建思考过程的实时显示文本（纯文本，用于编辑占位消息）。"""
+        """Build the real-time display text for the thinking process (plain text for editing the placeholder message)."""
         thinking = self._streaming_thinking.get(sk, "")
         reply = self._streaming_buffers.get(sk, "")
         dur_ms = self._streaming_thinking_ms.get(sk, 0)
@@ -1148,7 +1148,7 @@ class TelegramAdapter(ChannelAdapter):
 
         text = "\n".join(parts)
 
-        # footer: 耗时 + 状态
+        # footer: elapsed time + status
         footer_parts: list[str] = []
         start = self._typing_start_time.get(sk)
         if self._footer_elapsed and start:
@@ -1172,11 +1172,11 @@ class TelegramAdapter(ChannelAdapter):
         *,
         thread_id: str | None = None,
     ) -> bool:
-        """流式结束：将思考内容折叠为 Expandable Blockquote，回复另发。
+        """End of stream: collapse the thinking content into an Expandable Blockquote and send the reply separately.
 
         Returns:
-            True — 思考占位消息已被替换为完整回复（无需 send_message）。
-            False — 思考占位消息已编辑为折叠摘要（回复由 send_message 正常发送）。
+            True — the thinking placeholder message was replaced with the full reply (send_message not needed).
+            False — the thinking placeholder message was edited into a collapsed summary (the reply is sent normally by send_message).
         """
         sk = self._make_session_key(chat_id, thread_id)
         card_ref = self._thinking_cards.get(sk)
@@ -1193,7 +1193,7 @@ class TelegramAdapter(ChannelAdapter):
         has_progress = bool(thinking or chain_lines)
 
         if has_progress:
-            # 有思考/chain → 编辑为 Expandable Blockquote 摘要，回复另发
+            # Has thinking/chain → edit into an Expandable Blockquote summary and send the reply separately
             summary_html = self._build_thinking_summary_html(thinking, dur_ms, chain_lines, sk=sk)
             try:
                 await self._bot.edit_message_text(
@@ -1209,7 +1209,7 @@ class TelegramAdapter(ChannelAdapter):
             self._thinking_cards.pop(sk, None)
             return False
 
-        # 无思考/chain → 直接用回复替换占位消息
+        # No thinking/chain → replace the placeholder message directly with the reply
         elapsed_suffix = ""
         start = self._typing_start_time.get(sk)
         if self._footer_elapsed and start:
@@ -1241,7 +1241,7 @@ class TelegramAdapter(ChannelAdapter):
             except Exception:
                 pass
 
-        # 回退：删除占位消息，走正常 send_message
+        # Fallback: delete the placeholder message and go through the normal send_message path
         with contextlib.suppress(Exception):
             await self._bot.delete_message(chat_id=card_ref[0], message_id=card_ref[1])
         self._thinking_cards.pop(sk, None)
@@ -1254,7 +1254,7 @@ class TelegramAdapter(ChannelAdapter):
         chain_lines: list[str],
         sk: str = "",
     ) -> str:
-        """构建 Expandable Blockquote HTML（思考摘要折叠展示）。"""
+        """Build the Expandable Blockquote HTML (collapsed display of the thinking summary)."""
         parts: list[str] = []
         if thinking:
             dur_str = f" ({dur_ms / 1000:.1f}s)" if dur_ms else ""
@@ -1279,18 +1279,18 @@ class TelegramAdapter(ChannelAdapter):
         return html
 
     def _convert_to_telegram_html(self, text: str) -> str:
-        """将标准 Markdown 转换为 Telegram HTML 格式。
+        """Convert standard Markdown to Telegram HTML format.
 
-        HTML 模式比 legacy Markdown / MarkdownV2 更可靠：
-        - 特殊字符通过 html.escape() 统一处理，不会误触发格式解析
-        - 代码块/内联代码先提取保护，避免内部内容被二次转义
+        HTML mode is more reliable than legacy Markdown / MarkdownV2:
+        - Special characters are handled uniformly via html.escape(), avoiding accidental format parsing
+        - Code blocks / inline code are extracted and protected first to avoid double-escaping their contents
         """
         import re
 
         if not text:
             return text
 
-        # Step 1: 提取 fenced code blocks
+        # Step 1: extract fenced code blocks
         code_blocks: list[tuple[str, str]] = []
 
         def _save_fenced(m: re.Match) -> str:
@@ -1302,7 +1302,7 @@ class TelegramAdapter(ChannelAdapter):
 
         text = re.sub(r"```(\w*)\n(.*?)```", _save_fenced, text, flags=re.DOTALL)
 
-        # Step 2: 提取 inline code
+        # Step 2: extract inline code
         inline_codes: list[str] = []
 
         def _save_inline(m: re.Match) -> str:
@@ -1312,10 +1312,10 @@ class TelegramAdapter(ChannelAdapter):
 
         text = re.sub(r"`([^`\n]+)`", _save_inline, text)
 
-        # Step 3: HTML-escape（不影响 *, _, ~, [, #, | 等 Markdown 语法字符）
+        # Step 3: HTML-escape (does not affect Markdown syntax characters like *, _, ~, [, #, |)
         text = _html.escape(text)
 
-        # Step 4: Markdown -> HTML 行内格式
+        # Step 4: Markdown -> HTML inline formatting
         text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
         text = re.sub(r"__(.+?)__", r"<b>\1</b>", text)
         text = re.sub(r"(?<!\w)\*([^*]+?)\*(?!\w)", r"<i>\1</i>", text)
@@ -1323,10 +1323,10 @@ class TelegramAdapter(ChannelAdapter):
         text = re.sub(r"~~(.+?)~~", r"<s>\1</s>", text)
         text = re.sub(r"\[([^\]]+)]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
 
-        # Step 5: 标题 -> 粗体
+        # Step 5: headings -> bold
         text = re.sub(r"^#{1,6}\s+(.+)$", r"<b>\1</b>", text, flags=re.MULTILINE)
 
-        # Step 6: 表格简化
+        # Step 6: simplified tables
         lines = text.split("\n")
         new_lines: list[str] = []
         in_table = False
@@ -1352,10 +1352,10 @@ class TelegramAdapter(ChannelAdapter):
             new_lines.extend(table_rows)
         text = "\n".join(new_lines)
 
-        # Step 7: 水平线
+        # Step 7: horizontal rules
         text = re.sub(r"^---+$", "─" * 20, text, flags=re.MULTILINE)
 
-        # Step 8: 还原 code blocks
+        # Step 8: restore code blocks
         for i, (lang, code) in enumerate(code_blocks):
             escaped = _html.escape(code)
             if lang:
@@ -1364,18 +1364,18 @@ class TelegramAdapter(ChannelAdapter):
                 repl = f"<pre>{escaped}</pre>"
             text = text.replace(f"\x00CODEBLOCK{i}\x00", repl)
 
-        # Step 9: 还原 inline code
+        # Step 9: restore inline code
         for i, code in enumerate(inline_codes):
             text = text.replace(f"\x00INLINE{i}\x00", f"<code>{_html.escape(code)}</code>")
 
         return text
 
     async def send_message(self, message: OutgoingMessage) -> str:
-        """发送消息"""
+        """Send a message"""
         if not self._bot:
             raise RuntimeError("Telegram bot not started")
 
-        # ── 思考占位消息处理 ──
+        # ── Thinking placeholder message handling ──
         sk = self._make_session_key(message.chat_id, message.thread_id)
         if sk in self._streaming_finalized:
             card_ref = self._thinking_cards.pop(sk, None)
@@ -1427,7 +1427,7 @@ class TelegramAdapter(ChannelAdapter):
         if parse_mode == telegram.constants.ParseMode.HTML and text_to_send:
             text_to_send = self._convert_to_telegram_html(text_to_send)
 
-        # caption 只附在第一个媒体上，避免重复发送
+        # Caption is attached only to the first media item to avoid duplicate sends
         caption_used = False
         reply_to_id = int(message.reply_to) if message.reply_to else None
         _thread_id = (
@@ -1441,7 +1441,7 @@ class TelegramAdapter(ChannelAdapter):
             caption_used = True
             return text_to_send
 
-        # 发送文本（仅在无媒体时，或有媒体但需要先发文本时）
+        # Send text (only when there is no media, or when media exists but text must be sent first)
         if text_to_send and not message.content.has_media:
             try:
                 sent_message = await self._api_retry(
@@ -1468,7 +1468,7 @@ class TelegramAdapter(ChannelAdapter):
                     raise
 
         async def _send_media_with_retry(coro_factory):
-            """执行媒体发送，统一处理 RetryAfter"""
+            """Execute a media send, handling RetryAfter uniformly"""
             try:
                 return await coro_factory()
             except telegram.error.RetryAfter as e:
@@ -1476,7 +1476,7 @@ class TelegramAdapter(ChannelAdapter):
                 await asyncio.sleep(e.retry_after)
                 return await coro_factory()
 
-        # 发送图片
+        # Send images
         for img in message.content.images:
             cap = _next_caption()
             pm = parse_mode if cap else None
@@ -1505,7 +1505,7 @@ class TelegramAdapter(ChannelAdapter):
             else:
                 logger.warning(f"Telegram: image has no local_path or url, skipped: {img.filename}")
 
-        # 发送视频
+        # Send videos
         for vid in message.content.videos:
             cap = _next_caption()
             pm = parse_mode if cap else None
@@ -1534,7 +1534,7 @@ class TelegramAdapter(ChannelAdapter):
             else:
                 logger.warning(f"Telegram: video has no local_path or url, skipped: {vid.filename}")
 
-        # 发送文档
+        # Send documents
         for file in message.content.files:
             cap = _next_caption()
             pm = parse_mode if cap else None
@@ -1567,7 +1567,7 @@ class TelegramAdapter(ChannelAdapter):
             else:
                 logger.warning(f"Telegram: file has no local_path or url, skipped: {file.filename}")
 
-        # 发送语音
+        # Send voice messages
         for voice in message.content.voices:
             cap = _next_caption()
             pm = parse_mode if cap else None
@@ -1598,7 +1598,7 @@ class TelegramAdapter(ChannelAdapter):
                     f"Telegram: voice has no local_path or url, skipped: {voice.filename}"
                 )
 
-        # text+media 场景：如果有文本但所有媒体都无法附带 caption，单独发送文本
+        # text+media scenario: if text exists but no media can carry a caption, send the text separately
         if text_to_send and message.content.has_media and not caption_used:
             try:
                 sent_message = await self._bot.send_message(
@@ -1616,7 +1616,7 @@ class TelegramAdapter(ChannelAdapter):
         return str(sent_message.message_id)
 
     async def download_media(self, media: MediaFile) -> Path:
-        """下载媒体文件"""
+        """Download a media file"""
         if not self._bot:
             raise RuntimeError("Telegram bot not started")
 
@@ -1642,26 +1642,26 @@ class TelegramAdapter(ChannelAdapter):
         return local_path
 
     async def upload_media(self, path: Path, mime_type: str) -> MediaFile:
-        """上传媒体文件（Telegram 不需要预上传）"""
+        """Upload a media file (Telegram does not require pre-upload)"""
         return MediaFile.create(
             filename=path.name,
             mime_type=mime_type,
         )
 
     async def get_user_info(self, user_id: str) -> dict | None:
-        """获取用户信息"""
+        """Get user information"""
         if not self._bot:
             return None
 
         try:
-            # Telegram 不支持直接获取用户信息
-            # 只能从消息中获取
+            # Telegram does not support fetching user info directly
+            # It can only be obtained from messages
             return None
         except Exception:
             return None
 
     async def get_chat_info(self, chat_id: str) -> dict | None:
-        """获取聊天信息"""
+        """Get chat information"""
         if not self._bot:
             return None
 
@@ -1678,7 +1678,7 @@ class TelegramAdapter(ChannelAdapter):
             return None
 
     async def delete_message(self, chat_id: str, message_id: str) -> bool:
-        """删除消息"""
+        """Delete a message"""
         if not self._bot:
             return False
 
@@ -1700,7 +1700,7 @@ class TelegramAdapter(ChannelAdapter):
         new_content: str,
         parse_mode: str | None = "markdown",
     ) -> bool:
-        """编辑消息"""
+        """Edit a message"""
         if not self._bot:
             return False
 
@@ -1736,7 +1736,7 @@ class TelegramAdapter(ChannelAdapter):
             return False
 
     async def send_photo(self, chat_id: str, photo_path: str, caption: str = "") -> str:
-        """发送图片"""
+        """Send an image"""
         if not self._bot:
             raise RuntimeError("Telegram bot not started")
 
@@ -1751,7 +1751,7 @@ class TelegramAdapter(ChannelAdapter):
         return str(sent.message_id)
 
     async def send_file(self, chat_id: str, file_path: str, caption: str = "") -> str:
-        """发送文件"""
+        """Send a file"""
         if not self._bot:
             raise RuntimeError("Telegram bot not started")
 
@@ -1771,7 +1771,7 @@ class TelegramAdapter(ChannelAdapter):
         return str(sent.message_id)
 
     async def send_voice(self, chat_id: str, voice_path: str, caption: str = "") -> str:
-        """发送语音"""
+        """Send a voice message"""
         if not self._bot:
             raise RuntimeError("Telegram bot not started")
 
@@ -1785,7 +1785,7 @@ class TelegramAdapter(ChannelAdapter):
         logger.debug(f"Sent voice to {chat_id}: {voice_path}")
         return str(sent.message_id)
 
-    # ==================== 会话级 key / 流式辅助 ====================
+    # ==================== Session-level key / streaming helpers ====================
 
     @staticmethod
     def _make_session_key(chat_id: str, thread_id: str | None = None) -> str:
@@ -1794,10 +1794,10 @@ class TelegramAdapter(ChannelAdapter):
     def is_streaming_enabled(self, is_group: bool = False) -> bool:
         return self._bot is not None
 
-    # ==================== 思考状态指示器 ====================
+    # ==================== Thinking Status Indicators ====================
 
     async def send_typing(self, chat_id: str, thread_id: str | None = None) -> None:
-        """发送 typing 状态；首次调用还会创建思考占位消息。"""
+        """Send typing status; on the first call, also creates the thinking placeholder message."""
         if not self._bot:
             return
 
@@ -1812,7 +1812,7 @@ class TelegramAdapter(ChannelAdapter):
 
         sk = self._make_session_key(chat_id, thread_id)
         if sk in self._thinking_cards:
-            # 后续调用：定期更新思考卡片的耗时显示
+            # Subsequent calls: periodically refresh the elapsed-time display on the thinking card
             if self._footer_elapsed or self._footer_status:
                 now = time.time()
                 last_t = self._streaming_last_patch.get(sk, 0.0)
@@ -1849,7 +1849,7 @@ class TelegramAdapter(ChannelAdapter):
             logger.debug(f"Telegram: create thinking placeholder failed: {e}")
 
     async def clear_typing(self, chat_id: str, thread_id: str | None = None) -> None:
-        """清理残留的思考占位消息（安全网）。"""
+        """Clean up any leftover thinking placeholder messages (safety net)."""
         sk = self._make_session_key(chat_id, thread_id)
         card_ref = self._thinking_cards.pop(sk, None)
         self._streaming_finalized.discard(sk)
@@ -1865,7 +1865,7 @@ class TelegramAdapter(ChannelAdapter):
                 await self._bot.delete_message(chat_id=card_ref[0], message_id=card_ref[1])
 
     async def _patch_card_content(self, card_ref: tuple[int, int], text: str) -> bool:
-        """编辑思考占位消息内容（供 gateway _try_patch_progress_to_card 调用）。"""
+        """Edit the contents of the thinking placeholder message (for gateway _try_patch_progress_to_card to call)."""
         if not self._bot or not card_ref:
             return False
         _chat_id, _msg_id = card_ref

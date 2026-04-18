@@ -139,7 +139,7 @@ class OrgToolHandler:
           returns ``exact_id`` or ``exact_title``. Ambiguous or fuzzy
           matches are **kept as-is** so the downstream handler can surface
           a structured error listing the candidate IDs — this is what
-          prevents the "产品总监" ↔ "产品经理" substring collision from
+          prevents the "Product Director" vs. "Product Manager" substring collision from
           silently resolving the caller to itself.
         - If ``tool_name`` is outside that set (search / read tools such
           as org_find_colleague, org_get_memory_of_node, org_pause_node,
@@ -1534,9 +1534,9 @@ class OrgToolHandler:
         await messenger.send(msg)
 
         if chain_id:
-            # 旧行为保留（messenger.release_task_affinity + chain_delegation_depth 清理）
-            # 由 _cleanup_accepted_chain 统一承担；此处仍显式调用以保证即便 cleanup 被禁用
-            # (未来扩展) 也不会退化为泄漏。
+            # Legacy behavior (messenger.release_task_affinity + chain_delegation_depth cleanup)
+            # is handled uniformly by _cleanup_accepted_chain; still invoked explicitly here to ensure
+            # that even if cleanup is disabled (future extension), we don't regress to a leak.
             messenger.release_task_affinity(chain_id)
             self._runtime._chain_delegation_depth.pop(chain_id, None)
             try:
@@ -1558,7 +1558,7 @@ class OrgToolHandler:
         if chain_id:
             self._link_project_task(org_id, chain_id, status="accepted")
             self._append_execution_log(
-                org_id, chain_id, f"验收通过: {feedback[:_LIM_EXEC_LOG]}", node_id,
+                org_id, chain_id, f"Accepted: {feedback[:_LIM_EXEC_LOG]}", node_id,
             )
             self._recalc_parent_progress(org_id, chain_id)
 
@@ -1587,16 +1587,17 @@ class OrgToolHandler:
         bb = self._runtime.get_blackboard(org_id)
         if bb:
             bb.write_org(
-                content=f"任务验收通过 [{chain_id[:8] if chain_id else ''}]: {feedback[:_LIM_EVENT]}",
+                content=f"Task accepted [{chain_id[:8] if chain_id else ''}]: {feedback[:_LIM_EVENT]}",
                 source_node=node_id,
                 memory_type=MemoryType.PROGRESS,
                 tags=["acceptance", "completed"],
             )
 
-        # 返回结构化 JSON，对齐 deliver_artifacts 的 receipts 协议。
-        # reasoning_engine 会解析 receipts 进 delivery_receipts，让
-        # TaskVerify 认可"中继交付"——即父节点自己没调用 deliver_artifacts，
-        # 但子节点已经把文件交上来并被父节点 accept 的场景。
+        # Return structured JSON aligned with deliver_artifacts' receipts protocol.
+        # The reasoning_engine parses receipts into delivery_receipts so that
+        # TaskVerify recognizes "relay delivery" — the case where the parent node
+        # did not call deliver_artifacts itself, but the child submitted files that
+        # the parent then accepted.
         receipts = [
             {
                 "status": "relayed",
@@ -1612,7 +1613,7 @@ class OrgToolHandler:
             "accepted_from": from_node,
             "chain_id": chain_id,
             "receipts": receipts,
-            "message": f"已验收 {from_node} 的交付物。",
+            "message": f"Accepted {from_node}'s deliverable.",
         }
         return json.dumps(payload, ensure_ascii=False)
 
@@ -1625,9 +1626,9 @@ class OrgToolHandler:
 
         from_node = args.get("from_node", "")
         if not from_node:
-            return "缺少 from_node 参数"
+            return "Missing from_node parameter"
         if node_id == from_node:
-            return "不能打回自己的交付物"
+            return "You cannot reject your own deliverable"
 
         chain_id = args.get("task_chain_id", "")
         if chain_id:
@@ -1650,7 +1651,7 @@ class OrgToolHandler:
             from_node=node_id,
             to_node=from_node,
             msg_type=MsgType.TASK_REJECTED,
-            content=f"任务打回: {reason[:_LIM_EVENT]}",
+            content=f"Task rejected: {reason[:_LIM_EVENT]}",
             metadata=metadata,
         )
         await messenger.send(msg)
@@ -1667,12 +1668,12 @@ class OrgToolHandler:
             self._link_project_task(org_id, chain_id, status="rejected")
             self._append_execution_log(
                 org_id, chain_id,
-                f"打回: {reason[:_LIM_EXEC_LOG]}",
+                f"Rejected: {reason[:_LIM_EXEC_LOG]}",
                 node_id,
             )
             self._recalc_parent_progress(org_id, chain_id)
-            # rejected 也需要清理：让下游 agent 不会再用旧 chain 继续送交付物；
-            # 但不级联 cancel 子任务（rejected 意味着重做，可能仍依赖子任务结果）。
+            # Rejected also needs cleanup so downstream agents don't continue submitting deliverables with the old chain;
+            # but we don't cascade-cancel child tasks (rejected means redo, which may still depend on child task results).
             try:
                 self._runtime._cleanup_accepted_chain(
                     org_id, chain_id, reason="rejected",
@@ -1681,7 +1682,7 @@ class OrgToolHandler:
             except Exception as exc:
                 logger.debug("cleanup_accepted_chain on reject failed: %s", exc)
 
-        return f"已打回 {from_node} 的交付物，原因：{reason[:50]}"
+        return f"Rejected {from_node}'s deliverable, reason: {reason[:50]}"
 
     # ------------------------------------------------------------------
     # Meeting tools
@@ -1700,16 +1701,16 @@ class OrgToolHandler:
         max_rounds = min(args.get("max_rounds", 3), 5)
 
         if len(participants) > 6:
-            return "会议参与人数上限为 6 人，建议拆分为多个小会议"
+            return "Meeting participant limit is 6; consider splitting into multiple smaller meetings"
 
         all_members = [node_id] + participants
         valid = [mid for mid in all_members if org.get_node(mid) is not None]
         if len(valid) < 2:
-            return "有效参与者不足 2 人"
+            return "Fewer than 2 valid participants"
 
-        meeting_record: list[str] = [f"## 会议主题: {topic}\n"]
-        meeting_record.append(f"主持人: {node_id}")
-        meeting_record.append(f"参与者: {', '.join(participants)}\n")
+        meeting_record: list[str] = [f"## Meeting topic: {topic}\n"]
+        meeting_record.append(f"Host: {node_id}")
+        meeting_record.append(f"Participants: {', '.join(participants)}\n")
 
         await self._runtime._broadcast_ws("org:meeting_started", {
             "org_id": org_id, "topic": topic,
@@ -1718,7 +1719,7 @@ class OrgToolHandler:
 
         prev_round_summary = ""
         for round_num in range(1, max_rounds + 1):
-            meeting_record.append(f"\n### 第 {round_num} 轮\n")
+            meeting_record.append(f"\n### Round {round_num}\n")
 
             await self._runtime._broadcast_ws("org:meeting_round", {
                 "org_id": org_id, "round": round_num, "total_rounds": max_rounds,
@@ -1731,7 +1732,7 @@ class OrgToolHandler:
             ) -> tuple[str, str]:
                 node_obj = org.get_node(pid)
                 if not node_obj or node_obj.status in (NodeStatus.FROZEN, NodeStatus.OFFLINE):
-                    return pid, "(缺席)"
+                    return pid, "(Absent)"
                 try:
                     response = await self._lightweight_meeting_speak(
                         org, node_obj, topic, _round, max_rounds, _prev,
@@ -1739,7 +1740,7 @@ class OrgToolHandler:
                     return pid, response
                 except Exception as e:
                     logger.error(f"[Meeting] {pid} speak error: {e}")
-                    return pid, "(发言异常)"
+                    return pid, "(Speech error)"
 
             results = await asyncio.gather(*[_get_opinion(pid) for pid in valid])
 
@@ -1758,13 +1759,13 @@ class OrgToolHandler:
 
         conclusion = await self._meeting_summarize(org_id, topic, meeting_record)
         if conclusion:
-            meeting_record.append(f"\n### 会议结论\n\n{conclusion}")
+            meeting_record.append(f"\n### Meeting conclusion\n\n{conclusion}")
 
         bb = self._runtime.get_blackboard(org_id)
         if bb:
             summary_text = conclusion or meeting_record[-1][:_LIM_EVENT]
             bb.write_org(
-                content=f"会议结论 — {topic}: {summary_text}",
+                content=f"Meeting conclusion — {topic}: {summary_text}",
                 source_node=node_id,
                 memory_type=MemoryType.DECISION,
                 tags=["meeting"],
@@ -1794,7 +1795,7 @@ class OrgToolHandler:
         max_rounds: int,
         prev_round_summary: str,
     ) -> str:
-        """轻量会议发言：直接 LLM 单次调用，不走完整 Agent/ReAct 循环。"""
+        """Lightweight meeting speech: a single LLM call, bypassing the full Agent/ReAct loop."""
         identity = self._runtime._get_identity(org.id)
         role_prompt = ""
         if identity:
@@ -1805,51 +1806,51 @@ class OrgToolHandler:
                 pass
 
         context_parts = [
-            f"你是「{org.name}」的 {node.role_title}（{node.department or ''}）。",
+            f"You are the {node.role_title} ({node.department or ''}) of '{org.name}'.",
         ]
         role_goal = getattr(node, "role_goal", "") or ""
         if role_goal:
-            context_parts.append(f"你的目标: {role_goal[:200]}")
+            context_parts.append(f"Your goal: {role_goal[:200]}")
         if role_prompt:
             context_parts.append(role_prompt)
 
         system_prompt = "\n".join(context_parts)
 
         user_parts = [
-            f"你正在参加一个关于「{topic}」的组织内部会议（第 {round_num}/{max_rounds} 轮）。",
+            f"You are attending an internal meeting on '{topic}' (round {round_num}/{max_rounds}).",
         ]
         if prev_round_summary:
-            user_parts.append(f"\n上一轮发言摘要:\n{prev_round_summary[:800]}\n")
+            user_parts.append(f"\nPrevious round summary:\n{prev_round_summary[:800]}\n")
         user_parts.append(
-            "请基于你的职责和专业领域，发表简洁的观点（100-200字）。"
-            "直接表达核心观点，不要客套寒暄。"
+            "Based on your responsibilities and expertise, share a concise opinion (100-200 words). "
+            "State core points directly without pleasantries."
         )
 
         try:
             text = await self._llm_simple_call(
                 system_prompt, "\n".join(user_parts), max_tokens=400,
             )
-            return text[:500] if text else "(无内容)"
+            return text[:500] if text else "(No content)"
         except Exception as e:
             logger.error(f"[Meeting] LLM call failed for {node.id}: {e}")
-            return f"(发言失败: {e})"
+            return f"(Speech failed: {e})"
 
     async def _meeting_summarize(
         self, org_id: str, topic: str, meeting_record: list[str],
     ) -> str:
-        """用 LLM 生成会议结论。"""
+        """Generate meeting conclusion via LLM."""
         full_record = "\n".join(meeting_record)
         if len(full_record) > 3000:
-            full_record = full_record[:3000] + "\n...(已截断)"
+            full_record = full_record[:3000] + "\n...(truncated)"
 
         user_msg = (
-            f"以下是关于「{topic}」的会议讨论记录:\n\n{full_record}\n\n"
-            "请总结会议结论，包括: 1) 达成的共识 2) 待决事项 3) 行动计划。"
-            "用 150-300 字简洁总结。"
+            f"The following is the meeting discussion record on '{topic}':\n\n{full_record}\n\n"
+            "Summarize the conclusion including: 1) consensus reached 2) pending items 3) action plan. "
+            "Use 150-300 words for a concise summary."
         )
         try:
             text = await self._llm_simple_call(
-                "你是一位专业的会议记录员。", user_msg, max_tokens=500,
+                "You are a professional meeting note-taker.", user_msg, max_tokens=500,
             )
             return (text or "")[:600]
         except Exception as e:
@@ -1859,7 +1860,7 @@ class OrgToolHandler:
     async def _llm_simple_call(
         self, system: str, user_content: str, max_tokens: int = 400,
     ) -> str:
-        """统一的轻量 LLM 调用：兼容 Message 类型和 dict 类型 response。"""
+        """Unified lightweight LLM call: compatible with both Message-type and dict-type responses."""
         from openakita.llm.client import chat as llm_chat
         from openakita.llm.types import Message
 
@@ -1892,8 +1893,8 @@ class OrgToolHandler:
         inbox = self._runtime.get_inbox(org_id)
         inbox.push_approval_request(
             org_id, node_id,
-            title=f"{node_id} 申请创建定时任务「{args['name']}」",
-            body=f"任务指令: {args['prompt'][:_LIM_WS]}\n类型: {args.get('schedule_type', 'interval')}",
+            title=f"{node_id} is requesting to create a scheduled task '{args['name']}'",
+            body=f"Task prompt: {args['prompt'][:_LIM_WS]}\nType: {args.get('schedule_type', 'interval')}",
             metadata={
                 "action_type": "create_schedule",
                 "node_id": node_id,
@@ -1905,20 +1906,20 @@ class OrgToolHandler:
             "schedule_requested", node_id,
             {"name": args["name"]},
         )
-        return f"定时任务「{args['name']}」已提交审批，批准后将自动创建。"
+        return f"Scheduled task '{args['name']}' submitted for approval; will be created automatically once approved."
 
     async def _handle_org_list_my_schedules(
         self, args: dict, org_id: str, node_id: str
     ) -> str:
         schedules = self._runtime._manager.get_node_schedules(org_id, node_id)
         if not schedules:
-            return "你目前没有定时任务"
+            return "You currently have no scheduled tasks"
         lines = []
         for s in schedules:
-            status = "✅ 启用" if s.enabled else "⏸️ 暂停"
-            freq = s.cron or (f"每 {s.interval_s}s" if s.interval_s else s.run_at or "未设置")
-            last = s.last_run_at or "从未执行"
-            lines.append(f"- [{status}] {s.name} | 频率: {freq} | 上次: {last}")
+            status = "Enabled" if s.enabled else "Paused"
+            freq = s.cron or (f"every {s.interval_s}s" if s.interval_s else s.run_at or "unset")
+            last = s.last_run_at or "never"
+            lines.append(f"- [{status}] {s.name} | freq: {freq} | last: {last}")
         return "\n".join(lines)
 
     async def _handle_org_assign_schedule(
@@ -1936,7 +1937,7 @@ class OrgToolHandler:
         if caller and caller.level >= target.level:
             parent = org.get_parent(target_id)
             if not parent or parent.id != node_id:
-                return "只能给直属下级指定定时任务"
+                return "You can only assign scheduled tasks to direct reports"
 
         sched = NodeSchedule(
             name=args["name"],
@@ -1954,7 +1955,7 @@ class OrgToolHandler:
             "schedule_assigned", node_id,
             {"target": target_id, "schedule_id": sched.id, "name": sched.name},
         )
-        return f"已为 {target.role_title} 指定定时任务「{sched.name}」（ID: {sched.id}）"
+        return f"Assigned scheduled task '{sched.name}' to {target.role_title} (ID: {sched.id})"
 
     # ------------------------------------------------------------------
     # Policy proposal tool
@@ -1966,8 +1967,8 @@ class OrgToolHandler:
         inbox = self._runtime.get_inbox(org_id)
         inbox.push_approval_request(
             org_id, node_id,
-            title=f"制度提议: {args['title']}",
-            body=f"提议者: {node_id}\n原因: {args['reason']}\n文件: {args['filename']}\n\n{args['content'][:500]}",
+            title=f"Policy proposal: {args['title']}",
+            body=f"Proposer: {node_id}\nReason: {args['reason']}\nFile: {args['filename']}\n\n{args['content'][:500]}",
             options=["approve", "reject"],
             metadata={
                 "policy_filename": args["filename"],
@@ -1980,7 +1981,7 @@ class OrgToolHandler:
             "policy_proposed", node_id,
             {"filename": args["filename"], "title": args["title"]},
         )
-        return f"制度提议「{args['title']}」已提交审批。"
+        return f"Policy proposal '{args['title']}' submitted for approval."
 
     # ------------------------------------------------------------------
     # Tool request / grant / revoke
@@ -1994,16 +1995,16 @@ class OrgToolHandler:
             return "Organization not found"
         parent = org.get_parent(node_id)
         if not parent:
-            return "你是最高级节点，无法向上级申请。请直接配置 external_tools。"
+            return "You are the top-level node; cannot request from a supervisor. Configure external_tools directly."
 
         tools = args.get("tools", [])
         reason = args.get("reason", "")
         if not tools:
-            return "参数不完整：请指定需要申请的工具列表（tools）。"
+            return "Incomplete arguments: please specify the tools list to request."
 
         messenger = self._runtime.get_messenger(org_id)
         if not messenger:
-            return "消息系统未就绪"
+            return "Messaging system not ready"
 
         from .tool_categories import TOOL_CATEGORIES
         ", ".join(tools)
@@ -2015,9 +2016,9 @@ class OrgToolHandler:
                 cat_details.append(t)
 
         content = (
-            f"[工具申请] {node_id} 申请增加外部工具：{', '.join(cat_details)}\n"
-            f"申请原因：{reason}\n\n"
-            f"如果批准，请使用 org_grant_tools(node_id=\"{node_id}\", tools={tools}) 授权。"
+            f"[Tool request] {node_id} is requesting additional external tools: {', '.join(cat_details)}\n"
+            f"Reason: {reason}\n\n"
+            f"If approved, use org_grant_tools(node_id=\"{node_id}\", tools={tools}) to grant."
         )
 
         msg = OrgMessage(
@@ -2034,7 +2035,7 @@ class OrgToolHandler:
             "tools_requested", node_id,
             {"tools": tools, "reason": reason, "superior": parent.id},
         )
-        return f"工具申请已发送给 {parent.role_title}（{parent.id}），等待审批。"
+        return f"Tool request sent to {parent.role_title} ({parent.id}), awaiting approval."
 
     async def _handle_org_grant_tools(
         self, args: dict, org_id: str, node_id: str
@@ -2046,7 +2047,7 @@ class OrgToolHandler:
         target_id = args.get("node_id", "")
         tools = args.get("tools", [])
         if not target_id or not tools:
-            return "参数不完整：需要 node_id 和 tools"
+            return "Incomplete arguments: node_id and tools are required"
 
         target = org.get_node(target_id)
         if not target:
@@ -2055,7 +2056,7 @@ class OrgToolHandler:
         children = org.get_children(node_id)
         child_ids = {c.id for c in children}
         if target_id not in child_ids:
-            return f"{target_id} 不是你的直属下级，无法授权。"
+            return f"{target_id} is not your direct report; cannot grant."
 
         existing = set(target.external_tools)
         for t in tools:
@@ -2073,7 +2074,7 @@ class OrgToolHandler:
                 from_node=node_id,
                 to_node=target_id,
                 msg_type=MsgType.FEEDBACK,
-                content=f"你的工具权限已更新，新增：{', '.join(tools)}。下次激活时生效。",
+                content=f"Your tool permissions have been updated; added: {', '.join(tools)}. Takes effect at next activation.",
                 metadata={"_tool_grant": True, "granted_tools": tools},
             )
             await messenger.send(notify)
@@ -2082,7 +2083,7 @@ class OrgToolHandler:
             "tools_granted", node_id,
             {"target": target_id, "tools": tools},
         )
-        return f"已授权 {target.role_title}（{target_id}）使用：{', '.join(tools)}"
+        return f"Granted {target.role_title} ({target_id}) access to: {', '.join(tools)}"
 
     async def _handle_org_revoke_tools(
         self, args: dict, org_id: str, node_id: str
@@ -2094,7 +2095,7 @@ class OrgToolHandler:
         target_id = args.get("node_id", "")
         tools = args.get("tools", [])
         if not target_id or not tools:
-            return "参数不完整：需要 node_id 和 tools"
+            return "Incomplete arguments: node_id and tools are required"
 
         target = org.get_node(target_id)
         if not target:
@@ -2103,7 +2104,7 @@ class OrgToolHandler:
         children = org.get_children(node_id)
         child_ids = {c.id for c in children}
         if target_id not in child_ids:
-            return f"{target_id} 不是你的直属下级，无法操作。"
+            return f"{target_id} is not your direct report; cannot operate."
 
         removed = []
         for t in tools:
@@ -2112,7 +2113,7 @@ class OrgToolHandler:
                 removed.append(t)
 
         if not removed:
-            return f"{target.role_title} 没有这些工具可收回。"
+            return f"{target.role_title} does not have any of these tools to revoke."
 
         await self._runtime._save_org(org)
         self._runtime.evict_node_agent(org_id, target_id)
@@ -2124,7 +2125,7 @@ class OrgToolHandler:
                 from_node=node_id,
                 to_node=target_id,
                 msg_type=MsgType.FEEDBACK,
-                content=f"你的部分工具权限已收回：{', '.join(removed)}。下次激活时生效。",
+                content=f"Some of your tool permissions have been revoked: {', '.join(removed)}. Takes effect at next activation.",
                 metadata={"_tool_revoke": True, "revoked_tools": removed},
             )
             await messenger.send(notify)
@@ -2133,7 +2134,7 @@ class OrgToolHandler:
             "tools_revoked", node_id,
             {"target": target_id, "tools": removed},
         )
-        return f"已收回 {target.role_title}（{target_id}）的工具：{', '.join(removed)}"
+        return f"Revoked {target.role_title}'s ({target_id}) tools: {', '.join(removed)}"
 
     # ------------------------------------------------------------------
     # Project task tools
@@ -2144,7 +2145,7 @@ class OrgToolHandler:
     ) -> str:
         chain_id = args.get("task_chain_id", "")
         if not chain_id:
-            return "缺少 task_chain_id"
+            return "Missing task_chain_id"
         try:
             from openakita.orgs.project_store import ProjectStore
 
@@ -2152,7 +2153,7 @@ class OrgToolHandler:
             store = ProjectStore(mgr._org_dir(org_id))
             existing = store.find_task_by_chain(chain_id)
             if not existing:
-                return f"未找到任务链 {chain_id[:12]}"
+                return f"Task chain {chain_id[:12]} not found"
             updates: dict[str, Any] = {}
             if "progress_pct" in args:
                 pct = args["progress_pct"]
@@ -2169,13 +2170,13 @@ class OrgToolHandler:
                 updates["status"] = TaskStatus.DELIVERED
             if updates:
                 store.update_task(existing.project_id, existing.id, updates)
-            msg = f"已汇报进度: {updates.get('progress_pct', '')}%"
+            msg = f"Progress reported: {updates.get('progress_pct', '')}%"
             if "status" in updates:
-                msg += f" (状态已自动更新为 {updates['status'].value})"
+                msg += f" (status auto-updated to {updates['status'].value})"
             return msg
         except Exception as e:
             logger.debug("org_report_progress failed: %s", e)
-            return f"汇报失败: {e}"
+            return f"Report failed: {e}"
 
     async def _handle_org_get_task_progress(
         self, args: dict, org_id: str, node_id: str
@@ -2191,7 +2192,7 @@ class OrgToolHandler:
             elif args.get("task_id"):
                 task, _ = store.get_task(args["task_id"])
             if not task:
-                return {"error": "任务未找到"}
+                return {"error": "Task not found"}
             return {
                 "id": task.id,
                 "title": task.title,
@@ -2270,7 +2271,7 @@ class OrgToolHandler:
         task_id = args.get("task_id")
         chain_id = args.get("task_chain_id")
         if not task_id and not chain_id:
-            return "需要 task_id 或 task_chain_id"
+            return "Need task_id or task_chain_id"
         try:
             from openakita.orgs.models import TaskStatus
             from openakita.orgs.project_store import ProjectStore
@@ -2289,7 +2290,7 @@ class OrgToolHandler:
                 if task:
                     proj_id = task.project_id
             if not task or not proj_id:
-                return "任务未找到"
+                return "Task not found"
             updates: dict[str, Any] = {}
             if "progress_pct" in args:
                 try:
@@ -2313,10 +2314,10 @@ class OrgToolHandler:
                     updates["execution_log"] = existing
             if updates:
                 store.update_task(proj_id, task_id, updates)
-            return "已更新"
+            return "Updated"
         except Exception as e:
             logger.debug("org_update_project_task failed: %s", e)
-            return f"更新失败: {e}"
+            return f"Update failed: {e}"
 
     async def _handle_org_create_project_task(
         self, args: dict, org_id: str, node_id: str
@@ -2324,7 +2325,7 @@ class OrgToolHandler:
         project_id = args.get("project_id", "")
         title = args.get("title", "")
         if not project_id or not title:
-            return "需要 project_id 和 title"
+            return "Need project_id and title"
         try:
             from openakita.orgs.models import ProjectTask, TaskStatus
             from openakita.orgs.project_store import ProjectStore
@@ -2333,7 +2334,7 @@ class OrgToolHandler:
             store = ProjectStore(mgr._org_dir(org_id))
             proj = store.get_project(project_id)
             if not proj:
-                return f"项目 {project_id} 不存在"
+                return f"Project {project_id} does not exist"
             parent_task_id = args.get("parent_task_id")
             depth = 0
             if parent_task_id:
@@ -2351,7 +2352,7 @@ class OrgToolHandler:
                 depth=depth,
             )
             store.add_task(project_id, task)
-            return f"已创建任务 {task.id}: {title[:50]}"
+            return f"Created task {task.id}: {title[:50]}"
         except Exception as e:
             logger.debug("org_create_project_task failed: %s", e)
-            return f"创建失败: {e}"
+            return f"Creation failed: {e}"

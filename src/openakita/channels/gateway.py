@@ -6,7 +6,7 @@
 - 会话管理集成
 - 媒体预处理（图片、语音、视频）
 - Agent 调用
-- 消息中断机制（支持在工具调用间隙插入新消息）
+- Message-interrupt mechanism（支持在工具调用间隙插入新消息）
 - 系统级命令拦截（模型切换等）
 """
 
@@ -163,7 +163,7 @@ class ModelCommandHandler:
         text = text.strip()
         text_lower = text.lower()
 
-        # /model - 显示当前模型状态
+        # /model - 显示当前模型State
         if text_lower == "/model":
             return self._format_model_status()
 
@@ -226,7 +226,7 @@ class ModelCommandHandler:
         return "Unknown operation"
 
     def _format_model_status(self) -> str:
-        """格式化模型状态信息"""
+        """格式化模型State信息"""
         models = self._brain.list_available_models()
         override = self._brain.get_override_status()
 
@@ -568,7 +568,7 @@ class ThinkingCommandHandler:
         return None
 
     def _format_chain_status(self, session: "Session") -> str:
-        """格式化思维链推送状态"""
+        """格式化思维链推送State"""
         from openakita.config import settings
 
         current = session.get_metadata("chain_push")
@@ -592,7 +592,7 @@ class ThinkingCommandHandler:
         return "\n".join(lines)
 
     def _format_thinking_status(self, session: "Session") -> str:
-        """格式化思考模式状态"""
+        """格式化思考模式State"""
         current_mode = session.get_metadata("thinking_mode")
         current_depth = session.get_metadata("thinking_depth")
 
@@ -617,7 +617,7 @@ class ThinkingCommandHandler:
         return "\n".join(lines)
 
     def _format_depth_status(self, session: "Session") -> str:
-        """格式化思考深度状态"""
+        """格式化思考深度State"""
         current_depth = session.get_metadata("thinking_depth")
         depth_label = self.DEPTH_LABELS.get(current_depth or "medium", "medium (balanced)")
 
@@ -911,7 +911,7 @@ class MessageGateway:
         self._whisper_loaded = False
         self._whisper_unavailable = False  # ImportError → 本进程内不再重试
 
-        # ==================== 消息中断机制 ====================
+        # ==================== Message-interrupt mechanism ====================
         # 会话级中断队列 {session_key: asyncio.PriorityQueue[InterruptMessage]}
         self._interrupt_queues: dict[str, asyncio.PriorityQueue] = {}
 
@@ -1133,7 +1133,7 @@ class MessageGateway:
         if not text:
             return False
         t = text.strip().lower()
-        if t in ("/状态", "/status", "/重置", "/agent_reset"):
+        if t in ("/State", "/status", "/重置", "/agent_reset"):
             return True
         if t in ("/切换", "/switch") or t.startswith(("/切换 ", "/switch ")):
             return True
@@ -1143,7 +1143,7 @@ class MessageGateway:
         """
         处理多Agent相关命令。
 
-        支持: /切换 /switch /状态 /status /重置 /agent_reset
+        支持: /切换 /switch /State /status /重置 /agent_reset
         """
         if getattr(self, "_orchestrator_ref", None) is None:
             return "Multi-agent system is initializing, please try again shortly."
@@ -1165,8 +1165,8 @@ class MessageGateway:
         if t in ("/切换", "/switch") or t.startswith(("/切换 ", "/switch ")):
             return await self._handle_agent_switch(session, t)
 
-        # /状态 或 /status
-        if t in ("/状态", "/status"):
+        # /State 或 /status
+        if t in ("/State", "/status"):
             return self._format_agent_status(session)
 
         # /重置 或 /agent_reset
@@ -1262,7 +1262,7 @@ class MessageGateway:
         return self._format_system_help()
 
     def _format_agent_status(self, session: Session) -> str:
-        """格式化 /状态 输出"""
+        """格式化 /State 输出"""
         from openakita.agents.presets import SYSTEM_PRESETS
         from openakita.agents.profile import get_profile_store
 
@@ -1598,7 +1598,7 @@ class MessageGateway:
         return dict(getattr(self, "_failed_adapter_reasons", {}))
 
     def report_adapter_failure(self, name: str, reason: str) -> None:
-        """后台任务中适配器发生致命失败时调用，更新状态并通知前端。"""
+        """后台任务中适配器发生致命失败时调用，更新State并通知前端。"""
         if name not in self._failed_adapters:
             self._failed_adapters.append(name)
         if name in self._started_adapters:
@@ -2493,7 +2493,7 @@ class MessageGateway:
         return None
 
     def _mark_session_processing(self, session_key: str, processing: bool) -> None:
-        """标记会话处理状态"""
+        """标记会话处理State"""
         self._processing_sessions[session_key] = processing
         if not processing and session_key in self._interrupt_callbacks:
             del self._interrupt_callbacks[session_key]
@@ -2742,7 +2742,7 @@ class MessageGateway:
                 await self._send_response(message, response_text)
                 return
 
-            # 检查是否是多Agent相关命令（/切换 /switch /状态 /status /重置 /agent_reset）
+            # 检查是否是多Agent相关命令（/切换 /switch /State /status /重置 /agent_reset）
             if self._is_agent_command(user_text):
                 response_text = await self._handle_agent_command(message, user_text)
                 if response_text is not None:
@@ -2809,7 +2809,7 @@ class MessageGateway:
                 )
                 return
 
-            # 停止/跳过指令兜底（非处理中状态下收到这些指令，直接返回提示）
+            # 停止/跳过指令兜底（非处理中State下收到这些指令，直接返回提示）
             _IDLE_STOP_CMDS = {"/stop", "/停止", "/cancel", "/abort", "/skip", "/跳过"}
             if _cmd_lower in _IDLE_STOP_CMDS:
                 await self._send_response(
@@ -2826,7 +2826,7 @@ class MessageGateway:
                 )
                 return
 
-            # 1. 启动持续 typing 状态（覆盖预处理 + Agent 全流程）
+            # 1. 启动持续 typing State（覆盖预处理 + Agent 全流程）
             typing_task = asyncio.create_task(self._keep_typing(message))
 
             # 2. 预处理钩子
@@ -2899,7 +2899,7 @@ class MessageGateway:
                                 _time_desc = f"{int(_elapsed_min)} 分钟"
                             session.context.add_message(
                                 "system",
-                                f"[上下文边界] 距上次对话已过去 {_time_desc}，"
+                                f"[Context boundary] 距上次对话已过去 {_time_desc}，"
                                 f"以下是新的对话，可能是新话题。"
                                 f"请优先关注边界之后的内容。",
                             )
@@ -3398,7 +3398,7 @@ class MessageGateway:
             return None
 
     async def _send_typing(self, message: UnifiedMessage) -> None:
-        """发送正在输入状态"""
+        """发送正在输入State"""
         adapter = self._adapters.get(message.channel)
         if adapter and hasattr(adapter, "send_typing"):
             try:
@@ -3429,7 +3429,7 @@ class MessageGateway:
     async def _call_agent_with_typing(
         self, session: Session, message: UnifiedMessage
     ) -> tuple[str, bool]:
-        """调用 Agent 处理消息，期间持续发送 typing 状态"""
+        """调用 Agent 处理消息，期间持续发送 typing State"""
         import asyncio
 
         typing_task = asyncio.create_task(self._keep_typing(message))
@@ -3442,12 +3442,12 @@ class MessageGateway:
                 await typing_task
 
     async def _keep_typing(self, message: UnifiedMessage) -> None:
-        """持续发送 typing 状态（每 4 秒一次）"""
+        """持续发送 typing State（每 4 秒一次）"""
         import asyncio
 
         while True:
             await self._send_typing(message)
-            await asyncio.sleep(4)  # Telegram typing 状态持续约 5 秒
+            await asyncio.sleep(4)  # Telegram typing State持续约 5 秒
 
     async def _call_agent(
         self,
@@ -3471,7 +3471,7 @@ class MessageGateway:
             input_text = message.plain_text
             _has_voice = bool(message.content.voices)
 
-            # 处理语音文件 - 双路策略：保留原始音频 + Whisper 转写
+            # 处理语音文件 - 双路Strategy:保留原始音频 + Whisper 转写
             audio_data_list = []
             for voice in message.content.voices:
                 # 双路保留：始终存储原始音频路径到 pending_audio
@@ -3718,7 +3718,7 @@ class MessageGateway:
                                     errors="replace",
                                 )
                                 input_text += (
-                                    f"\n\n--- 文件: {_fname} ---\n{_content}\n--- 文件结束 ---"
+                                    f"\n\n--- 文件: {_fname} ---\n{_content}\n--- End of file ---"
                                 )
                                 logger.info(
                                     f"Text file injected: {fil.local_path} ({len(_content)} chars)"
@@ -4021,7 +4021,7 @@ class MessageGateway:
         """
         发送响应（带重试、按渠道分割长消息、分片间限流保护）
 
-        分片失败策略：
+        分片失败Strategy:
         - 首次以 Markdown 分片发送
         - 任一分片 3 次重试仍失败 → 中止剩余分片，改用纯文本整体重发
         - 纯文本重发也失败 → 发送失败通知
@@ -4260,7 +4260,7 @@ class MessageGateway:
         检查并推送未送达的自检报告
 
         自检在凌晨 4:00 运行，但此时通常没有活跃会话（30 分钟超时），
-        报告会以 reported=false 状态保存在 data/selfcheck/ 目录下。
+        报告会以 reported=false State保存在 data/selfcheck/ 目录下。
         当用户发消息时，这里会把未送达的报告补推给用户。
 
         去重由报告 JSON 的 reported 字段保证，无需额外的日期锁。
@@ -4322,7 +4322,7 @@ class MessageGateway:
                 if not adapter or not adapter.is_running:
                     continue
 
-                header = f"📋 每日系统自检报告（{report_date}）\n\n"
+                header = f"📋 每日System self-check报告（{report_date}）\n\n"
                 full_text = header + report_md
                 _meta = {
                     "is_group": (message.metadata or {}).get(
@@ -4464,20 +4464,20 @@ class MessageGateway:
             return
 
         text = (
-            f"⚠️ **安全确认**\n\n"
-            f"工具: `{tool_name}`\n"
-            f"风险等级: **{risk_level}**\n"
-            f"原因: {reason}\n\n"
-            f"请回复: **允许** / **拒绝**"
+            f"WARNING: **Safety confirmation**\n\n"
+            f"Tool: `{tool_name}`\n"
+            f"Risk level: **{risk_level}**\n"
+            f"Reason: {reason}\n\n"
+            f"Please reply: **allow** / **deny**"
         )
 
         if hasattr(adapter, "build_simple_card") and hasattr(adapter, "send_card"):
             card = adapter.build_simple_card(
-                title=f"⚠️ 安全确认 — {risk_level}",
-                content=(f"**工具**: {tool_name}\n**原因**: {reason}"),
+                title=f"WARNING: Safety confirmation — {risk_level}",
+                content=(f"**Tool**: {tool_name}\n**Reason**: {reason}"),
                 buttons=[
-                    {"text": "✅ 允许", "value": "security_allow"},
-                    {"text": "❌ 拒绝", "value": "security_deny"},
+                    {"text": "Allow", "value": "security_allow"},
+                    {"text": "Deny", "value": "security_deny"},
                 ],
             )
             try:
@@ -4807,7 +4807,7 @@ class MessageGateway:
         """
         添加后处理钩子
 
-        在 Agent 响应后调用，可以修改响应
+        在 Agent response后调用，可以修改响应
         """
         self._post_process_hooks.append(hook)
 

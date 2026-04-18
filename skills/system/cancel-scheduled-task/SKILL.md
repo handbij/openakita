@@ -9,24 +9,24 @@ category: Scheduled Tasks
 
 # Cancel Scheduled Task
 
-【永久delete】定时任务。
+[delete].
 
 ## Parameters
 
 | Parameter | Type | Required | Description |
 |-----|------|-----|------|
-| task_id | string | Yes | 任务 ID |
+| task_id | string | Yes | ID |
 
 ## Important
 
-**操作区分**：
-- 用户说"取消/delete任务" → 用此工具
-- 用户说"Close提醒" → 用 `update_scheduled_task` 设 notify=false
-- 用户说"Pause任务" → 用 `update_scheduled_task` 设 enabled=false
+****:
+- "/delete" →
+- "Close" → `update_scheduled_task` notify=false
+- "Pause" → `update_scheduled_task` enabled=false
 
-**注意**：delete后无法Resume！
+****:deleteResume!
 
 ## Related Skills
 
-- `list-scheduled-tasks`: get任务 ID
-- `update-scheduled-task`: 修改任务Set
+- `list-scheduled-tasks`: get ID
+- `update-scheduled-task`: Set

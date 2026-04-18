@@ -9,46 +9,46 @@ category: IM Channel
 
 # Deliver Artifacts
 
-Via网关Deliver attachments to current IM chat（文件/图片/语音），并Return structured receipt。
+ViaDeliver attachments to current IM chat (//), Return structured receipt. 
 
 ## Important
 
-- **文本回复**由网关直接转发，不需要用工具Send
-- **附件交付**必须Use本工具，回执Yes"已交付"的唯一证据
+- ****, notneedSend
+- ****Use, Yes""
 
 ## Parameters
 
 | Parameter | Type | Required | Description |
 |-----|------|-----|------|
 | artifacts | array | Yes | List of artifacts to deliver |
-| mode | string | No | send 或 preview（Default send） |
+| mode | string | No | send or preview (Default send) |
 
 ### Artifact Item
 
-| 字段 | Type | Required | Description |
+| | Type | Required | Description |
 |-----|------|-----|------|
 | type | string | Yes | file / image / voice |
-| path | string | Yes | 本地File path |
-| caption | string | No | 说明文字 |
+| path | string | Yes | File path |
+| caption | string | No | |
 
 ## Examples
 
-**Send截图**:
+**Send**:
 ```json
 {
-  "artifacts": [{"type": "image", "path": "data/temp/screenshot.png", "caption": "页面截图"}]
+"artifacts": [{"type": "image", "path": "data/temp/screenshot.png", "caption": ""}]
 }
 ```
 
-**Send文件**:
+**Send**:
 ```json
 {
-  "artifacts": [{"type": "file", "path": "data/out/report.md"}]
+ "artifacts": [{"type": "file", "path": "data/out/report.md"}]
 }
 ```
 
 ## Related Skills
 
-- `browser-screenshot`: 网页截图
+- `browser-screenshot`:
 - `desktop-screenshot`: Desktop screenshot
-- `get-voice-file`: get语音文件
+- `get-voice-file`: get

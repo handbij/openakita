@@ -9,7 +9,7 @@ category: MCP
 
 # Call MCP Tool
 
-Call MCP 服务器的工具。
+Call MCP .
 
 ## Parameters
 
@@ -17,11 +17,11 @@ Call MCP 服务器的工具。
 |-----|------|-----|------|
 | server | string | Yes | MCP Server identifier |
 | tool_name | string | Yes | Tool name |
-| arguments | object | No | Tool arguments，Default {} |
+| arguments | object | No | Tool arguments, Default {} |
 
 ## Usage
 
-View系统提示中的 'MCP Servers' Partial了解可用的服务器和工具。
+View 'MCP Servers' Partial and.
 
 ## Examples
 
@@ -35,5 +35,5 @@ View系统提示中的 'MCP Servers' Partial了解可用的服务器和工具。
 
 ## Related Skills
 
-- `list-mcp-servers`: list可用服务器
-- `get-mcp-instructions`: getUse说明
+- `list-mcp-servers`: list
+- `get-mcp-instructions`: getUse

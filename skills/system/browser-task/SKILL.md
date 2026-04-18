@@ -8,18 +8,18 @@ category: Browser
 priority: high
 ---
 
-# browser_task - 智能浏览器任务
+# browser_task -
 
-**Recommendations优先Use** - 这YesBrowser operations的首选工具。
+**RecommendationsUse** - thisYesBrowser operations. 
 
-Based on [browser-use](https://github.com/browser-use/browser-use) 开源项目实现。
+Based on [browser-use](https://github.com/browser-use/browser-use). 
 
-## 用法
+## Usage
 
 ```python
 browser_task(
-    task="要完成的任务描述",
-    max_steps=15  # Optional,Default 15
+task="need ",
+ max_steps=15 # Optional,Default 15
 )
 ```
 
@@ -27,92 +27,92 @@ browser_task(
 
 | Parameter | Type | Required | Description |
 |------|------|------|------|
-| task | string | Yes | 任务描述，用自然语言描述你想完成的操作 |
-| max_steps | integer | No | MaximumExecute步骤数，Default 15 |
+| task | string | Yes |, |
+| max_steps | integer | No | MaximumExecute, Default 15 |
 
-## When to Use（优先）
+## When to Use () 
 
-- 任何涉及多步骤的Browser operations
-- 网页Search、表单填写、信息Extract
-- 不确定具体操作步骤时
-- 复杂的网页交互流程
+- Browser operations
+- Search,, Extract
+- not
+-
 
 ## Examples
 
-### Search任务
+### Search
 ```python
-browser_task(task="Open百度Search福建福州天气")
+browser_task(task="OpenSearch")
 ```
 
-### 表单填写
+### Form
 ```python
-browser_task(task="Open example.com 的注册页面，填写用户名 test123")
+browser_task(task="Open example.com, test123")
 ```
 
-### 信息Extract
+### InfoExtract
 ```python
-browser_task(task="Open GitHub 首页，Get今日热门项目的名称")
+browser_task(task="Open GitHub, Get ")
 ```
 
-### 截图任务
+###
 ```python
-browser_task(task="Open百度Search福建福州，截图Save")
+browser_task(task="OpenSearch, Save")
 ```
 
-## 浏览器 & 网站操作工具选用指引
+## Browser &
 
-系统Provides多条路径操作网站和浏览器，按场景选择最可靠的方案：
+Providesand,: 
 
-| 场景 | Recommendations工具 | Description |
+| | Recommendations | Description |
 |------|---------|------|
-| 目标网站有 opencli adapter | `opencli_run`（最可靠） | 确定性命令 + JSON 输出，复用 Chrome 登录态 |
-| 需要登录但无 adapter | `browser_task` → Manual组合 | 先尝试 browser_task，失败则用 click/type Manual操作 |
-| 仅需Read网页内容 | `web_fetch` | 最快最省资源，无需浏览器 |
-| 仅需Search | `web_search` | DuckDuckGo 直接Search |
-| 复杂多步浏览器交互 | `browser_task` | 适合登录、填表、筛选等 |
-| 单步Browser operations | `browser_navigate`/`browser_click` 等 | 精确控制单个操作 |
-| 操作用户已登录的 Chrome | `call_mcp_tool("chrome-devtools", ...)` | 需用户 Chrome 开启调试端口 |
+| have opencli adapter | `opencli_run` () | + JSON, Chrome |
+| need adapter | `browser_task` → Manual | browser_task, click/type Manual |
+| Read | `web_fetch` |, |
+| Search | `web_search` | DuckDuckGo Search |
+| | `browser_task` |,, |
+| Browser operations | `browser_navigate`/`browser_click` | |
+| Chrome | `call_mcp_tool("chrome-devtools",...)` | Chrome |
 
-决策顺序：`opencli_run`（有 adapter 时）→ `web_fetch`/`web_search`（只读时）→ `browser_task` → Manual browser_click/type 组合 → chrome-devtools MCP。
+: `opencli_run` (have adapter ) → `web_fetch`/`web_search` () → `browser_task` → Manual browser_click/type → chrome-devtools MCP. 
 
-## When to Use细粒度工具
+## When to Use
 
-仅在以下情况Use `browser_navigate`、`browser_click` 等细粒度工具：
+inUse `browser_navigate`, `browser_click`: 
 
-- `browser_task` Execute失败需要Manual介入
-- 仅需单步操作（如只截图 `browser_screenshot`）
-- 需要精确控制特定元素
+- `browser_task` ExecuteneedManual
+- ( `browser_screenshot`) 
+- need
 
 ## Return Values
 
 ```json
 {
-    "success": true,
-    "result": {
-        "task": "Open百度Search福建福州",
-        "steps_taken": 5,
-        "final_result": "Search完成，已Display福建福州相关结果",
-        "message": "任务完成: Open百度Search福建福州"
-    }
+ "success": true,
+ "result": {
+"task": "OpenSearch",
+ "steps_taken": 5,
+"final_result": "Search, Display",
+"message": ": OpenSearch"
+ }
 }
 ```
 
 ## Notes
 
-1. 任务描述要清晰具体，避免歧义
-2. 复杂任务可能需要增加 max_steps
-3. 首次Use会AutomaticLaunch browser（可见模式）
-4. **Automatic继承系统 LLM 配置**，无需额外配置 API Key
+1. need, 
+2. need max_steps
+3. UsewillAutomaticLaunch browser () 
+4. **Automatic LLM **, API Key
 
-## 技术细节
+##
 
-- Via CDP (Chrome DevTools Protocol) 复用 OpenAkita 已Launch的浏览器
-- Automatic继承 OpenAkita 系统配置的 LLM（来自 llm_endpoints.json）
-- Based on [browser-use](https://github.com/browser-use/browser-use) 开源项目
+- Via CDP (Chrome DevTools Protocol) OpenAkita Launch
+- Automatic OpenAkita LLM ( llm_endpoints.json) 
+- Based on [browser-use](https://github.com/browser-use/browser-use)
 
-## 高级：操作用户已Open的 Chrome
+## Advanced: Open Chrome
 
-如果想让 OpenAkita 操作你已Open的 Chrome 页面，需要以调试模式Launch Chrome：
+OpenAkita Open Chrome, needLaunch Chrome: 
 
 **Windows:**
 ```cmd
@@ -129,10 +129,10 @@ browser_task(task="Open百度Search福建福州，截图Save")
 google-chrome --remote-debugging-port=9222
 ```
 
-Launch后，OpenAkita 会Automatic检测并连接，可以操作你已Open的标签页。
+Launch, OpenAkita willAutomatic, Open. 
 
-## 相关技能
+## Related
 
-- `browser_screenshot` - 单独截图
-- `browser_navigate` - 单独导航
-- `deliver_artifacts` - Send结果给用户
+- `browser_screenshot` -
+- `browser_navigate` -
+- `deliver_artifacts` - Send

@@ -8,79 +8,79 @@ category: Desktop
 priority: high
 ---
 
-# CLI-Anything - 桌面软件 CLI 控制
+# CLI-Anything - CLI
 
-Via [CLI-Anything](https://github.com/HKUDS/CLI-Anything) Generation的 CLI 接口控制桌面软件。
-直接Call软件后端 API，比 pyautogui/UIA 的 GUI Automatic化可靠得多。
+Via [CLI-Anything](https://github.com/HKUDS/CLI-Anything) Generation CLI. 
+Call API, pyautogui/UIA GUI Automatic. 
 
-## 核心优势
+## Core
 
-- **Call真实后端** — GIMP 真实处理图片，LibreOffice 真实Generation PDF
-- **结构化 JSON 输出** — `--json` 和 `--help` 标准Supports
-- **比 GUI Automatic化可靠 100x** — 不依赖像素位置、窗口状态
+- **Call** — GIMP, LibreOffice Generation PDF
+- ** JSON ** — `--json` and `--help` Supports
+- ** GUI Automatic 100x** — not, 
 
-## When to Use CLI-Anything（优先于 desktop_* 工具）
+## When to Use CLI-Anything ( desktop_* ) 
 
-| 场景 | Recommendations工具 | 原因 |
+| | Recommendations | |
 |------|---------|------|
-| 操作有 CLI 的桌面软件 | `cli_anything_run` | 确定性，JSON 输出 |
-| 无 CLI 的桌面软件 | `desktop_*` 工具 | 降级到 GUI Automatic化 |
-| View可用工具 | `cli_anything_discover` | 扫描 PATH |
-| 了解命令参数 | `cli_anything_help` | Get --help 文档 |
+| have CLI | `cli_anything_run` |, JSON |
+| CLI | `desktop_*` | GUI Automatic |
+| View | `cli_anything_discover` | PATH |
+| | `cli_anything_help` | Get --help |
 
-## 工具
+## Tool
 
-### cli_anything_discover — 发现已安装工具
+### cli_anything_discover —
 
 ```python
 cli_anything_discover()
 ```
 
-### cli_anything_run — Execute命令
+### cli_anything_run — Execute
 
 ```python
 cli_anything_run(app="gimp", subcommand="image resize", args=["--width", "800", "input.png"])
 cli_anything_run(app="libreoffice", subcommand="document export-pdf", args=["report.docx"])
 ```
 
-### cli_anything_help — View帮助文档
+### cli_anything_help — View
 
 ```python
 cli_anything_help(app="gimp")
 cli_anything_help(app="gimp", subcommand="image resize")
 ```
 
-## Installation CLI-Anything 工具
+## Installation CLI-Anything
 
 ```bash
-# 从 CLI-Hub 安装已有的 CLI
+# CLI-Hub have CLI
 pip install cli-anything-gimp
 pip install cli-anything-blender
 pip install cli-anything-libreoffice
 
-# 为新软件Generation CLI（需要 Claude Code）
-/cli-anything ./your-software
+# Generation CLI (need Claude Code) 
+/cli-anything./your-software
 ```
 
-## Supports的软件
+## Supports
 
-CLI-Anything 社区已Supports 9+ 软件：
+CLI-Anything Supports 9+: 
 
-- **创意工具**: GIMP, Blender, Inkscape, Audacity, OBS Studio
-- **办公软件**: LibreOffice
-- **AI 平台**: Stable Diffusion, ComfyUI
-- **开发工具**: Jenkins, Gitea, pgAdmin
+- ****: GIMP, Blender, Inkscape, Audacity, OBS Studio
+- ****: LibreOffice
+- **AI **: Stable Diffusion, ComfyUI
+- ****: Jenkins, Gitea, pgAdmin
 
-## 决策路径
+##
 
 ```
-需要控制桌面软件？
-├─ 有 cli-anything CLI → cli_anything_run（首选）
-├─ 无 CLI + Windows → desktop_* 工具（GUI Automatic化）
-└─ 无 CLI + 非 Windows → run_shell 尝试命令行工具
+need? 
+├─ have cli-anything CLI → cli_anything_run () 
+├─ CLI + Windows → desktop_* (GUI Automatic) 
+└─ CLI + Windows → run_shell
 ```
 
-## 相关技能
+## Related
 
-- `desktop_click` / `desktop_type` — 无 CLI 时的降级 GUI 方案
-- `run_shell` — 直接Execute命令行
+- `desktop_click` / `desktop_type` — CLI GUI
+- `run_shell` — Execute

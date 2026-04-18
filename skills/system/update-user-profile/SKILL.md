@@ -9,30 +9,30 @@ category: User Profile
 
 # Update User Profile
 
-update用户档案信息。
+update.
 
 ## Parameters
 
 | Parameter | Type | Required | Description |
 |-----|------|-----|------|
-| key | string | Yes | 档案项键名 |
-| value | string | Yes | 用户Provides的信息值 |
+| key | string | Yes | |
+| value | string | Yes | Provides |
 
 ## Supported Keys
 
-- name: 称呼
-- agent_role: Agent 角色
-- work_field: 工作领域
-- preferred_language: 编程语言偏好
-- os: 操作系统
-- ide: 开发工具
-- detail_level: 详细程度偏好
-- code_comment_lang: 代码注释语言
-- work_hours: 工作时间
-- timezone: 时区
-- confirm_preference: 确认偏好
+- name:
+- agent_role: Agent
+- work_field:
+- preferred_language:
+- os:
+- ide:
+- detail_level:
+- code_comment_lang:
+- work_hours:
+- timezone:
+- confirm_preference:
 
 ## Related Skills
 
-- `get-user-profile`: get档案
-- `skip-profile-question`: 跳过问题
+- `get-user-profile`: get
+- `skip-profile-question`:

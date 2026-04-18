@@ -3,16 +3,16 @@ name: openakita/skills@dingtalk-cli
 description: "DingTalk Workspace CLI (dws) - officially open-sourced cross-platform CLI tool from DingTalk. Provides 86 commands across 12 products: Contact, Chat, Bot, Calendar, Todo, Approval, Attendance, Ding, Report, AITable, Workbench, DevDoc. Built in Go with zero-trust security architecture. Use when user wants to operate DingTalk resources."
 license: Apache-2.0
 metadata:
-  author: DingTalk-Real-AI
-  version: "1.0.8"
+ author: DingTalk-Real-AI
+ version: "1.0.8"
 ---
 
 # DingTalk CLI Workspace CLI (dws)
 
-钉钉官方开源的跨平台 CLI 工具，Go 语言开发。为人类用户和 AI Agent 场景同时设计，统一钉钉全套产品能力。
+CLI, Go. and AI Agent,. 
 
-> 官方 GitHub: https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli
-> 1500+ Stars | Apache-2.0 许可
+> GitHub: https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli
+> 1500+ Stars | Apache-2.0
 
 ## Installation
 
@@ -28,164 +28,164 @@ curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace
 irm https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.ps1 | iex
 ```
 
-### 其他方式
+###
 
 ```bash
-# npm（需 Node.js）
+# npm ( Node.js) 
 npm install -g dingtalk-workspace-cli
 
-# 预编译二进制：从 GitHub Releases Download
+#: GitHub Releases Download
 # https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/releases
 ```
 
-## 认证
+##
 
 ```bash
-dws auth login            # 浏览器AutomaticOpen授权
-dws auth login --device   # 无头环境（Docker、SSH、CI）
+dws auth login # AutomaticOpen
+dws auth login --device # (Docker, SSH, CI) 
 ```
 
-选择组织并授权即可。凭证Use **PBKDF2 + AES-256-GCM** 加密存储。
+. Use **PBKDF2 + AES-256-GCM**. 
 
-### 自定义应用模式（CI/CD、ISV 集成）
+### Customization (CI/CD, ISV ) 
 
 ```bash
 dws auth login --client-id <your-app-key> --client-secret <your-app-secret>
 ```
 
-## 产品覆盖（86 条命令，12 个产品）
+## Product (86, 12 ) 
 
-| 产品 | 命令 | 子命令 | Description |
+| | | | Description |
 |------|------|--------|------|
-| 通讯录 contact | 6 | user dept | 按姓名/手机号Search、批量查询、部门、current user |
-| 聊天 chat | 10 | message group search | 群Manage、成员Manage、机器人消息、webhook |
-| 机器人 bot | 6 | bot group message search | 机器人Create/Search、群/单聊消息、webhook、消息撤回 |
-| 日历 calendar | 13 | event room participant busy | 日程 CRUD、会议室预订、忙闲查询、参会人Manage |
-| 待办 todo | 6 | task | Create、列表、Update、完成、详情、Delete |
-| 审批 approval | 9 | approval | 同意/拒绝/撤回、待办任务、发起实例、流程列表 |
-| 考勤 attendance | 4 | record shift summary rules | 打卡记录、排班、考勤汇总、组规则 |
-| 钉 ding | 2 | message | Send/撤回 DING 消息 |
-| 报表 report | 7 | create list detail template stats sent | Create报表、收发列表、模板、统计 |
-| AI 表格 aitable | 20 | base table record field attachment template | Full增删改查 |
-| 工作台 workbench | 2 | app | 批量查询应用详情 |
-| 开发文档 devdoc | 1 | article | Search平台文档和错误码 |
+| contact | 6 | user dept | /Search,,, current user |
+| chat | 10 | message group search | Manage, Manage,, webhook |
+| bot | 6 | bot group message search | Create/Search, /, webhook, |
+| calendar | 13 | event room participant busy | CRUD, will,, willManage |
+| todo | 6 | task | Create,, Update,,, Delete |
+| approval | 9 | approval | //,,, |
+| attendance | 4 | record shift summary rules |,,, |
+| ding | 2 | message | Send/ DING |
+| report | 7 | create list detail template stats sent | Create,,, |
+| AI aitable | 20 | base table record field attachment template | Full |
+| workbench | 2 | app | |
+| devdoc | 1 | article | Searchand |
 
-## AI Agent 特性
+## AI Agent
 
-### 智能输入纠正
+### Smart
 
-内置管道引擎Automatic修正 AI 模型常见的参数错误：
+Automatic AI: 
 
-| Agent 输出 | dws Automatic修正为 |
+| Agent | dws Automatic |
 |------------|---------------|
 | --userId | --user-id |
 | --limit100 | --limit 100 |
 | --tabel-id | --table-id |
 | --USER-ID | --user-id |
 
-### Schema 自省
+### Schema
 
-Agent 无需预置知识，可动态发现能力：
+Agent,: 
 
 ```bash
-# 发现所有可用产品
+# have
 dws schema --jq '.products[] | {id, tool_count: (.tools | length)}'
 
-# View目标工具的参数 Schema
+# View Schema
 dws schema aitable.query_records --jq '.tool.parameters'
 ```
 
-### jq 过滤与字段选择
+### jq and
 
 ```bash
-# 精确过滤输出，减少 token 消耗
+#, token
 dws aitable record query --base-id BASE_ID --table-id TABLE_ID --jq '.invocation.params'
 ```
 
-### 管道与文件输入
+### and
 
 ```bash
-# 从文件Read消息体
+# Read
 dws chat message send-by-bot --robot-code BOT_CODE --group GROUP_ID \
-  --title "周报" --text @report.md
+--title "" --text @report.md
 
-# 从 stdin Read
+# stdin Read
 cat report.md | dws chat message send-by-bot --robot-code BOT_CODE --group GROUP_ID \
-  --title "周报"
+--title ""
 ```
 
-## Agent Skills 系统
+## Agent Skills
 
-仓库自带Full Agent Skill 系统（skills/ 目录）：
+Full Agent Skill (skills/ ): 
 
 ```bash
-# 安装 skills 到当前项目
+# skills
 curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install-skills.sh | sh
 ```
 
-### Includes内容
+### Includes
 
-| 组件 | 路径 | Description |
+| | | Description |
 |------|------|------|
-| Master Skill | SKILL.md | 意图路由、决策树、安全规则、错误处理 |
-| 产品参考 | references/products/*.md | 各产品命令参考 |
-| 意图指南 | references/intent-guide.md | 易混淆场景消歧 |
-| 全局参考 | references/global-reference.md | 认证、输出格式、全局 flags |
-| 错误码 | references/error-codes.md | 错误码 + 调试流程 |
-| Resume指南 | references/recovery-guide.md | RECOVERY_EVENT_ID 处理 |
-| 预置脚本 | scripts/*.py | 13 个批量操作 Python 脚本 |
+| Master Skill | SKILL.md |,,, |
+| | references/products/*.md | |
+| | references/intent-guide.md | |
+| | references/global-reference.md |,, flags |
+| | references/error-codes.md | + |
+| Resume | references/recovery-guide.md | RECOVERY_EVENT_ID |
+| | scripts/*.py | 13 Python |
 
-### 预置 Python 脚本
+### Python
 
-| 脚本 | 功能 |
+| | |
 |------|------|
-| calendar_schedule_meeting.py | Create日程 + 添加参会人 + Find并预订会议室 |
-| calendar_free_slot_finder.py | 多人共同空闲时段Find，Recommendations最佳会议时间 |
-| calendar_today_agenda.py | View今日/明日/本周日程 |
-| import_records.py | 从 CSV/JSON 批量导入 AI 表格记录 |
-| bulk_add_fields.py | 批量添加 AI 表格字段 |
-| todo_batch_create.py | 从 JSON 批量Create待办（含优先级、截止日期） |
-| todo_daily_summary.py | 汇总今日/本周未完成待办 |
-| todo_overdue_check.py | 扫描逾期待办 |
-| contact_dept_members.py | 按部门名称Search并ListAll成员 |
-| attendance_my_record.py | View我的考勤记录 |
-| attendance_team_shift.py | 查询团队排班与考勤统计 |
-| report_inbox_today.py | View今日收到的报表详情 |
+| calendar_schedule_meeting.py | Create + will + Findwill |
+| calendar_free_slot_finder.py | Find, Recommendationswill |
+| calendar_today_agenda.py | View// |
+| import_records.py | CSV/JSON AI |
+| bulk_add_fields.py | AI |
+| todo_batch_create.py | JSON Create (, ) |
+| todo_daily_summary.py | / |
+| todo_overdue_check.py | |
+| contact_dept_members.py | SearchListAll |
+| attendance_my_record.py | View |
+| attendance_team_shift.py | and |
+| report_inbox_today.py | View |
 
-## 安全设计
+## Secure
 
-零信任架构：凭证不落盘、Token 不离开可信域、权限不超越授权、操作不逃过审计。
+: not, Token not, not, not. 
 
-| 机制 | 详情 |
+| | |
 |------|------|
-| 加密令牌存储 | PBKDF2 + AES-256-GCM，Based on设备物理 MAC 地址加密 |
-| 输入安全 | 路径遍历保护、CRLF 注入拦截、Unicode 视觉欺骗过滤 |
-| 域名白名单 | DWS_TRUSTED_DOMAINS Default *.dingtalk.com，bearer token 不发往非白名单域 |
-| HTTPS 强制 | 所有请求要求 TLS |
-| Dry-run 预览 | --dry-run 展示Call参数但不Execute，防止误操作 |
-| 零凭证持久化 | Client ID / Secret 仅在内存中Use |
+| | PBKDF2 + AES-256-GCM, Based on MAC |
+| |, CRLF, Unicode |
+| | DWS_TRUSTED_DOMAINS Default *.dingtalk.com, bearer token not |
+| HTTPS | haveneed TLS |
+| Dry-run | --dry-run CallnotExecute, |
+| | Client ID / Secret inUse |
 
-## 升级
+## Upgrade
 
 ```bash
-dws upgrade                    # 交互式升级到最新版
-dws upgrade --check            # 检查新版本
-dws upgrade --rollback         # 回滚到上一版本
+dws upgrade #
+dws upgrade --check #
+dws upgrade --rollback #
 ```
 
 ## Quick Start
 
 ```bash
-dws contact user search --keyword "engineering"     # Search联系人
-dws calendar event list                              # List日历事件
-dws todo task create --title "季度报告" --executors "<userId>"  # Create待办
-dws todo task list --dry-run                          # 预览（不Execute）
+dws contact user search --keyword "engineering" # Search
+dws calendar event list # List
+dws todo task create --title "" --executors "<userId>" # Create
+dws todo task list --dry-run # (notExecute) 
 ```
 
 ## Pre-built Scripts
 
 ### scripts/dws_setup.py
-钉钉 CLI 安装和认证脚本。
+CLI and. 
 
 ```bash
 python3 scripts/dws_setup.py install
@@ -194,11 +194,11 @@ python3 scripts/dws_setup.py status
 ```
 
 ### scripts/dws_quick.py
-钉钉常用操作快捷脚本。
+. 
 
 ```bash
-python3 scripts/dws_quick.py send --conversation-id xxx --content "消息内容"
+python3 scripts/dws_quick.py send --conversation-id xxx --content ""
 python3 scripts/dws_quick.py contacts
 python3 scripts/dws_quick.py calendar
-python3 scripts/dws_quick.py todo --title "待办事项"
+python3 scripts/dws_quick.py todo --title ""
 ```

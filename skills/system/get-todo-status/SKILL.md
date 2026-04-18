@@ -9,7 +9,7 @@ category: Plan
 
 # Get Todo Status
 
-get当前计划的Execute状态。
+get Execute.
 
 ## Parameters
 
@@ -17,13 +17,13 @@ No parameters required.
 
 ## Returns
 
-- 计划总览（task_summary）
-- 各Step status
-- 已完成/待Execute数量
-- Execute日志
+- (task_summary)
+- Step status
+- /Execute
+- Execute
 
 ## Related Skills
 
-- `create-todo`: create计划
+- `create-todo`: create
 - `update-todo-step`: updateStep status
-- `complete-todo`: 完成计划
+- `complete-todo`:

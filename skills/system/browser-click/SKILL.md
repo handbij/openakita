@@ -9,44 +9,43 @@ category: Browser
 
 # Browser Click
 
-Click页面上的元素。
+Click on page elements.
 
 ## Parameters
 
 | Parameter | Type | Required | Description |
 |-----|------|-----|------|
-| selector | string | No | CSS 选择器，如 '#btn-submit', '.button-class' |
-| text | string | No | 元素文本，如 '提交', 'Submit' |
+| selector | string | No | CSS selector, e.g. `'#btn-submit'`, `'.button-class'` |
+| text | string | No | Visible element text, e.g. `'Submit'`, `'Click here'` |
 
-至少Provides `selector` 或 `text` 其中之一。
+Provide either `selector` or `text` to identify the target element.
 
 ## Examples
 
-**Click按钮（CSS 选择器）**:
+**Click by CSS selector**:
 ```json
 {"selector": "#submit-btn"}
 ```
 
-**Click按钮（文本匹配）**:
+**Click by visible text**:
 ```json
-{"text": "提交"}
+{"text": "Submit"}
 ```
 
 ## Prerequisites
 
-- 必须先用 `browser_navigate` Open目标页面
+- `browser_navigate` — must open the target page first
 
 ## Related Skills
 
-- `browser-navigate`: 先导航到页面
-- `browser-type`: 在Click后Type text
-
+- `browser-navigate`: Navigate to a URL
+- `browser-type`: Type text into input fields
 
 ## Recommendations
 
-对于多步骤的浏览器任务，建议优先Use `browser_task` 工具。它可以Automatic规划和Execute复杂的Browser operations，无需Manual逐步Call各个工具。
+For multi-step browser workflows, prefer `browser_task`. It automatically plans and executes browser operations, avoiding the need for manual step-by-step calls.
 
-示例：
+Example:
 ```python
-browser_task(task="Open百度search福建福州并截图")
+browser_task(task="Open Google and search for Python tutorials")
 ```

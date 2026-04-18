@@ -9,37 +9,37 @@ category: Desktop
 
 # Desktop Hotkey
 
-Execute keyboard shortcuts。
+Execute keyboard shortcuts.
 
 ## Parameters
 
 | Parameter | Type | Required | Description |
 |------|------|------|------|
-| keys | array | Yes | 按键组合数组，如 ['ctrl', 'c'] |
+| keys | array | Yes | ,  ['ctrl', 'c'] |
 
 ## Common Shortcuts
 
-| 快捷键 | 功能 |
+| | |
 |--------|------|
-| ['ctrl', 'c'] | 复制 |
-| ['ctrl', 'v'] | 粘贴 |
-| ['ctrl', 'x'] | 剪切 |
+| ['ctrl', 'c'] | |
+| ['ctrl', 'v'] | |
+| ['ctrl', 'x'] | |
 | ['ctrl', 's'] | Save |
-| ['ctrl', 'z'] | 撤销 |
-| ['ctrl', 'y'] | 重做 |
-| ['ctrl', 'a'] | 全选 |
-| ['alt', 'f4'] | Close窗口 |
-| ['alt', 'tab'] | Switch窗口 |
-| ['win', 'd'] | Display桌面 |
+| ['ctrl', 'z'] | |
+| ['ctrl', 'y'] | |
+| ['ctrl', 'a'] | |
+| ['alt', 'f4'] | Close |
+| ['alt', 'tab'] | Switch |
+| ['win', 'd'] | Display |
 
 ## Examples
 
-**复制选中内容**:
+****:
 ```json
 {"keys": ["ctrl", "c"]}
 ```
 
-**Save文件**:
+**Save**:
 ```json
 {"keys": ["ctrl", "s"]}
 ```
@@ -47,4 +47,4 @@ Execute keyboard shortcuts。
 ## Related Skills
 
 - `desktop-type`: Type text
-- `desktop-click`: Click元素
+- `desktop-click`: Click

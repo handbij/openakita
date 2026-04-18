@@ -9,13 +9,13 @@ category: skills-management
 
 # load-skill
 
-Load新Create的技能到系统中，使其立即可用。
+LoadCreate,. 
 
 ## Use Cases
 
-- Use `skill-creator` Create技能后
-- Manual在 `skills/` 目录Create技能后
-- 需要立即Use新技能时
+- Use `skill-creator` Create
+- Manualin `skills/` Create
+- needUse
 
 ## Usage
 
@@ -27,17 +27,17 @@ load_skill(skill_name="my-new-skill")
 
 | Parameter | Type | Required | Description |
 |------|------|------|------|
-| skill_name | string | Yes | Skill name（即 skills/ 下的目录名）|
+| skill_name | string | Yes | Skill name ( skills/ ) |
 
-## Full工作流
+## Full
 
-1. Use `skill-creator` 技能Create SKILL.md
-2. 将文件Save到 `skills/<skill-name>/SKILL.md`
+1. Use `skill-creator` Create SKILL.md
+2. Save `skills/<skill-name>/SKILL.md`
 3. Call `load_skill("<skill-name>")` Load skill
-4. 技能立即可用
+4.
 
 ## Notes
 
-- 技能目录必须Includes有效的 `SKILL.md` 文件
-- 如果技能已存在，请Use `reload_skill` 重新Load
-- Load成功后，技能会出现在 `list_skills` 列表中
+- Includeshave `SKILL.md`
+- in, Use `reload_skill` Load
+- Load, willin `list_skills`

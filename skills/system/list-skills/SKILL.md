@@ -9,7 +9,7 @@ category: Skills Management
 
 # List Skills
 
-list已install的技能（遵循 Agent Skills 规范）。
+listinstall ( Agent Skills ).
 
 ## Parameters
 
@@ -18,11 +18,11 @@ No parameters.
 ## Returns
 
 - Skill name
-- 技能描述
-- YesNo可AutomaticCall
-- 系统技能 vs 外部技能标识
+-
+- YesNoAutomaticCall
+- vs
 
 ## Related Skills
 
-- `get-skill-info`: get技能详情
-- `install-skill`: install新技能
+- `get-skill-info`: get
+- `install-skill`: install

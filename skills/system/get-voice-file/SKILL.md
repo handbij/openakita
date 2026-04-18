@@ -17,12 +17,12 @@ No parameters.
 
 ## Workflow
 
-1. 用户Send语音消息
-2. System automatically downloads到本地
-3. Use此工具GetFile path
+1. Send
+2. System automatically downloads
+3. UseGetFile path
 4. Process with speech recognition script
 
 ## Related Skills
 
-- `get-image-file`: Get图片文件
-- `deliver-artifacts`: Send文件给用户
+- `get-image-file`: Get
+- `deliver-artifacts`: Send

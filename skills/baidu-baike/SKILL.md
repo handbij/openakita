@@ -11,21 +11,21 @@ requires:
 
 # Baidu Baike
 
-为智能体注入权威、实时、结构化的中文百科知识，确保其回答的准确性与可信度。
+Injects the agent with authoritative, real-time, structured Chinese encyclopedia knowledge, ensuring the accuracy and credibility of its answers.
 
 ## Configuration
 
 export BAIDU_API_KEY="your_key"
 
-## Use
+## Usage
 
-输入名词或概念，Returns百度百科的标准化详细解释。依赖 Python 3 和 requests 库。
+Enter a term or concept to return standardized, detailed explanations from Baidu Baike. Requires Python 3 and the requests library.
 
 ## Pre-built Scripts
 
 ### scripts/baidu_baike.py
-百度百科Entry query脚本。
+Baidu Baike entry query script.
 
 ```bash
-python3 scripts/baidu_baike.py search "量子计算"
+python3 scripts/baidu_baike.py search "quantum computing"
 ```

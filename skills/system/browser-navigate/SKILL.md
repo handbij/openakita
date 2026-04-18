@@ -9,50 +9,50 @@ category: Browser
 
 # Browser Navigate
 
-Navigate to specified URL，Open网页。
+Navigate to specified URL, Open. 
 
 ## Parameters
 
 | Parameter | Type | Required | Description |
 |-----|------|-----|------|
-| url | string | Yes | 要访问的 URL（必须Includes协议，如 https://） |
+| url | string | Yes | need URL (Includes, https://) |
 
 ## Examples
 
-**Opensearch引擎**:
+**Opensearch**:
 ```json
 {"url": "https://www.google.com"}
 ```
 
-**Open本地文件**:
+**Open**:
 ```json
 {"url": "file:///C:/Users/test.html"}
 ```
 
 ## Workflow
 
-1. Call此工具导航到目标页面
-2. 等待页面Load
-3. Use `browser_click` / `browser_type` 与页面交互
+1. Call
+2. Load
+3. Use `browser_click` / `browser_type` and
 
 ## Important Notes
 
-- 必须在 `browser_click` / `browser_type` 之前Call此工具
-- 如果浏览器未Launch会AutomaticLaunch
-- URL 必须Includes协议（http:// 或 https://）
+- in `browser_click` / `browser_type` Call
+- LaunchwillAutomaticLaunch
+- URL Includes (http:// or https://) 
 
 ## Related Skills
 
-- `browser-status`: 检查Browser status
+- `browser-status`: Browser status
 - `browser-click`: Click page element
-- `browser-type`: 在输入框Type text
+- `browser-type`: inType text
 
 
 ## Recommendations
 
-对于多步骤的浏览器任务，建议优先Use `browser_task` 工具。它可以Automatic规划和Execute复杂的Browser operations，无需Manual逐步Call各个工具。
+, Use `browser_task`. AutomaticandExecute Browser operations, ManualCall. 
 
-示例：
+: 
 ```python
-browser_task(task="Open百度search福建福州并截图")
+browser_task(task="Opensearch")
 ```

@@ -9,57 +9,58 @@ category: Desktop
 
 # Desktop Click
 
-Click桌面上的 UI 元素或指定坐标。
+Click on desktop UI elements or screen coordinates.
 
 ## Parameters
 
 | Parameter | Type | Required | Description |
 |-----|------|-----|------|
-| target | string | Yes | 元素描述或坐标（如 '确定按钮' 或 '100,200'） |
-| button | string | No | 鼠标按钮：left, right, middle，Default left |
-| double | boolean | No | YesNo双击，Default false |
-| method | string | No | Find方法：auto, uia, vision，Default auto |
+| target | string | Yes | Element description or coordinates (e.g. `'Save File'` or `'100,200'`) |
+| button | string | No | Mouse button: left, right, middle. Default: left |
+| double | boolean | No | Double-click. Default: false |
+| method | string | No | Find method: auto, uia, vision. Default: auto |
 
 ## Target Formats
 
-- 元素描述：`"Save按钮"`、`"name:确定"`
-- 坐标：`"100,200"`
+- Element description: `"Save"`, `"name:Close"`
+- Coordinates: `"100,200"`
 
 ## Find Methods
 
-- `auto`: Automatic选择（Recommendations）
-- `uia`: 只用 UIAutomation
-- `vision`: 只用视觉识别
+- `auto`: Automatic detection (recommended)
+- `uia`: UI Automation (faster, Windows)
+- `vision`: Visual screenshot matching (cross-platform)
 
 ## Examples
 
-**Click按钮（元素描述）**:
+**Click by element description**:
 ```json
-{"target": "确定按钮"}
+{"target": "Save"}
 ```
 
-**Click坐标**:
+**Click by coordinates**:
 ```json
 {"target": "100,200"}
 ```
 
-**右键Click**:
+**Right-click**:
 ```json
-{"target": "文件图标", "button": "right"}
+{"target": "file.txt", "button": "right"}
 ```
 
-**双击Open**:
+**Double-click to open**:
 ```json
-{"target": "文档.txt", "double": true}
+{"target": "readme.txt", "double": true}
 ```
 
 ## Notes
 
-- 如果Click的Yes浏览器内的网页元素，请Use `browser_click`
-- 优先Use UIAutomation（Quick准确），失败时用视觉识别
+- For browser page elements, use `browser_click` instead
+- Use UI Automation for faster detection on Windows
+- Vision mode works across all platforms but is slower
 
 ## Related Skills
 
-- `browser-click`: Click浏览器网页元素
-- `desktop-type`: Type text
-- `desktop-find-element`: 先Find元素
+- `browser-click`: Click browser page elements
+- `desktop-type`: Type text on desktop
+- `desktop-find-element`: Find desktop UI elements

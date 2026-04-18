@@ -9,16 +9,16 @@ category: Skills Management
 
 # Get Skill Reference
 
-get技能的参考文档。
+get .
 
 ## Parameters
 
 | Parameter | Type | Required | Description |
 |-----|------|-----|------|
 | skill_name | string | Yes | Skill name |
-| ref_name | string | No | 参考文档名称，Default REFERENCE.md |
+| ref_name | string | No | , Default REFERENCE.md |
 
 ## Related Skills
 
-- `get-skill-info`: get主要说明
-- `run-shell`: Execute按技能指令编写的代码
+- `get-skill-info`: getneed
+- `run-shell`: Execute

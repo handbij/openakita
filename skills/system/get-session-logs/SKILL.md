@@ -15,17 +15,17 @@ Get system logs for the current session.
 
 | Parameter | Type | Required | Description |
 |-----|------|-----|------|
-| count | integer | No | Number of log entries to return, default 20，Maximum 200 |
-| level | string | No | 过滤日志级别：DEBUG, INFO, WARNING, ERROR |
+| count | integer | No | Number of log entries to return, default 20, Maximum 200 |
+| level | string | No | :DEBUG, INFO, WARNING, ERROR |
 
 ## When to Use
 
-1. 命令Returns错误码
-2. 操作没有预期效果
-3. 需要了解之前发生了什么
+1. Returns
+2. have
+3. need
 
 ## Returns
 
-- 命令Execute详情
-- 错误信息
-- 系统状态
+- Execute
+-
+-

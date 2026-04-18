@@ -1,9 +1,9 @@
 ---
 name: openakita/skills@datetime-tool
-description: Get current time, format dates, calculate date differences, and convert timezones. Use this skill when the user asks about time, dates, timezone conversions, weekdays, or needs date calculations and formatting in any locale.
+description: Get current time, format dates, calculate date differences, and convert timezones.
 license: MIT
 metadata:
-  author: myagent
+  author: openakita
   version: "1.0.0"
 ---
 
@@ -13,58 +13,62 @@ Handle time and date-related operations.
 
 ## When to Use
 
-- User asks about current time or date
-- Need to format date output
+- User asks for the current time or date
+- Format dates into specific formats
 - Calculate the difference between two dates
-- Timezone conversion
-- Get day of week, month names, etc.
+- Convert between timezones
+- Natural language time expressions (e.g., "what time is it 3 hours from now")
+- Calculate week numbers, day of week, etc.
 
-## Instructions
+## Pre-built Scripts
 
-### Get Current Time
-
-Run the script to get the current time:
+### scripts/get_time.py
+Get the current time and date.
 
 ```bash
 python scripts/get_time.py
 ```
 
-Supported parameters:
-- `--timezone <tz>`: Specify timezone (e.g., Asia/Shanghai, UTC)
-- `--format <fmt>`: Date format (e.g., %Y-%m-%d %H:%M:%S)
-
-### Calculate Date Difference
+### scripts/format_date.py
+Format a date string.
 
 ```bash
-python scripts/get_time.py --diff "2024-01-01" "2024-12-31"
+python scripts/format_date.py --date "2024-01-15" --format "%Y-%m-%d"
 ```
 
-### Timezone Conversion
+### scripts/date_diff.py
+Calculate the difference between two dates.
 
 ```bash
-python scripts/get_time.py --convert "2024-01-01 12:00:00" --from-tz UTC --to-tz Asia/Shanghai
+python scripts/date_diff.py --start "2024-01-01" --end "2024-12-31"
+```
+
+### scripts/timezone_convert.py
+Convert time between timezones.
+
+```bash
+python scripts/timezone_convert.py --time "2024-01-15 10:30:00" --from "Asia/Shanghai" --to "America/New_York"
 ```
 
 ## Output Format
 
-Script outputs in JSON format:
+All scripts return JSON format:
 
 ```json
 {
-  "datetime": "2024-01-15 10:30:00",
-  "date": "2024-01-15",
-  "time": "10:30:00",
-  "timezone": "Asia/Shanghai",
-  "weekday": "Monday",
-  "timestamp": 1705285800
+  "success": true,
+  "operation": "get_time",
+  "data": {
+    "current_time": "2024-01-15 10:30:00",
+    "timezone": "Asia/Shanghai",
+    "unix_timestamp": 1705289400
+  }
 }
 ```
 
-## Common Formats
+## Notes
 
-| Format | Example |
-|--------|---------|
-| ISO | 2024-01-15T10:30:00+08:00 |
-| Chinese | 2024年01月15日 10:30:00 |
-| US | 01/15/2024 |
-| EU | 15/01/2024 |
+- All times default to the system timezone
+- Timezone names follow the IANA timezone database
+- Date difference returns both days and a human-readable format
+- Supported date formats: YYYY-MM-DD, YYYY/MM/DD, DD-MM-YYYY, and more

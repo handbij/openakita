@@ -20,7 +20,7 @@ Write content to a file.
 
 ## Examples
 
-**Create配置文件**:
+**Create**:
 ```json
 {
   "path": "config.json",
@@ -28,7 +28,7 @@ Write content to a file.
 }
 ```
 
-**Write代码文件**:
+**Write**:
 ```json
 {
   "path": "hello.py",
@@ -38,11 +38,11 @@ Write content to a file.
 
 ## Notes
 
-- 会覆盖已存在的文件
-- AutomaticCreate父目录（如果不存在）
-- Use UTF-8 编码
+- willin
+- AutomaticCreate(notin)
+- Use UTF-8
 
 ## Related Skills
 
-- `read-file`: Read文件
-- `run-shell`: Execute脚本
+- `read-file`: Read
+- `run-shell`: Execute

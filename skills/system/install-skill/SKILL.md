@@ -9,27 +9,27 @@ category: Skills Management
 
 # Install Skill
 
-从 URL 或 Git 仓库install技能到本地 skills/ 目录。
+URL or Git install skills/ .
 
 ## Parameters
 
 | Parameter | Type | Required | Description |
 |-----|------|-----|------|
-| source | string | Yes | Git 仓库 URL 或 SKILL.md 文件 URL |
-| name | string | No | Skill name（Optional,Automatic从 SKILL.md Extract） |
-| subdir | string | No | Git 仓库中技能所在的子Directory path |
-| extra_files | array | No | 额外需要Download的文件 URL 列表 |
+| source | string | Yes | Git URL or SKILL.md URL |
+| name | string | No | Skill name(Optional,Automatic SKILL.md Extract) |
+| subdir | string | No | Git in Directory path |
+| extra_files | array | No | needDownload URL |
 
 ## Supported Sources
 
-1. **Git 仓库** (如 https://github.com/user/repo)
-   - Automatic克隆仓库并Find SKILL.md
-   - Supports指定子Directory path
+1. **Git ** ( https://github.com/user/repo)
+- AutomaticFind SKILL.md
+- SupportsDirectory path
 
-2. **单个 SKILL.md 文件 URL**
-   - create规范目录结构（scripts/, references/, assets/）
+2. ** SKILL.md URL**
+- create(scripts/, references/, assets/)
 
 ## Related Skills
 
-- `list-skills`: List alreadyinstall技能
-- `find-skills`: search可用技能
+- `list-skills`: List alreadyinstall
+- `find-skills`: search

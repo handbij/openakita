@@ -25,12 +25,12 @@ List directory contents.
 
 ## Examples
 
-**List当前目录**:
+**List**:
 ```json
 {"path": "."}
 ```
 
-**List指定目录**:
+**List**:
 ```json
 {"path": "/home/user/documents"}
 ```
@@ -38,4 +38,4 @@ List directory contents.
 ## Related Skills
 
 - `read-file`: Read file content
-- `write-file`: Write文件
+- `write-file`: Write

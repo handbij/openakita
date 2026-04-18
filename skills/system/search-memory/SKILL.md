@@ -9,36 +9,36 @@ category: Memory
 
 # Search Memory
 
-search相关记忆。
+search.
 
 ## Parameters
 
 | Parameter | Type | Required | Description |
 |-----|------|-----|------|
-| query | string | Yes | search关键词 |
-| type | string | No | Filter by memory type（可选） |
+| query | string | Yes | search |
+| type | string | No | Filter by memory type() |
 
 ## Memory Types for Filter
 
-- `fact`: 事实信息
-- `preference`: 用户偏好
-- `skill`: 技能知识
-- `error`: 错误教训
-- `rule`: 规则约定
+- `fact`:
+- `preference`:
+- `skill`:
+- `error`:
+- `rule`:
 
 ## Examples
 
-**search用户偏好**:
+**search**:
 ```json
-{"query": "代码风格", "type": "preference"}
+{"query": "", "type": "preference"}
 ```
 
-**通用search**:
+**search**:
 ```json
 {"query": "Python"}
 ```
 
 ## Related Skills
 
-- `add-memory`: 添加新记忆
-- `get-memory-stats`: View记忆统计
+- `add-memory`:
+- `get-memory-stats`: View

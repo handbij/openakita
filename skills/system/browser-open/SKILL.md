@@ -9,32 +9,32 @@ category: Browser
 
 # Browser Open
 
-Launch browser。
+Launch browser. 
 
 ## Parameters
 
 | Parameter | Type | Required | Description |
 |-----|------|-----|------|
-| visible | boolean | No | True=Display窗口, False=后台Run，Default True |
-| ask_user | boolean | No | YesNo先询问用户偏好，Default False |
+| visible | boolean | No | True=Display, False=Run, Default True |
+| ask_user | boolean | No | YesNo, Default False |
 
 ## Notes
 
-- 如果浏览器已在Run，直接Returnscurrent status，不会重复Launch
-- 服务重启后浏览器会Close，Call此工具会Automatic重新Launch
-- 无需先Call `browser_status`，本工具已Includes状态检查
+- inRun, Returnscurrent status, notwillLaunch
+- willClose, CallwillAutomaticLaunch
+- Call `browser_status`, Includes
 
 ## Related Skills
 
-- `browser-status`: 检查状态
-- `browser-navigate`: 导航到页面
+- `browser-status`:
+- `browser-navigate`:
 
 
 ## Recommendations
 
-对于多步骤的浏览器任务，建议优先Use `browser_task` 工具。它可以Automatic规划和Execute复杂的Browser operations，无需Manual逐步Call各个工具。
+, Use `browser_task`. AutomaticandExecute Browser operations, ManualCall. 
 
-示例：
+: 
 ```python
-browser_task(task="Open百度search福建福州并截图")
+browser_task(task="Opensearch")
 ```

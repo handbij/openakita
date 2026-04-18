@@ -9,54 +9,54 @@ category: Desktop
 
 # Desktop Screenshot
 
-Capture Windows desktop screenshot。
+Capture Windows desktop screenshot. 
 
 ## Important
 
-**用户要求截图时，必须实际Call此工具。禁止不Call就说"截图完成"！**
+**need, Call. notCall""! **
 
 ## Parameters
 
 | Parameter | Type | Required | Description |
 |-----|------|-----|------|
-| path | string | No | Save路径（Optional,AutomaticGeneration） |
-| window_title | string | No | 只Capture指定窗口（模糊匹配） |
-| analyze | boolean | No | YesNo用视觉模型Analyze，Default false |
-| analyze_query | string | No | Analyze查询（需要 analyze=true） |
+| path | string | No | Save (Optional,AutomaticGeneration) |
+| window_title | string | No | Capture () |
+| analyze | boolean | No | YesNoAnalyze, Default false |
+| analyze_query | string | No | Analyze (need analyze=true) |
 
 ## Examples
 
-**Capture整个桌面**:
+**Capture**:
 ```json
 {}
 ```
 
-**Capture指定窗口**:
+**Capture**:
 ```json
-{"window_title": "记事本"}
+{"window_title": ""}
 ```
 
-**Capture并Analyze**:
+**CaptureAnalyze**:
 ```json
 {
-  "analyze": true,
-  "analyze_query": "找到所有按钮"
+ "analyze": true,
+"analyze_query": "have"
 }
 ```
 
 ## Workflow
 
-1. Call此工具截图
-2. getReturns的 `file_path`
-3. 用 `deliver_artifacts` Send给用户
+1. Call
+2. getReturns `file_path`
+3. `deliver_artifacts` Send
 
 ## Notes
 
-- 如果只涉及浏览器内的网页操作，请Use `browser_screenshot`
-- 截图DefaultSave到用户桌面
+-, Use `browser_screenshot`
+- DefaultSave
 
 ## Related Skills
 
 - `browser-screenshot`: Capture browser page
-- `deliver-artifacts`: Send截图给用户
-- `desktop-click`: Click桌面元素
+- `deliver-artifacts`: Send
+- `desktop-click`: Click

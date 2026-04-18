@@ -26,10 +26,10 @@ clawhub install baidu-search --no-input
 
 ## Features
 
-- Web search：real-time retrieval of web information
-- Image search：similar image search via multimodal retrieval
-- Time filtering：filter results by publication date
-- Authority rating：results include relevance and authority scores
+- Web search: real-time retrieval of web information
+- Image search: similar image search via multimodal retrieval
+- Time filtering: filter results by publication date
+- Authority rating: results include relevance and authority scores
 
 ## Pre-built Scripts
 
@@ -37,6 +37,6 @@ clawhub install baidu-search --no-input
 Baidu Search API wrapper. Requires BAIDU_QIANFAN_AK and BAIDU_QIANFAN_SK to be set.
 
 ```bash
-python3 scripts/baidu_search.py web "Python 异步编程"
-python3 scripts/baidu_search.py image "风景壁纸"
+python3 scripts/baidu_search.py web "Python async programming"
+python3 scripts/baidu_search.py image "landscape wallpaper"
 ```

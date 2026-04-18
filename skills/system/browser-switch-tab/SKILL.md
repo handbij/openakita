@@ -9,30 +9,30 @@ category: Browser
 
 # Browser Switch Tab
 
-Switch到指定的标签页。
+Switch. 
 
 ## Parameters
 
 | Parameter | Type | Required | Description |
 |-----|------|-----|------|
-| index | number | Yes | 标签页索引（从 0 开始） |
+| index | number | Yes | ( 0 ) |
 
 ## Workflow
 
-1. 先用 `browser_list_tabs` get所有标签页
-2. UseReturns的索引Switch
+1. `browser_list_tabs` gethave
+2. UseReturns Switch
 
 ## Related Skills
 
-- `browser-list-tabs`: get标签页列表
-- `browser-new-tab`: 新建标签页
+- `browser-list-tabs`: get
+- `browser-new-tab`:
 
 
 ## Recommendations
 
-对于多步骤的浏览器任务，建议优先Use `browser_task` 工具。它可以Automatic规划和Execute复杂的Browser operations，无需Manual逐步Call各个工具。
+, Use `browser_task`. AutomaticandExecute Browser operations, ManualCall. 
 
-示例：
+: 
 ```python
-browser_task(task="Open百度search福建福州并截图")
+browser_task(task="Opensearch")
 ```

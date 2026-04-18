@@ -15,30 +15,30 @@ List all scheduled tasks.
 
 | Parameter | Type | Required | Description |
 |-----|------|-----|------|
-| enabled_only | boolean | No | Whether to only list enabled tasks，Default false |
+| enabled_only | boolean | No | Whether to only list enabled tasks, Default false |
 
 ## Returns
 
 - Task ID
-- 名称
-- 类型（reminder/task）
-- 状态（enabled/disabled）
-- 下次Execute时间
+-
+- (reminder/task)
+- (enabled/disabled)
+- Execute
 
 ## Examples
 
-**List all任务**:
+**List all**:
 ```json
 {}
 ```
 
-**只ListEnable的任务**:
+**ListEnable **:
 ```json
 {"enabled_only": true}
 ```
 
 ## Related Skills
 
-- `schedule-task`: Create新任务
-- `cancel-scheduled-task`: 取消任务
-- `update-scheduled-task`: Update任务Set
+- `schedule-task`: Create
+- `cancel-scheduled-task`:
+- `update-scheduled-task`: UpdateSet

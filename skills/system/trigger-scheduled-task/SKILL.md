@@ -9,20 +9,20 @@ category: Scheduled Tasks
 
 # Trigger Scheduled Task
 
-立即Trigger scheduled task（不等待计划时间）。
+Trigger scheduled task(not).
 
 ## Parameters
 
 | Parameter | Type | Required | Description |
 |-----|------|-----|------|
-| task_id | string | Yes | 任务 ID |
+| task_id | string | Yes | ID |
 
 ## Notes
 
-- 不会影响原有的Execute计划
-- Applicable to测试任务或提前Run
+- notwillhave Execute
+- Applicable toorRun
 
 ## Related Skills
 
-- `list-scheduled-tasks`: get任务 ID
-- `schedule-task`: create新任务
+- `list-scheduled-tasks`: get ID
+- `schedule-task`: create

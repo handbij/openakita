@@ -9,7 +9,7 @@ category: Skills Management
 
 # Get Skill Info
 
-get技能的详细信息和指令（Level 2 披露）。
+get and (Level 2 ). 
 
 ## Parameters
 
@@ -19,15 +19,15 @@ get技能的详细信息和指令（Level 2 披露）。
 
 ## Returns
 
-- Full的 SKILL.md 内容（Use说明和指令）
-- 参考文档列表（如有）
+- Full SKILL.md (Useand) 
+- (have) 
 
 ## Important
 
-大多数外部技能（xlsx, docx, pptx, pdf 等）Yes**指令型技能**，没有预置脚本。
-Read指令后应按照指令编写代码，Via `run_shell` Execute，而非Call `run_skill_script`。
+ (xlsx, docx, pptx, pdf ) Yes****, have. 
+Read, Via `run_shell` Execute, andCall `run_skill_script`. 
 
 ## Related Skills
 
-- `list-skills`: list所有技能
-- `run-shell`: Execute按技能指令编写的代码
+- `list-skills`: listhave
+- `run-shell`: Execute

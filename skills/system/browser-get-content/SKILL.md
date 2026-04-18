@@ -9,37 +9,37 @@ category: Browser
 
 # Browser Get Content
 
-getPage content（文本）。
+getPage content (). 
 
 ## Parameters
 
 | Parameter | Type | Required | Description |
 |-----|------|-----|------|
-| selector | string | No | CSS 选择器（Optional,不填则get整个页面） |
+| selector | string | No | CSS (Optional,notget) |
 
 ## Examples
 
-**get整个页面**:
+**get**:
 ```json
 {}
 ```
 
-**get特定元素**:
+**get**:
 ```json
 {"selector": ".article-body"}
 ```
 
 ## Related Skills
 
-- `browser-navigate`: 先导航到页面
-- `browser-screenshot`: 视觉捕获
+- `browser-navigate`:
+- `browser-screenshot`:
 
 
 ## Recommendations
 
-对于多步骤的浏览器任务，建议优先Use `browser_task` 工具。它可以Automatic规划和Execute复杂的Browser operations，无需Manual逐步Call各个工具。
+, Use `browser_task`. AutomaticandExecute Browser operations, ManualCall. 
 
-示例：
+: 
 ```python
-browser_task(task="Open百度search福建福州并截图")
+browser_task(task="Opensearch")
 ```

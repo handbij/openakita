@@ -9,7 +9,7 @@ category: MCP
 
 # Get MCP Instructions
 
-get MCP 服务器的详细Use说明。
+get MCP Use.
 
 ## Parameters
 
@@ -19,11 +19,11 @@ get MCP 服务器的详细Use说明。
 
 ## Returns
 
-- 服务器功能说明
-- 工具Use指南
-- 示例和最佳实践
+-
+- Use
+- and
 
 ## Related Skills
 
-- `list-mcp-servers`: list服务器
-- `call-mcp-tool`: Call工具
+- `list-mcp-servers`: list
+- `call-mcp-tool`: Call

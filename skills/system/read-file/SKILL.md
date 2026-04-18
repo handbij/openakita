@@ -24,18 +24,18 @@ Read file content.
 {"path": "config.json"}
 ```
 
-**Read代码文件**:
+**Read**:
 ```json
 {"path": "src/main.py"}
 ```
 
 ## Notes
 
-- 适Used for文本文件
-- Use UTF-8 编码
-- 二进制文件需要特殊处理
+- Used for
+- Use UTF-8
+- need
 
 ## Related Skills
 
-- `write-file`: Write文件
+- `write-file`: Write
 - `list-directory`: List directory contents

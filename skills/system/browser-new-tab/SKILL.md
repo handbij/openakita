@@ -9,31 +9,31 @@ category: Browser
 
 # Browser New Tab
 
-Open new tab并Navigate to specified URL。
+Open new tabNavigate to specified URL. 
 
 ## Parameters
 
 | Parameter | Type | Required | Description |
 |-----|------|-----|------|
-| url | string | Yes | 要在新标签页Open的 URL |
+| url | string | Yes | needinOpen URL |
 
 ## Notes
 
-- 不会覆盖当前页面
-- 必须先确认浏览器已Launch
+- notwill
+- Launch
 
 ## Related Skills
 
-- `browser-status`: 检查Browser status
-- `browser-navigate`: 在当前标签页导航
+- `browser-status`: Browser status
+- `browser-navigate`: in
 - `browser-switch-tab`: Switch tab
 
 
 ## Recommendations
 
-对于多步骤的浏览器任务，建议优先Use `browser_task` 工具。它可以Automatic规划和Execute复杂的Browser operations，无需Manual逐步Call各个工具。
+, Use `browser_task`. AutomaticandExecute Browser operations, ManualCall. 
 
-示例：
+: 
 ```python
-browser_task(task="Open百度search福建福州并截图")
+browser_task(task="Opensearch")
 ```

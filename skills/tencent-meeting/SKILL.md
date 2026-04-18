@@ -73,7 +73,7 @@ requires:
 | 搜索转写关键词 | `search_transcripts` |
 | 获取智能纪要、AI 总结 | `get_smart_minutes` |
 
-## 预置脚本
+## Pre-built Scripts
 
 本 skill 内置官方 MCP 客户端脚本（纯 Python stdlib，零依赖）。
 

@@ -19,7 +19,7 @@ requires:
 
 访问 https://mcp.didichuxing.com/claw 获取 MCP Key，或使用滴滴出行 App 扫码。
 
-### 配置 Key
+### Configuration Key
 
 直接在对话中告诉 Agent 你的 MCP Key，或编辑配置：
 export DIDI_MCP_KEY="your_key"
@@ -59,7 +59,7 @@ npm install -g mcporter
 MCP_URL="https://mcp.didichuxing.com/mcp-servers?key=$DIDI_MCP_KEY"
 mcporter call "$MCP_URL" <tool> --args '{"key":"value"}'
 
-## 预置脚本
+## Pre-built Scripts
 
 ### scripts/didi_mcp.py
 滴滴出行 MCP 客户端，需设置 DIDI_MCP_KEY。

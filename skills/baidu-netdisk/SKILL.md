@@ -19,7 +19,7 @@ npx skills add https://github.com/baidu-netdisk/bdpan-storage --skill bdpan-stor
 
 bdpan login — 使用 OAuth 流程在浏览器中授权。令牌存储在 ~/.config/bdpan/config.json。
 
-## 功能
+## Features
 
 - 上传文件到网盘
 - 下载网盘文件到本地
@@ -35,7 +35,7 @@ bdpan login — 使用 OAuth 流程在浏览器中授权。令牌存储在 ~/.co
 - 不要在公开频道分享认证码
 - 共享环境使用后执行 bdpan logout
 
-## 预置脚本
+## Pre-built Scripts
 
 ### scripts/bdpan.py
 百度网盘 Open API 封装，需设置 BAIDU_NETDISK_TOKEN。

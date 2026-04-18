@@ -9,37 +9,37 @@ metadata:
 
 # DateTime Tool
 
-处理时间和日期相关的操作。
+Handle time and date-related operations.
 
 ## When to Use
 
-- 用户询问当前时间或日期
-- 需要格式化日期输出
-- 计算两个日期之间的差值
-- 时区转换
-- 获取星期几、月份名称等
+- User asks about current time or date
+- Need to format date output
+- Calculate the difference between two dates
+- Timezone conversion
+- Get day of week, month names, etc.
 
 ## Instructions
 
-### 获取当前时间
+### Get Current Time
 
-运行脚本获取当前时间:
+Run the script to get the current time:
 
 ```bash
 python scripts/get_time.py
 ```
 
-支持的参数:
-- `--timezone <tz>`: 指定时区 (如 Asia/Shanghai, UTC)
-- `--format <fmt>`: 日期格式 (如 %Y-%m-%d %H:%M:%S)
+Supported parameters:
+- `--timezone <tz>`: Specify timezone (e.g., Asia/Shanghai, UTC)
+- `--format <fmt>`: Date format (e.g., %Y-%m-%d %H:%M:%S)
 
-### 计算日期差值
+### Calculate Date Difference
 
 ```bash
 python scripts/get_time.py --diff "2024-01-01" "2024-12-31"
 ```
 
-### 时区转换
+### Timezone Conversion
 
 ```bash
 python scripts/get_time.py --convert "2024-01-01 12:00:00" --from-tz UTC --to-tz Asia/Shanghai
@@ -47,7 +47,7 @@ python scripts/get_time.py --convert "2024-01-01 12:00:00" --from-tz UTC --to-tz
 
 ## Output Format
 
-脚本输出 JSON 格式:
+Script outputs in JSON format:
 
 ```json
 {
@@ -62,9 +62,9 @@ python scripts/get_time.py --convert "2024-01-01 12:00:00" --from-tz UTC --to-tz
 
 ## Common Formats
 
-| 格式 | 示例 |
-|------|------|
+| Format | Example |
+|--------|---------|
 | ISO | 2024-01-15T10:30:00+08:00 |
-| 中文 | 2024年01月15日 10:30:00 |
-| 美式 | 01/15/2024 |
-| 欧式 | 15/01/2024 |
+| Chinese | 2024年01月15日 10:30:00 |
+| US | 01/15/2024 |
+| EU | 15/01/2024 |

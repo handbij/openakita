@@ -116,7 +116,7 @@ npm update -g @larksuite/cli && npx skills add larksuite/cli -g -y
 
 通过 `lark-cli config init` 并配置国际版 Lark 的应用即可使用。
 
-## 预置脚本
+## Pre-built Scripts
 
 ### scripts/setup.py
 飞书 lark-cli 安装配置脚本。

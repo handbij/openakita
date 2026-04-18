@@ -11,14 +11,14 @@ metadata:
 
 让 AI 更懂营销，覆盖笔记生成、营销视频生成、文案优化等场景，支持立即呼叫与延迟呼叫。
 
-## 功能
+## Features
 
 - 营销笔记生成
 - 营销视频生成
 - 文案优化
 - 呼叫触发（立即/延迟）
 
-## 预置脚本
+## Pre-built Scripts
 
 ### scripts/marketing.py
 营销文案/方案生成（百度千帆 AppBuilder），需设置 APPBUILDER_TOKEN。

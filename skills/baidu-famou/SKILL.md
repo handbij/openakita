@@ -11,14 +11,14 @@ metadata:
 
 轻松高效调用伏谋算法自演化能力，提供实验管理和可视化能力，帮助用户极致调优完成复杂的算法实验。
 
-## 功能
+## Features
 
 - 算法自演化
 - 实验管理
 - 可视化分析
 - 参数调优
 
-## 预置脚本
+## Pre-built Scripts
 
 ### scripts/famou.py
 算法实验管理（百度千帆 AppBuilder），需设置 APPBUILDER_TOKEN。

@@ -11,14 +11,14 @@ metadata:
 
 通过小度 MCP 协议赋予智能体物理交互能力，实现对小度设备及生态硬件的精准控制、场景联动与家庭 IoT 任务执行。
 
-## 功能
+## Features
 
 - 智能设备控制
 - 场景联动
 - 家庭 IoT 任务
 - 生态硬件管理
 
-## 预置脚本
+## Pre-built Scripts
 
 ### scripts/xiaodu_mcp.py
 小度设备控制 MCP 客户端（MCP URL 需配置），需设置 XIAODU_MCP_KEY。

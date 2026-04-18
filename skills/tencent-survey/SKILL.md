@@ -17,7 +17,7 @@ requires:
 
 用户提到「问卷」「调查」「表单」「投票」「考试」「测评」等关键词或提供 wj.qq.com 链接。
 
-## 配置
+## Configuration
 
 ### 方式一：环境变量
 TENCENT_SURVEY_TOKEN=xxx bash setup.sh wj_check_and_start_auth
@@ -40,7 +40,7 @@ Token 前缀固定为 wjpt_，长度 70 字符。
 
 wj.qq.com/s2/{survey_id}/{hash} → 取 survey_id 调用 get_survey。
 
-## 预置脚本
+## Pre-built Scripts
 
 ### scripts/survey_auth.py
 腾讯问卷认证辅助脚本，支持 TENCENT_SURVEY_TOKEN 环境变量或 OAuth 流程。

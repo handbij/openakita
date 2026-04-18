@@ -158,7 +158,7 @@ class ModelCommandHandler:
             响应文本，如果不是命令返回 None
         """
         if not self._brain:
-            return "❌ 模型管理功能未初始化"
+            return "❌ Model management not initialized"
 
         text = text.strip()
         text_lower = text.lower()
@@ -201,7 +201,7 @@ class ModelCommandHandler:
             响应文本
         """
         if not self._brain:
-            return "❌ 模型管理功能未初始化"
+            return "❌ Model management not initialized"
 
         # 检查是否取消
         if text.lower().strip() == "/cancel":
@@ -209,11 +209,11 @@ class ModelCommandHandler:
 
         session = self._switch_sessions.get(session_key)
         if not session:
-            return "会话已结束"
+            return "Session has ended"
 
         if session.is_expired:
             del self._switch_sessions[session_key]
-            return "⏰ 操作超时（5分钟），已自动取消"
+            return "⏰ Operation timed out (5 min), auto-cancelled"
 
         # 根据模式和步骤处理
         if session.mode == "switch":
@@ -223,27 +223,27 @@ class ModelCommandHandler:
         elif session.mode == "restore":
             return self._handle_restore_input(session_key, session, text)
 
-        return "未知操作"
+        return "Unknown operation"
 
     def _format_model_status(self) -> str:
         """格式化模型状态信息"""
         models = self._brain.list_available_models()
         override = self._brain.get_override_status()
 
-        lines = ["📋 **模型状态**\n"]
+        lines = ["📋 **Model Status**\n"]
 
         for i, m in enumerate(models):
             status = ""
             if m["is_current"]:
-                status = " ⬅️ 当前（临时）" if m["is_override"] else " ⬅️ 当前"
+                status = " ⬅️ current (temp)" if m["is_override"] else " ⬅️ current"
             health = "✅" if m["is_healthy"] else "❌"
             lines.append(f"{i + 1}. {health} **{m['name']}** ({m['model']}){status}")
 
         if override:
-            lines.append(f"\n⏱️ 临时切换剩余: {override['remaining_hours']:.1f} 小时")
-            lines.append(f"   到期时间: {override['expires_at']}")
+            lines.append(f"\n⏱️ Temp override expires in: {override['remaining_hours']:.1f} hours")
+            lines.append(f"   Expires at: {override['expires_at']}")
 
-        lines.append("\n💡 命令: /switch 切换 | /priority 调整优先级 | /restore 恢复默认")
+        lines.append("\n💡 Commands: /switch [model] | /priority [adjust] | /restore [default]")
 
         return "\n".join(lines)
 
@@ -274,7 +274,7 @@ class ModelCommandHandler:
 
             if not target:
                 available = ", ".join(m["name"] for m in models)
-                return f"❌ 未找到模型 '{model_name}'\n可用模型: {available}"
+                return f"❌ Model '{model_name}' not found\nAvailable: {available}"
 
             # 创建会话并进入确认步骤
             self._switch_sessions[session_key] = ModelSwitchSession(
@@ -285,9 +285,9 @@ class ModelCommandHandler:
             )
 
             return (
-                f"⚠️ 确认切换到 **{target['name']}** ({target['model']})?\n\n"
-                f"临时切换有效期: 12小时\n"
-                f"输入 **yes** 确认，其他任意内容取消"
+                f"⚠️ Confirm switch to **{target['name']}** ({target['model']})?\n\n"
+                f"Temp override duration: 12 hours\n"
+                f"Type **yes** to confirm, anything else to cancel"
             )
 
         # 没有指定模型，显示选择列表
@@ -297,13 +297,13 @@ class ModelCommandHandler:
             step="select",
         )
 
-        lines = ["📋 **可用模型**\n"]
+        lines = ["📋 **Available Models**\n"]
         for i, m in enumerate(models):
-            status = " ⬅️ 当前" if m["is_current"] else ""
+            status = " ⬅️ current" if m["is_current"] else ""
             health = "✅" if m["is_healthy"] else "❌"
             lines.append(f"{i + 1}. {health} **{m['name']}** ({m['model']}){status}")
 
-        lines.append("\n请输入数字或模型名称选择，/cancel 取消")
+        lines.append("\nEnter a number or model name, /cancel to abort")
 
         return "\n".join(lines)
 
@@ -317,13 +317,13 @@ class ModelCommandHandler:
             step="select",
         )
 
-        lines = ["📋 **当前优先级** (数字越小越优先)\n"]
+        lines = ["📋 **Current Priority** (lower = higher priority)\n"]
         for i, m in enumerate(models):
             lines.append(f"{i}. {m['name']}")
 
-        lines.append("\n请按顺序输入模型名称，用空格分隔")
-        lines.append("例如: claude kimi dashscope minimax")
-        lines.append("/cancel 取消")
+        lines.append("\nEnter model names in priority order, space-separated")
+        lines.append("e.g. claude kimi dashscope minimax")
+        lines.append("/cancel to abort")
 
         return "\n".join(lines)
 
@@ -332,7 +332,7 @@ class ModelCommandHandler:
         override = self._brain.get_override_status()
 
         if not override:
-            return "当前没有临时切换，已在使用默认模型"
+            return "No active override, using the default model"
 
         self._switch_sessions[session_key] = ModelSwitchSession(
             session_key=session_key,
@@ -341,18 +341,18 @@ class ModelCommandHandler:
         )
 
         return (
-            f"⚠️ 确认恢复默认模型?\n\n"
-            f"当前临时使用: {override['endpoint_name']}\n"
-            f"剩余时间: {override['remaining_hours']:.1f} 小时\n\n"
-            f"输入 **yes** 确认，其他任意内容取消"
+            f"⚠️ Confirm restore default model?\n\n"
+            f"Current override: {override['endpoint_name']}\n"
+            f"Time left: {override['remaining_hours']:.1f} hours\n\n"
+            f"Type **yes** to confirm, anything else to cancel"
         )
 
     def _cancel_session(self, session_key: str) -> str:
         """取消当前会话"""
         if session_key in self._switch_sessions:
             del self._switch_sessions[session_key]
-            return "✅ 操作已取消"
-        return "没有进行中的操作"
+            return "✅ Cancelled"
+        return "No active operation"
 
     def _handle_switch_input(self, session_key: str, session: ModelSwitchSession, text: str) -> str:
         """处理切换会话的输入"""
@@ -375,16 +375,16 @@ class ModelCommandHandler:
                         break
 
             if not target:
-                return f"❌ 未找到模型 '{text}'，请重新输入或 /cancel 取消"
+                return f"❌ Model '{text}' not found, try again or /cancel"
 
             # 进入确认步骤
             session.selected_model = target["name"]
             session.step = "confirm"
 
             return (
-                f"⚠️ 确认切换到 **{target['name']}** ({target['model']})?\n\n"
-                f"临时切换有效期: 12小时\n"
-                f"输入 **yes** 确认，其他任意内容取消"
+                f"⚠️ Confirm switch to **{target['name']}** ({target['model']})?\n\n"
+                f"Temp override duration: 12 hours\n"
+                f"Type **yes** to confirm, anything else to cancel"
             )
 
         elif session.step == "confirm":
@@ -396,14 +396,14 @@ class ModelCommandHandler:
                 del self._switch_sessions[session_key]
 
                 if success:
-                    return f"✅ {msg}\n\n发送 /model 查看状态"
+                    return f"✅ {msg}\n\nSend /model to check status"
                 else:
-                    return f"❌ 切换失败: {msg}"
+                    return f"❌ Switch failed: {msg}"
             else:
                 del self._switch_sessions[session_key]
-                return "✅ 操作已取消"
+                return "✅ Cancelled"
 
-        return "未知步骤"
+        return "Unknown step"
 
     def _handle_priority_input(
         self, session_key: str, session: ModelSwitchSession, text: str
@@ -424,19 +424,19 @@ class ModelCommandHandler:
                 if name_lower in model_names:
                     priority_order.append(model_names[name_lower])
                 else:
-                    return f"❌ 未找到模型 '{name}'，请重新输入或 /cancel 取消"
+                    return f"❌ Model '{name}' not found, try again or /cancel"
 
             if len(priority_order) != len(models):
-                return f"❌ 请输入所有 {len(models)} 个模型的顺序"
+                return f"❌ Please provide all {len(models)} models in order"
 
             # 进入确认步骤
             session.selected_priority = priority_order
             session.step = "confirm"
 
-            lines = ["⚠️ 确认调整优先级为:\n"]
+            lines = ["⚠️ Confirm priority order:\n"]
             for i, name in enumerate(priority_order):
                 lines.append(f"{i}. {name}")
-            lines.append("\n**这是永久更改！** 输入 **yes** 确认")
+            lines.append("\n**This is permanent!** Type **yes** to confirm")
 
             return "\n".join(lines)
 
@@ -449,12 +449,12 @@ class ModelCommandHandler:
                 if success:
                     return f"✅ {msg}"
                 else:
-                    return f"❌ 更新失败: {msg}"
+                    return f"❌ Update failed: {msg}"
             else:
                 del self._switch_sessions[session_key]
-                return "✅ 操作已取消"
+                return "✅ Cancelled"
 
-        return "未知步骤"
+        return "Unknown step"
 
     def _handle_restore_input(
         self, session_key: str, session: ModelSwitchSession, text: str
@@ -470,7 +470,7 @@ class ModelCommandHandler:
                 return f"❌ {msg}"
         else:
             del self._switch_sessions[session_key]
-            return "✅ 操作已取消"
+            return "✅ Cancelled"
 
 
 # ==================== 思考模式命令处理 ====================
@@ -987,20 +987,20 @@ class MessageGateway:
             )
             return (
                 f"🔑 配对码: **{code}**\n\n"
-                f"有效期 1 小时，发送给需要授权的用户即可。"
+                f"有效期 1 hours，发送给需要授权的用户即可。"
             )
         elif sub == "list":
             authorized = self._dm_pairing.list_authorized()
             if not authorized:
-                return "当前没有已授权的通道。"
-            return "已授权通道:\n" + "\n".join(f"- {a}" for a in authorized)
+                return "No authorized channels."
+            return "Authorized channels:\n" + "\n".join(f"- {a}" for a in authorized)
         elif sub == "revoke" and len(parts) >= 3:
             target = parts[2]
             parts_t = target.split(":", 1)
             if len(parts_t) == 2:
                 ok = self._dm_pairing.revoke(parts_t[0], parts_t[1])
                 return f"✅ 已撤销授权: {target}" if ok else f"❌ 未找到: {target}"
-            return "用法: /pair revoke channel:chat_id"
+            return "Usage: /pair revoke channel:chat_id"
         else:
             return (
                 "/pair generate — 生成配对码\n"
@@ -1028,7 +1028,7 @@ class MessageGateway:
 
         prompt = parts[1].strip()
         if not prompt:
-            return "❌ 请提供要执行的任务描述。"
+            return "❌ Please provide a task description."
 
         session_key = self._get_session_key(message)
         bg_id = f"bg_{session_key}_{int(_time.time())}"
@@ -1126,7 +1126,7 @@ class MessageGateway:
 
     async def _handle_mode_command(self, user_text: str) -> str:
         """处理 /模式 或 /mode 命令：多Agent模式已默认常开。"""
-        return "ℹ️ **多Agent模式已默认常开**，不再支持切换为单Agent模式。"
+        return "ℹ️ **Multi-agent mode is always on** and cannot be toggled."
 
     def _is_agent_command(self, text: str) -> bool:
         """检查是否是多Agent相关命令"""
@@ -1146,7 +1146,7 @@ class MessageGateway:
         支持: /切换 /switch /状态 /status /重置 /agent_reset
         """
         if getattr(self, "_orchestrator_ref", None) is None:
-            return "多Agent系统正在初始化，请稍后再试。"
+            return "Multi-agent system is initializing, please try again shortly."
 
         session = self.session_manager.get_session(
             channel=message.channel,
@@ -1155,7 +1155,7 @@ class MessageGateway:
             thread_id=message.thread_id,
         )
         if not session:
-            return "❌ 无法获取会话"
+            return "❌ Unable to get session"
 
         self._apply_bot_agent_profile(session, message.channel)
 
@@ -1198,7 +1198,7 @@ class MessageGateway:
             lines = ["📋 **可用 Agent**\n"]
             current_id = session.context.agent_profile_id
             for p in all_profiles:
-                marker = " ⬅️ 当前" if p.id == current_id else ""
+                marker = " ⬅️ current" if p.id == current_id else ""
                 lines.append(f"• `{p.id}` — {p.icon} {p.name}: {p.description}{marker}")
             lines.append("\n用法: `/切换 <agent_id>` 或 `/switch <agent_id>`")
             return "\n".join(lines)
@@ -1306,7 +1306,7 @@ class MessageGateway:
         logger.info(f"[IM] Agent reset to {reset_target} for {session.session_key}")
 
         if reset_target == "default":
-            return "✅ 已重置为默认 Agent"
+            return "✅ Reset to default agent"
         return f"✅ 已重置为 **{reset_target}**"
 
     def _get_bot_default_agent(self, channel: str) -> str:
@@ -2186,16 +2186,16 @@ class MessageGateway:
                             f"[Interrupt] STOP command, cancelling task for {session_key} "
                             f"(resolved={_resolved_sid}): {user_text}"
                         )
-                        await self._send_feedback(message, "✅ 收到，正在停止当前任务…")
+                        await self._send_feedback(message, "✅ Got it, stopping current task…")
                     elif msg_type == "skip":
                         ok = self.agent_handler.skip_current_step(
                             f"用户发送跳过指令: {user_text}",
                             session_id=_resolved_sid,
                         )
                         if ok:
-                            await self._send_feedback(message, "⏭️ 收到，正在跳过当前步骤…")
+                            await self._send_feedback(message, "⏭️ Got it, skipping current step…")
                         else:
-                            await self._send_feedback(message, "⚠️ 当前没有可跳过的步骤。")
+                            await self._send_feedback(message, "⚠️ No active step to skip.")
                         logger.info(
                             f"[Interrupt] SKIP handled directly (not queued) for {session_key}: {user_text}"
                         )
@@ -2283,15 +2283,15 @@ class MessageGateway:
                             )
                             if ok:
                                 await self._send_feedback(
-                                    message, "💬 收到，已将消息注入当前任务。"
+                                    message, "💬 Got it, message injected into current task."
                                 )
                             else:
                                 await self._send_feedback(
-                                    message, "⚠️ 当前没有正在执行的任务，消息未能注入。"
+                                    message, "⚠️ No active task running, message was not injected."
                                 )
                         except Exception as e:
                             logger.error(f"[Interrupt] INSERT failed for {session_key}: {e}")
-                            await self._send_feedback(message, "❌ 消息注入失败，请稍后再试。")
+                            await self._send_feedback(message, "❌ Message injection failed, please try again.")
                         logger.info(
                             f"[Interrupt] INSERT handled for {session_key}: {_insert_text[:80]}"
                         )
@@ -2329,7 +2329,7 @@ class MessageGateway:
                     else:
                         await self._send_feedback(
                             message,
-                            f"🔒 未授权。请输入配对码或联系管理员获取。({result[1]})"
+                            f"🔒 Unauthorized. Contact the admin or enter a pairing code. ({result[1]})"
                         )
                     return
 
@@ -2405,7 +2405,7 @@ class MessageGateway:
             task.cancel()
 
         logger.info(f"[Abort-FastPath] Session {session_key} cancelled: {user_text}")
-        await self._send_feedback(message, "✅ 收到，正在停止当前任务…")
+        await self._send_feedback(message, "✅ Got it, stopping current task…")
 
     # ==================== 中断机制 ====================
 
@@ -2805,7 +2805,7 @@ class MessageGateway:
                         f"[IM] Context reset for {session_key}: cleared {_old_count} messages"
                     )
                 await self._send_response(
-                    message, "好的，已开启新话题。之前的对话上下文已清除，请说说你的新需求吧~"
+                    message, "New conversation started. Previous context has been cleared."
                 )
                 return
 
@@ -2813,7 +2813,7 @@ class MessageGateway:
             _IDLE_STOP_CMDS = {"/stop", "/停止", "/cancel", "/abort", "/skip", "/跳过"}
             if _cmd_lower in _IDLE_STOP_CMDS:
                 await self._send_response(
-                    message, "当前没有正在执行的任务。发送 `/help` 查看可用指令。"
+                    message, "No active task. Send `/help` to see available commands."
                 )
                 return
 
@@ -2894,7 +2894,7 @@ class MessageGateway:
                         if _elapsed_min > _CONTEXT_BOUNDARY_MINUTES:
                             _hours = _elapsed_min / 60
                             if _hours >= 1:
-                                _time_desc = f"{_hours:.1f} 小时"
+                                _time_desc = f"{_hours:.1f} hours"
                             else:
                                 _time_desc = f"{int(_elapsed_min)} 分钟"
                             session.context.add_message(
@@ -2995,7 +2995,7 @@ class MessageGateway:
                     f"(channel={message.channel}, user={message.user_id}), "
                     f"raw={response_text!r}"
                 )
-                response_text = "⚠️ 处理完成，但未生成有效回复。请重试。"
+                response_text = "⚠️ Processing complete but no reply was generated. Please retry."
                 streamed_ok = False
 
             # 8. 记录响应到会话（含思维链摘要 + 工具执行摘要）
@@ -3798,7 +3798,7 @@ class MessageGateway:
                     )
                 except (asyncio.TimeoutError, TimeoutError):
                     logger.error(f"[Gateway] Agent handler timed out after {_AGENT_TIMEOUT}s")
-                    response = f"⚠️ 处理超时（{int(_AGENT_TIMEOUT)}秒），请稍后重试或简化您的问题。"
+                    response = f"⚠️ Processing timed out ({int(_AGENT_TIMEOUT)}s), please retry or simplify your request."
 
             return (response, streamed_ok)
 

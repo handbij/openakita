@@ -13,7 +13,7 @@ requires:
 
 淘宝客一站式解决方案，支持链接转链、全网比价、自动价保、佣金追踪。
 
-## 配置
+## Configuration
 
 在环境变量中设置：
 export ZHETAOKE_APP_KEY="your_key"
@@ -44,7 +44,7 @@ export PDD_PID="your_pdd_pid"
 
 python3 scripts/taobaoke_master.py <链接>
 
-## 预置脚本
+## Pre-built Scripts
 
 ### scripts/taobaoke_master.py
 淘宝客转链/搜索/比价工具，需设置 ZHETAOKE_APP_KEY 和 ZHETAOKE_SID。

@@ -13,7 +13,7 @@ requires:
 
 为智能体注入权威、实时、结构化的中文百科知识，确保其回答的准确性与可信度。
 
-## 配置
+## Configuration
 
 export BAIDU_API_KEY="your_key"
 

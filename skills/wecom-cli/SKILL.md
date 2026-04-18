@@ -34,7 +34,7 @@ wecom-cli init
 - 企业微信账号（**目前仅对 ≤ 10 人企业开放使用**）
 - （可选）智能机器人 Bot ID 和 Secret
 
-## 功能范围
+## Features范围
 
 覆盖企业微信核心业务品类：
 
@@ -92,7 +92,7 @@ wecom-cli meeting list '{}'
 - 不输出密钥到终端明文
 - 配置凭证通过交互式初始化完成，安全存储
 
-## 预置脚本
+## Pre-built Scripts
 
 ### scripts/setup.py
 企微 wecom-cli 安装配置脚本。

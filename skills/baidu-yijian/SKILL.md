@@ -11,14 +11,14 @@ metadata:
 
 让 OpenClaw 具备视觉管理能力，覆盖零售餐饮、能源电力、矿山、港口、化工、钢铁等 20+ 行业。
 
-## 功能
+## Features
 
 - 工业视觉检测
 - 多行业场景覆盖
 - 实时监控与告警
 - 视觉分析报告
 
-## 预置脚本
+## Pre-built Scripts
 
 ### scripts/yijian.py
 工业视觉检测（百度千帆 AppBuilder），需设置 APPBUILDER_TOKEN。

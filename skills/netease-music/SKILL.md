@@ -37,7 +37,7 @@ ncm-cli login — 使用网易云音乐 App 扫码授权。
 
 搜索歌曲、播放音乐、创建歌单、获取推荐等，均可用自然语言描述。
 
-## 预置脚本
+## Pre-built Scripts
 
 ### scripts/setup.py
 网易云音乐 ncm-cli 安装配置脚本。

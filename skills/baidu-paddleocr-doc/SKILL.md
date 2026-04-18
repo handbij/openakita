@@ -9,26 +9,26 @@ requires:
   env: [BAIDU_API_KEY]
 ---
 
-# 文心衍生 · PaddleOCR 文档解析
+# Baidu PaddleOCR Document Parsing
 
-基于 SOTA 文档解析模型 PaddleOCR-VL-1.5 构建，为 Agent 加上"眼睛"，对文档进行超高精度识别、解析。
+Based on the SOTA document parsing model PaddleOCR-VL-1.5, giving the Agent "eyes" to perform ultra-high-precision document recognition and parsing.
 
-## 配置
+## Configuration
 
 export BAIDU_API_KEY="your_key"
 
-## 功能
+## Features
 
-- 文档结构识别
-- 表格提取与还原
-- 公式识别
-- 图文混排解析
-- 多语言文档支持
+- Document structure recognition
+- Table extraction and reconstruction
+- Formula recognition
+- Mixed text-and-image analysis
+- Multi-language document support
 
-## 预置脚本
+## Pre-built Scripts
 
 ### scripts/baidu_ocr_doc.py
-百度文档/表格 OCR 识别，需设置 BAIDU_OCR_AK 和 BAIDU_OCR_SK。
+Baidu document/table OCR recognition. Requires BAIDU_OCR_AK and BAIDU_OCR_SK to be set.
 
 ```bash
 python3 scripts/baidu_ocr_doc.py doc /path/to/document.jpg

@@ -28,7 +28,7 @@ metadata:
 
 直接用自然语言描述想要创建的应用，秒哒会自动生成代码并部署。
 
-## 预置脚本
+## Pre-built Scripts
 
 ### scripts/miaoda.py
 智能应用生成（百度千帆 AppBuilder），需设置 APPBUILDER_TOKEN。

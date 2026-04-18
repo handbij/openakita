@@ -13,7 +13,7 @@ requires:
 
 统一的 IMA OpenAPI 技能，支持笔记管理和知识库操作。
 
-## 配置
+## Configuration
 
 1. 打开 https://ima.qq.com/agent-interface 获取 Client ID 和 API Key
 2. 存储凭证：
@@ -45,7 +45,7 @@ ima_api() {
 | 搜索/浏览/创建/编辑笔记 | notes |
 | 上传文件/添加网页/搜索知识库 | knowledge-base |
 
-## 预置脚本
+## Pre-built Scripts
 
 ### scripts/ima_notes.py
 IMA 笔记 API 封装，需设置 IMA_OPENAPI_CLIENTID 和 IMA_OPENAPI_APIKEY。

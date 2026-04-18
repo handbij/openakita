@@ -1,9 +1,9 @@
 """
-AgentFactory — 根据 AgentProfile 创建差异化 Agent 实例
-AgentInstancePool — per-session + per-profile 实例管理 + 空闲回收
+AgentFactory -- Creates differentiated Agent instances according to AgentProfile
+AgentInstancePool -- per-session + per-profile instance management + idle reclamation
 
-Pool key 格式: ``{session_id}::{profile_id}``
-同一会话可持有多个不同 profile 的 Agent 实例并行运行。
+Pool key format: ``{session_id}::{profile_id}``
+Same session can hold multiple Agent instances with different profiles running in parallel.
 """
 
 from __future__ import annotations
@@ -20,12 +20,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_IDLE_TIMEOUT_SECONDS = 30 * 60  # 30 分钟空闲回收
-_REAP_INTERVAL_SECONDS = 60  # 每分钟检查一次
+_IDLE_TIMEOUT_SECONDS = 30 * 60  # 30 minute idle reclamation
+_REAP_INTERVAL_SECONDS = 60  # Check every minute
 
-# INCLUSIVE 模式下始终保留的基础系统工具。
-# 所有子 Agent（含用户手动创建的）都需要这些工具才能正常工作。
-# 只有浏览器、桌面控制、MCP、定时任务等专用工具需在 profile.skills 显式列出。
+# Base system tools always kept in INCLUSIVE mode.
+# All child Agents (including user-created ones) need these tools to function properly.
+# Only specialized tools like browser, desktop control, MCP, scheduled tasks need explicit listing in profile.skills.
 ESSENTIAL_TOOL_NAMES: frozenset[str] = frozenset(
     {
         "run_shell",
@@ -52,30 +52,30 @@ ESSENTIAL_TOOL_NAMES: frozenset[str] = frozenset(
 
 ESSENTIAL_SYSTEM_SKILLS: frozenset[str] = frozenset(
     {
-        # 规划（多步任务的核心）
+        # Planning (core of multi-step tasks)
         "create-todo",
         "update-todo-step",
         "get-todo-status",
         "complete-todo",
-        # 技能发现（渐进式披露入口 — 外部技能必须先 get_skill_info 读指令）
+        # Skill discovery (progressive disclosure entry — external skills must call get_skill_info first)
         "get-skill-info",
         "list-skills",
-        # 文件系统（外部技能执行的基础 — 读指令→写代码→run-shell 执行）
+        # File system (foundation for external skill execution — read instructions → write code → run-shell)
         "run-shell",
         "read-file",
         "write-file",
         "list-directory",
-        # IM 通道（接收用户输入、交付文件）
+        # IM channel (receive user input, deliver files)
         "deliver-artifacts",
         "get-chat-history",
         "get-image-file",
         "get-voice-file",
-        # 记忆
+        # Memory
         "search-memory",
         "add-memory",
-        # 信息检索
+        # Information retrieval
         "web-search",
-        # 系统
+        # System
         "get-tool-info",
         "set-task-timeout",
     }

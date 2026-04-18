@@ -399,28 +399,28 @@ class SkillManager:
             self._ensure_skill_structure(target_dir)
 
             try:
-                # force=True：允许覆盖已注册的同名 skill（再次安装 / 升级场景）
+                # force=True: allow overwriting registered skills with the same name (re-install/upgrade scenarios)
                 loaded = self._loader.load_skill(target_dir, force=True)
                 if loaded:
-                    # 注意：目录缓存 / Pool 通知 / 事件广播由上层 propagate_skill_change 统一完成，
-                    # 此处只记录 catalog_text 快照供调试。
+                    # Note: directory cache / Pool notification / event broadcast are handled uniformly by
+                    # the upper layer propagate_skill_change; here we only record a catalog_text snapshot for debugging.
                     self._catalog_text = self._catalog.generate_catalog()
                     self._reset_failure_streaks()
                     logger.info(f"Skill installed from git: {skill_name}")
                 else:
-                    raise RuntimeError("loader 未返回有效技能")
+                    raise RuntimeError("loader did not return a valid skill")
             except Exception as e:
                 logger.error(f"Failed to load installed skill: {e}")
                 self._cleanup_broken_skill_dir(target_dir)
-                return f"❌ 技能文件已复制但加载失败: {e}"
+                return f"❌ Skill files copied but failed to load: {e}"
 
             return (
-                f"✅ 技能从 Git 安装成功！\n\n"
-                f"**技能名称**: {skill_name}\n"
-                f"**来源**: {git_url}\n"
-                f"**安装路径**: {target_dir}\n\n"
-                f"**目录结构**:\n```\n{skill_name}/\n{self._format_tree(target_dir)}\n```\n\n"
-                f'技能已自动加载，可以使用 `get_skill_info("{skill_name}")` 查看详细指令。'
+                f"✅ Skill installed from Git successfully!\n\n"
+                f"**Skill name**: {skill_name}\n"
+                f"**Source**: {git_url}\n"
+                f"**Installation path**: {target_dir}\n\n"
+                f"**Directory structure**:\n```\n{skill_name}/\n{self._format_tree(target_dir)}\n```\n\n"
+                f'Skill has been automatically loaded. Use `get_skill_info("{skill_name}")` to view detailed instructions.'
             )
 
         except Exception as e:
@@ -441,7 +441,7 @@ class SkillManager:
     async def _install_from_url(
         self, url: str, name: str | None, extra_files: list[str] | None, skills_dir: Path
     ) -> str:
-        """从 URL 安装技能（仅接受 raw SKILL.md 文件）"""
+        """Install skill from URL (accept raw SKILL.md files only)"""
         import httpx
 
         skill_dir: Path | None = None
@@ -451,19 +451,19 @@ class SkillManager:
                 response.raise_for_status()
                 skill_content = response.text
 
-            # ---- 内容校验：拒绝 HTML、要求 YAML frontmatter ----
+            # ---- Content validation: reject HTML, require YAML frontmatter ----
             if is_html_content(skill_content):
                 return (
-                    f"❌ URL 返回了 HTML 网页而非 SKILL.md: {url}\n\n"
-                    "请改用以下格式:\n"
-                    "- GitHub 仓库: `https://github.com/owner/repo`\n"
-                    "- Raw 文件: `https://raw.githubusercontent.com/owner/repo/main/path/SKILL.md`\n"
-                    "- 简写: `owner/repo@skill-name`"
+                    f"❌ URL returned HTML page instead of SKILL.md: {url}\n\n"
+                    "Please use one of the following formats:\n"
+                    "- GitHub repo: `https://github.com/owner/repo`\n"
+                    "- Raw file: `https://raw.githubusercontent.com/owner/repo/main/path/SKILL.md`\n"
+                    "- Shorthand: `owner/repo@skill-name`"
                 )
             if not has_yaml_frontmatter(skill_content):
                 return (
-                    f"❌ 下载内容不是有效的 SKILL.md（缺少 YAML frontmatter）: {url}\n\n"
-                    "有效的 SKILL.md 必须以 `---` 开头的 YAML 元数据块开始。"
+                    f"❌ Downloaded content is not a valid SKILL.md (missing YAML frontmatter): {url}\n\n"
+                    "A valid SKILL.md must start with a YAML metadata block beginning with `---`."
                 )
 
             extracted_name = self._extract_skill_name(skill_content)
@@ -507,38 +507,38 @@ class SkillManager:
                             logger.warning(f"Failed to download {file_url}: {e}")
 
             try:
-                # force=True：允许覆盖已注册的同名 skill（再次安装 / 升级场景）
+                # force=True: allow overwriting registered skills with the same name (re-install/upgrade scenarios)
                 loaded = self._loader.load_skill(skill_dir, force=True)
                 if loaded:
-                    # 注意：目录缓存 / Pool 通知 / 事件广播由上层 propagate_skill_change 统一完成，
-                    # 此处只记录 catalog_text 快照供调试。
+                    # Note: directory cache / Pool notification / event broadcast are handled uniformly by
+                    # the upper layer propagate_skill_change; here we only record a catalog_text snapshot for debugging.
                     self._catalog_text = self._catalog.generate_catalog()
                     self._reset_failure_streaks()
                     logger.info(f"Skill installed from URL: {skill_name}")
                 else:
-                    raise RuntimeError("loader 未返回有效技能")
+                    raise RuntimeError("loader did not return a valid skill")
             except Exception as e:
                 logger.error(f"Failed to load installed skill: {e}")
                 self._cleanup_broken_skill_dir(skill_dir)
-                return f"❌ 技能文件已下载但加载失败: {e}"
+                return f"❌ Skill files downloaded but failed to load: {e}"
 
             return (
-                f"✅ 技能安装成功！\n\n"
-                f"**技能名称**: {skill_name}\n"
-                f"**安装路径**: {skill_dir}\n\n"
-                f"**安装文件**: {', '.join(installed_files)}\n\n"
-                f'技能已自动加载，可以使用 `get_skill_info("{skill_name}")` 查看详细指令。'
+                f"✅ Skill installed successfully!\n\n"
+                f"**Skill name**: {skill_name}\n"
+                f"**Installation path**: {skill_dir}\n\n"
+                f"**Installed files**: {', '.join(installed_files)}\n\n"
+                f'Skill has been automatically loaded. Use `get_skill_info("{skill_name}")` to view detailed instructions.'
             )
 
         except Exception as e:
             logger.error(f"Failed to install skill from URL: {e}")
             if skill_dir:
                 self._cleanup_broken_skill_dir(skill_dir)
-            return f"❌ URL 安装失败: {str(e)}"
+            return f"❌ URL installation failed: {str(e)}"
 
     @staticmethod
     def _cleanup_broken_skill_dir(skill_dir: Path) -> None:
-        """清理安装失败的残留目录。"""
+        """Clean up leftover directories from failed installations."""
         import shutil
 
         if skill_dir and skill_dir.exists():
@@ -547,7 +547,7 @@ class SkillManager:
                 logger.info(f"Cleaned up broken skill dir: {skill_dir}")
 
     def _extract_skill_name(self, content: str) -> str | None:
-        """从 SKILL.md 内容提取技能名称"""
+        """Extract skill name from SKILL.md content"""
         try:
             import yaml
         except ImportError:
@@ -562,14 +562,14 @@ class SkillManager:
         return None
 
     def _normalize_skill_name(self, name: str) -> str:
-        """标准化技能名称"""
+        """Normalize skill name"""
         name = name.lower().replace("_", "-").replace(" ", "-")
         name = re.sub(r"[^a-z0-9-]", "", name)
         name = re.sub(r"-+", "-", name).strip("-")
         return name or "custom-skill"
 
     def _find_skill_md(self, search_dir: Path) -> Path | None:
-        """在目录中查找 SKILL.md，优先根目录，其次按路径深度确定性选择。"""
+        """Find SKILL.md in directory, prioritizing root directory, then by path depth."""
         skill_md = search_dir / "SKILL.md"
         if skill_md.exists():
             return skill_md
@@ -577,7 +577,7 @@ class SkillManager:
         return candidates[0] if candidates else None
 
     def _list_skill_candidates(self, base_dir: Path) -> list[str]:
-        """列出可能包含技能的目录"""
+        """List directories that may contain skills"""
         candidates = []
         for path in base_dir.rglob("*.md"):
             if path.name.lower() in ("skill.md", "readme.md"):
@@ -587,13 +587,13 @@ class SkillManager:
         return candidates
 
     def _ensure_skill_structure(self, skill_dir: Path) -> None:
-        """确保技能目录有规范结构"""
+        """Ensure skill directory has standard structure"""
         (skill_dir / "scripts").mkdir(exist_ok=True)
         (skill_dir / "references").mkdir(exist_ok=True)
         (skill_dir / "assets").mkdir(exist_ok=True)
 
     def _format_tree(self, directory: Path, prefix: str = "") -> str:
-        """格式化目录树"""
+        """Format directory tree"""
         lines = []
         items = sorted(directory.iterdir(), key=lambda x: (x.is_file(), x.name))
         for i, item in enumerate(items):

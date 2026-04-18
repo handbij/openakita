@@ -1,7 +1,7 @@
 """
-组织编排 API 路由
+Organization orchestration API routes
 
-CRUD + 模板 + 节点管理 + 生命周期 + 命令 + 记忆 + 事件
+CRUD + templates + node management + lifecycle + commands + memory + events
 """
 
 from __future__ import annotations

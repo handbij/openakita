@@ -830,11 +830,11 @@ class BrowserManager:
         return None
 
     async def _try_bundled_chromium(self, headless: bool) -> bool:
-        """使用 Chromium 启动。
+        """Launch using Chromium.
 
-        策略（按顺序）：
-        1. persistent_context — 原子式创建浏览器 + 上下文 + 页面，避免进程间隙崩溃
-        2. launch + new_context + new_page — 传统方式兜底
+        Strategies (in order):
+        1. persistent_context — atomically create browser + context + page, avoid inter-process crashes
+        2. launch + new_context + new_page — traditional fallback
         """
         exe_path = self._bundled_executable
 
@@ -857,7 +857,7 @@ class BrowserManager:
 
         last_err: Exception | None = None
 
-        # --- 策略 1: persistent_context（原子启动，避免 new_page 崩溃）---
+        # --- Strategy 1: persistent_context (atomic launch, avoid new_page crashes) ---
         try:
             ok = await self._launch_persistent(exe_path, effective_headless)
             if ok:
@@ -867,7 +867,7 @@ class BrowserManager:
             logger.info(f"[Browser] persistent_context failed ({e}), trying standard launch...")
             await self._close_browser_silently()
 
-        # --- 策略 2: 传统 launch + new_context + new_page ---
+        # --- Strategy 2: traditional launch + new_context + new_page ---
         try:
             ok = await self._launch_standard(exe_path, effective_headless)
             if ok:
@@ -884,7 +884,7 @@ class BrowserManager:
         exe_path: str | None,
         headless: bool,
     ) -> bool:
-        """用 launch_persistent_context 原子启动浏览器 + 页面。"""
+        """Atomically launch browser + page using launch_persistent_context."""
         import tempfile
 
         user_data = tempfile.mkdtemp(prefix="oa_chromium_")
@@ -919,7 +919,7 @@ class BrowserManager:
         exe_path: str | None,
         headless: bool,
     ) -> bool:
-        """传统 launch + new_context + new_page。"""
+        """Traditional launch + new_context + new_page."""
         launch_kwargs: dict[str, Any] = {
             "headless": headless,
             "args": self._build_launch_args(),
@@ -948,7 +948,7 @@ class BrowserManager:
         return True
 
     async def _close_browser_silently(self) -> None:
-        """关闭浏览器资源但不清理 Playwright driver。"""
+        """Close browser resources without cleaning up Playwright driver."""
         for resource in (self._page, self._context, self._browser):
             if resource:
                 try:
@@ -960,7 +960,7 @@ class BrowserManager:
         self._browser = None
 
     async def _health_check(self) -> bool:
-        """快速检查浏览器连接是否存活。"""
+        """Quick health check for browser connection status."""
         try:
             if not self._page or not self._context:
                 return False
@@ -971,7 +971,7 @@ class BrowserManager:
             return False
 
     async def _stop_internal(self) -> None:
-        """实际停止流程（不加锁，由调用方保证锁）。"""
+        """Internal stop sequence (caller must hold lock)."""
         prev = self.state
         self.state = BrowserState.STOPPING
         try:
@@ -999,7 +999,7 @@ class BrowserManager:
             logger.info("Browser stopped")
 
     async def _is_driver_dead(self) -> bool:
-        """检测 Playwright driver 进程是否已崩溃。"""
+        """Check if Playwright driver process has crashed."""
         if not self._playwright:
             return True
         try:

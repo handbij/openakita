@@ -1,7 +1,7 @@
 """
-Windows 桌面自动化 - 主控制器
+Windows Desktop Automation - Main Controller
 
-统一接口，智能选择 UIA 或 Vision 方案
+Unified interface, intelligently select UIA or Vision approach
 """
 
 import asyncio
@@ -27,7 +27,7 @@ from .types import (
 from .uia import UIAClient, UIAElementWrapper, UIAInspector, get_uia_client
 from .vision import VisionAnalyzer, get_vision_analyzer
 
-# 平台检查
+# Platform check
 if sys.platform != "win32":
     raise ImportError(
         f"Desktop automation module is Windows-only. Current platform: {sys.platform}"
@@ -38,11 +38,11 @@ logger = logging.getLogger(__name__)
 
 class DesktopController:
     """
-    Windows 桌面控制器
+    Windows Desktop Controller
 
-    统一接口，智能选择 UIA 或 Vision 方案：
-    - 标准 Windows 应用 → UIAutomation（快速准确）
-    - 非标准 UI → Vision（通用兜底）
+    Unified interface, intelligently select UIA or Vision approach:
+    - Standard Windows applications → UIAutomation (fast and accurate)
+    - Non-standard UI → Vision (universal fallback)
     """
 
     def __init__(
@@ -51,11 +51,11 @@ class DesktopController:
     ):
         """
         Args:
-            config: 配置对象，None 使用全局配置
+            config: Configuration object, None uses global config
         """
         self._config = config or get_config()
 
-        # 延迟初始化组件
+        # Lazy initialization of components
         self._capture: ScreenCapture | None = None
         self._mouse: MouseController | None = None
         self._keyboard: KeyboardController | None = None
@@ -64,58 +64,58 @@ class DesktopController:
         self._cache: ElementCache | None = None
         self._inspector: UIAInspector | None = None
 
-    # ==================== 组件访问器 ====================
+    # ==================== Component Accessors ====================
 
     @property
     def capture(self) -> ScreenCapture:
-        """截图模块"""
+        """Screenshot module"""
         if self._capture is None:
             self._capture = get_capture()
         return self._capture
 
     @property
     def mouse(self) -> MouseController:
-        """鼠标控制器"""
+        """Mouse controller"""
         if self._mouse is None:
             self._mouse = get_mouse()
         return self._mouse
 
     @property
     def keyboard(self) -> KeyboardController:
-        """键盘控制器"""
+        """Keyboard controller"""
         if self._keyboard is None:
             self._keyboard = get_keyboard()
         return self._keyboard
 
     @property
     def uia(self) -> UIAClient:
-        """UIAutomation 客户端"""
+        """UIAutomation client"""
         if self._uia is None:
             self._uia = get_uia_client()
         return self._uia
 
     @property
     def vision(self) -> VisionAnalyzer:
-        """视觉分析器"""
+        """Vision analyzer"""
         if self._vision is None:
             self._vision = get_vision_analyzer()
         return self._vision
 
     @property
     def cache(self) -> ElementCache:
-        """元素缓存"""
+        """Element cache"""
         if self._cache is None:
             self._cache = get_cache()
         return self._cache
 
     @property
     def inspector(self) -> UIAInspector:
-        """UIA 检查器"""
+        """UIA inspector"""
         if self._inspector is None:
             self._inspector = UIAInspector(self.uia)
         return self._inspector
 
-    # ==================== 截图 ====================
+    # ==================== Screenshot ====================
 
     def screenshot(
         self,
@@ -124,18 +124,18 @@ class DesktopController:
         monitor: int | None = None,
     ) -> Image.Image:
         """
-        截取屏幕
+        Take a screenshot
 
         Args:
-            window_title: 窗口标题，截取指定窗口
-            region: 区域 (x, y, width, height)
-            monitor: 显示器索引
+            window_title: Window title, capture specified window
+            region: Region (x, y, width, height)
+            monitor: Display index
 
         Returns:
-            PIL Image 对象
+            PIL Image object
         """
         if window_title:
-            # 查找窗口并截取
+            # Find window and capture
             window = self.uia.find_window_fuzzy(window_title, timeout=2.0)
             if window and window.bbox:
                 return self.capture.capture_window(window.bbox, window_title)
@@ -149,11 +149,11 @@ class DesktopController:
         region: tuple[int, int, int, int] | None = None,
         resize: bool = True,
     ) -> str:
-        """截取屏幕并返回 base64"""
+        """Take screenshot and return base64"""
         img = self.screenshot(window_title=window_title, region=region)
         return self.capture.to_base64(img, resize_for_api=resize)
 
-    # ==================== 元素查找 ====================
+    # ==================== Element Finding ====================
 
     async def find_element(
         self,
@@ -163,16 +163,16 @@ class DesktopController:
         timeout: float | None = None,
     ) -> UIElement | None:
         """
-        查找 UI 元素
+        Find a UI element
 
         Args:
-            target: 元素描述（如"保存按钮"、"name:保存"、"id:btn_save"）
-            window_title: 限定在某个窗口内查找
-            method: 查找方法 (auto, uia, vision)
-            timeout: 超时时间
+            target: Element description (e.g. "Save button", "name:Save", "id:btn_save")
+            window_title: Restrict search to a specific window
+            method: Find method (auto, uia, vision)
+            timeout: Timeout in seconds
 
         Returns:
-            找到的元素，未找到返回 None
+            Found element, or None if not found
         """
         method = FindMethod(method) if isinstance(method, str) else method
         config = self._config.uia

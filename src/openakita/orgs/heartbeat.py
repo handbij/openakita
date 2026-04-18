@@ -1,8 +1,9 @@
 """
-OrgHeartbeat — 心跳调度、晨会/周报生成
+OrgHeartbeat — Heartbeat scheduling, standup/report generation
 
-定期触发顶层 Agent 审视组织状态，支持晨会和周报自动生成。
-通过 heartbeat_max_cascade_depth 限制级联 LLM 调用深度。
+Periodically triggers the top-level Agent to review organization status,
+supporting automatic standup meetings and report generation.
+Cascaded LLM call depth is limited via heartbeat_max_cascade_depth.
 """
 
 from __future__ import annotations

@@ -1,8 +1,8 @@
 """
-工具定义基础模块
+Tool definition base module
 
-提供工具定义的类型、验证和辅助函数。
-遵循 tool-definition-spec.md 规范。
+Provides types, validation, and helper functions for tool definitions.
+Follows the tool-definition-spec.md specification.
 """
 
 import logging
@@ -13,7 +13,7 @@ from typing import Any, Literal, TypedDict
 logger = logging.getLogger(__name__)
 
 
-# ==================== 类型定义 ====================
+# ==================== Type Definitions ====================
 
 
 class ToolExample(TypedDict, total=False):

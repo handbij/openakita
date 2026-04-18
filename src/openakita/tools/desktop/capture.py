@@ -1,12 +1,12 @@
 """
-Windows 桌面自动化 - 截图模块
+Windows Desktop Automation - Screenshot module
 
-基于 mss 实现高性能截图，支持：
-- 全屏/指定显示器截图
-- 区域截图
-- 窗口截图
-- 自动压缩/缩放
-- 截图缓存
+High-performance screenshot implementation based on mss, supporting:
+- Full screen / specified monitor screenshot
+- Region screenshot
+- Window screenshot
+- Automatic compression / scaling
+- Screenshot caching
 """
 
 import base64
@@ -19,7 +19,7 @@ from PIL import Image
 from .config import get_config
 from .types import BoundingBox, ScreenshotInfo
 
-# 平台检查
+# Platform check
 if sys.platform != "win32":
     raise ImportError(
         f"Desktop automation module is Windows-only. Current platform: {sys.platform}"
@@ -79,12 +79,12 @@ def _restore_window(hwnd: int) -> None:
 
 class ScreenCapture:
     """
-    屏幕截图类
+    Screen capture class
 
-    使用 mss 库实现高性能截图。
-    安全增强（参考 CC Computer Use）：
-    - 截屏时自动排除自身窗口
-    - 坐标系与截屏尺寸一致
+    High-performance screenshot implementation using the mss library.
+    Safety enhancements (inspired by CC Computer Use):
+    - Automatically excludes its own window during capture
+    - Coordinate system consistent with screenshot dimensions
     """
 
     def __init__(self):

@@ -494,7 +494,7 @@ class TaskScheduler:
             logger.debug(f"on_task_auto_disabled callback error for {task.id}: {e}")
 
     def _advance_next_run(self, task: ScheduledTask) -> None:
-        """确保 next_run 跳过当前 advance 窗口，防止同一触发窗口内快速重试"""
+        """Ensure next_run skips current advance window to prevent rapid retries within same trigger window"""
         trigger = self._triggers.get(task.id)
         if not trigger:
             return
@@ -504,7 +504,7 @@ class TaskScheduler:
             task.next_run = next_run
 
     def _update_next_run(self, task: ScheduledTask) -> None:
-        """更新任务的下一次运行时间"""
+        """Update task's next run time"""
         trigger = self._triggers.get(task.id)
         if not trigger:
             trigger = Trigger.from_config(task.trigger_type.value, task.trigger_config)
@@ -514,12 +514,12 @@ class TaskScheduler:
 
     def _recalculate_missed_run(self, task: ScheduledTask, now: datetime) -> None:
         """
-        重新计算错过执行时间的任务的下一次运行时间
+        Recalculate next run time for tasks that missed their scheduled execution time
 
-        与 _update_next_run 的区别：
-        - 不会设置为立即执行（即使 last_run 为 None）
-        - 用于程序重启后恢复任务
-        - 记录 missed 元数据供后续汇总通知
+        Difference from _update_next_run:
+        - Will not schedule for immediate execution (even if last_run is None)
+        - Used to recover tasks after program restart
+        - Records missed metadata for subsequent summary notification
         """
         trigger = self._triggers.get(task.id)
         if not trigger:
@@ -535,7 +535,7 @@ class TaskScheduler:
             task.metadata["missed_at"] = missed_at.isoformat() if missed_at else now.isoformat()
             return
 
-        # 对于间隔任务和 cron 任务，记录 missed 并推进到下一次
+        # For interval and cron tasks, record missed and advance to next occurrence
         task.metadata["last_missed_at"] = missed_at.isoformat() if missed_at else now.isoformat()
         missed_count = task.metadata.get("missed_count", 0)
         task.metadata["missed_count"] = missed_count + 1
@@ -552,17 +552,17 @@ class TaskScheduler:
             f"(missed at {missed_at}, total missed: {missed_count + 1})"
         )
 
-    # ==================== 持久化 ====================
+    # ==================== Persistence ====================
 
     def _try_recover_json(self, target: Path) -> bool:
         """
-        当 target 缺失/损坏时，尝试从 .bak 或 .tmp 恢复。
-        返回是否执行了恢复动作（成功与否都算尝试过）。
+        Attempt to recover from .bak or .tmp file when target is missing/corrupted.
+        Returns whether recovery was attempted (success or failure both count as attempted).
         """
         bak = target.with_suffix(target.suffix + ".bak")
         tmp = target.with_suffix(target.suffix + ".tmp")
 
-        # 目标文件存在则不恢复
+        # Do not recover if target file exists
         if target.exists():
             return False
 
@@ -581,10 +581,10 @@ class TaskScheduler:
         return False
 
     def _load_tasks(self) -> None:
-        """加载任务"""
+        """Load tasks"""
         tasks_file = self.storage_path / "tasks.json"
 
-        # 若文件不存在，尝试恢复（Windows 上 rename 非原子，可能在崩溃窗口丢失）
+        # If file does not exist, attempt recovery (rename is non-atomic on Windows, may be lost during crash window)
         if not tasks_file.exists():
             self._try_recover_json(tasks_file)
         if not tasks_file.exists():
@@ -629,7 +629,7 @@ class TaskScheduler:
             logger.error(f"Failed to load tasks: {e}")
 
     def _load_executions(self) -> None:
-        """加载执行记录，同时支持旧 JSON 数组和新 JSONL 格式。"""
+        """Load execution records, supporting both legacy JSON array and new JSONL formats."""
         executions_file = self.storage_path / "executions.json"
 
         if not executions_file.exists():
@@ -669,7 +669,7 @@ class TaskScheduler:
             logger.warning(f"Failed to load executions: {e}")
 
     def _migrate_to_jsonl(self, executions_file: Path) -> None:
-        """一次性将旧 JSON 数组格式迁移为 JSONL。"""
+        """One-time migration from legacy JSON array format to JSONL."""
         try:
             lines = []
             for e in self._executions:
@@ -681,7 +681,7 @@ class TaskScheduler:
             logger.warning(f"Failed to migrate executions to JSONL: {e}")
 
     def _save_tasks(self) -> None:
-        """保存tasks (SESSION durability tasks are excluded from persistence)."""
+        """Save tasks (SESSION durability tasks are excluded from persistence)."""
         tasks_file = self.storage_path / "tasks.json"
 
         try:
@@ -696,7 +696,7 @@ class TaskScheduler:
             logger.error(f"Failed to save tasks: {e}")
 
     def _append_execution(self, execution: TaskExecution) -> None:
-        """追加单条执行记录到 JSONL 文件（幂等：跳过已记录的 id）。"""
+        """Append single execution record to JSONL file (idempotent: skip already recorded ids)."""
         if execution.id in self._seen_execution_ids:
             logger.debug(f"Skipping duplicate execution append: {execution.id}")
             return
@@ -710,7 +710,7 @@ class TaskScheduler:
             logger.error(f"Failed to append execution: {e}")
 
     def _trim_executions_file(self) -> None:
-        """启动时裁剪 JSONL 文件，防止无限增长。保留最近 1000 行。"""
+        """Trim JSONL file at startup to prevent unbounded growth. Keep last 1000 lines."""
         executions_file = self.storage_path / "executions.json"
         if not executions_file.exists():
             return
@@ -727,10 +727,10 @@ class TaskScheduler:
         except Exception as e:
             logger.warning(f"Failed to trim executions file: {e}")
 
-    # ==================== 统计 ====================
+    # ==================== Statistics ====================
 
     def get_stats(self) -> dict:
-        """获取调度器统计"""
+        """Get scheduler statistics"""
         active_tasks = [t for t in self._tasks.values() if t.is_active]
 
         return {
@@ -765,7 +765,7 @@ class TaskScheduler:
         task_id: str | None = None,
         limit: int = 50,
     ) -> list[TaskExecution]:
-        """获取执行记录"""
+        """Get execution records"""
         executions = self._executions
 
         if task_id:

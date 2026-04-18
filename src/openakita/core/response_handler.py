@@ -218,18 +218,6 @@ class ResponseHandler:
                 "screenshot",
                 "give me a",
                 "send to me",
-                "图片",
-                "照片",
-                "图像",
-                "海报",
-                "壁纸",
-                "配图",
-                "截图",
-                "附件",
-                "文件",
-                "下载",
-                "发我",
-                "发给我",
             )
         )
 
@@ -330,19 +318,6 @@ class ResponseHandler:
                     "I generated an image for you",
                     "the image is as follows",
                     "the attachment is as follows",
-                    "已发送",
-                    "已交付",
-                    "已发给你",
-                    "已发给您",
-                    "下面是图片",
-                    "给你一张",
-                    "给您一张",
-                    "我给你发",
-                    "我给您发",
-                    "我为你生成了图片",
-                    "我为您生成了图片",
-                    "图片如下",
-                    "附件如下",
                 )
             )
             and not delivery_receipts
@@ -372,12 +347,6 @@ class ResponseHandler:
                     "on your desktop",
                     "at your computer",
                     "when you play the game",
-                    "你应该能看到",
-                    "你屏幕上",
-                    "你桌面上",
-                    "你的桌面",
-                    "在你电脑上",
-                    "你玩游戏时能看到",
                 )
             )
             and not _delivered_ok
@@ -585,20 +554,20 @@ NEXT: Suggested next step"""
 
     @staticmethod
     def should_compile_prompt(message: str) -> bool:
-        """判断是否需要进行 Prompt 编译"""
+        """Determine if prompt compilation is needed."""
         if len(message.strip()) < 20:
             return False
         return True
 
     @staticmethod
     def get_last_user_request(messages: list[dict]) -> str:
-        """获取最后一条用户请求"""
+        """Get the last user request."""
         from .tool_executor import smart_truncate
 
         def _strip_context_prefix(text: str) -> str:
-            """移除对话历史前缀，提取真正的用户输入。"""
+            """Remove conversation history prefix and extract the actual user input."""
             _marker = "：]"
-            if text.startswith("[以上是之前的对话历史"):
+            if text.startswith("[Previous conversation history:"):
                 idx = text.find(_marker)
                 if idx != -1:
                     text = text[idx + len(_marker) :].strip()
@@ -607,7 +576,7 @@ NEXT: Suggested next step"""
         for msg in reversed(messages):
             if msg.get("role") == "user":
                 content = msg.get("content", "")
-                if isinstance(content, str) and not content.startswith("[系统]"):
+                if isinstance(content, str) and not content.startswith("[System]"):
                     content = _strip_context_prefix(content)
                     result, _ = smart_truncate(content, 3000, save_full=False, label="user_request")
                     return result
@@ -615,7 +584,7 @@ NEXT: Suggested next step"""
                     for part in content:
                         if isinstance(part, dict) and part.get("type") == "text":
                             text = part.get("text", "")
-                            if not text.startswith("[系统]"):
+                            if not text.startswith("[System]"):
                                 text = _strip_context_prefix(text)
                                 result, _ = smart_truncate(
                                     text, 3000, save_full=False, label="user_request"

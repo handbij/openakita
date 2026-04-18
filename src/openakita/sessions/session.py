@@ -375,14 +375,14 @@ class Session:
         return added
 
     _RULE_SIGNAL_WORDS = (
-        "不要",
-        "必须",
-        "禁止",
-        "每次",
-        "规则",
-        "永远不要",
-        "务必",
-        "永远",
+        "don't",
+        "must",
+        "forbid",
+        "each time",
+        "rule",
+        "never",
+        "essential",
+        "always",
         "always",
         "never",
         "must",

@@ -494,9 +494,9 @@ class ThinkingCommandHandler:
     VALID_DEPTHS = {"low", "medium", "high"}
 
     DEPTH_LABELS = {
-        "low": "低（快速响应）",
-        "medium": "中（平衡）",
-        "high": "高（深度推理）",
+        "low": "low (fast)",
+        "medium": "medium (balanced)",
+        "high": "high (deep reasoning)",
     }
 
     def __init__(self, session_manager: "SessionManager"):
@@ -534,11 +534,11 @@ class ThinkingCommandHandler:
         if text_lower.startswith("/chain "):
             value = text_lower.split(None, 1)[1].strip()
             if value not in {"on", "off"}:
-                return f"❌ 无效的参数: `{value}`\n可选: `on`（开启推送）| `off`（关闭推送）"
+                return f"❌ Invalid value: `{value}`\nOptions: `on` | `off`"
             enabled = value == "on"
             session.set_metadata("chain_push", enabled)
-            label = "开启" if enabled else "关闭"
-            return f"✅ 思维链进度推送已 **{label}**"
+            label = "enabled" if enabled else "disabled"
+            return f"✅ Reasoning chain push is now **{label}**"
 
         # /thinking - 查看或设置思考模式
         if text_lower == "/thinking":
@@ -547,10 +547,10 @@ class ThinkingCommandHandler:
         if text_lower.startswith("/thinking ") and not text_lower.startswith("/thinking_depth"):
             mode = text_lower.split(None, 1)[1].strip()
             if mode not in self.VALID_MODES:
-                return f"❌ 无效的思考模式: `{mode}`\n可选: `on`（开启）| `off`（关闭）| `auto`（自动）"
+                return f"❌ Invalid mode: `{mode}`\nOptions: `on` | `off` | `auto`"
             session.set_metadata("thinking_mode", mode if mode != "auto" else None)
-            mode_label = {"on": "开启", "off": "关闭", "auto": "自动（系统决定）"}
-            return f"✅ 思考模式已设置为: **{mode_label[mode]}**"
+            mode_label = {"on": "on", "off": "off", "auto": "auto (system decides)"}
+            return f"✅ Thinking mode set to: **{mode_label[mode]}**"
 
         # /thinking_depth - 查看或设置思考深度
         if text_lower == "/thinking_depth":
@@ -560,10 +560,10 @@ class ThinkingCommandHandler:
             depth = text_lower.split(None, 1)[1].strip()
             if depth not in self.VALID_DEPTHS:
                 return (
-                    f"❌ 无效的思考深度: `{depth}`\n可选: `low`（低）| `medium`（中）| `high`（高）"
+                    f"❌ Invalid depth: `{depth}`\nOptions: `low` | `medium` | `high`"
                 )
             session.set_metadata("thinking_depth", depth)
-            return f"✅ 思考深度已设置为: **{self.DEPTH_LABELS[depth]}**"
+            return f"✅ Thinking depth set to: **{self.DEPTH_LABELS[depth]}**"
 
         return None
 
@@ -574,20 +574,20 @@ class ThinkingCommandHandler:
         current = session.get_metadata("chain_push")
         if current is None:
             current = settings.im_chain_push
-            source = "（跟随全局默认）"
+            source = "(global default)"
         else:
-            source = "（会话级设置）"
+            source = "(session setting)"
 
-        label = "开启" if current else "关闭"
+        label = "enabled" if current else "disabled"
 
         lines = [
-            "📡 **思维链进度推送**\n",
-            f"当前状态: **{label}** {source}\n",
-            "开启后，处理消息时会实时推送思考过程、工具调用进度等中间状态。",
-            "关闭不影响内部推理和数据保存，仅减少消息推送。\n",
-            "**可用命令:**",
-            "`/chain on` — 开启进度推送",
-            "`/chain off` — 关闭进度推送",
+            "📡 **Reasoning Chain Push**\n",
+            f"Status: **{label}** {source}\n",
+            "When enabled, thinking progress and tool activity are streamed in real-time.",
+            "Disabling only reduces message volume — internal reasoning is unaffected.\n",
+            "**Commands:**",
+            "`/chain on` — enable push",
+            "`/chain off` — disable push",
         ]
         return "\n".join(lines)
 
@@ -596,39 +596,39 @@ class ThinkingCommandHandler:
         current_mode = session.get_metadata("thinking_mode")
         current_depth = session.get_metadata("thinking_depth")
 
-        mode_label = "自动（系统决定）"
+        mode_label = "auto (system decides)"
         if current_mode == "on":
-            mode_label = "开启"
+            mode_label = "on"
         elif current_mode == "off":
-            mode_label = "关闭"
+            mode_label = "off"
 
-        depth_label = self.DEPTH_LABELS.get(current_depth or "medium", "中（平衡）")
+        depth_label = self.DEPTH_LABELS.get(current_depth or "medium", "medium (balanced)")
 
         lines = [
-            "🧠 **思考模式设置**\n",
-            f"当前模式: **{mode_label}**",
-            f"思考深度: **{depth_label}**\n",
-            "**可用命令:**",
-            "`/thinking on` — 强制开启深度思考",
-            "`/thinking off` — 关闭深度思考",
-            "`/thinking auto` — 自动决定（默认）",
-            "`/thinking_depth low|medium|high` — 设置思考深度",
+            "🧠 **Thinking Mode Settings**\n",
+            f"Mode: **{mode_label}**",
+            f"Depth: **{depth_label}**\n",
+            "**Commands:**",
+            "`/thinking on` — force deep thinking",
+            "`/thinking off` — disable deep thinking",
+            "`/thinking auto` — auto-decide (default)",
+            "`/thinking_depth low|medium|high` — set depth",
         ]
         return "\n".join(lines)
 
     def _format_depth_status(self, session: "Session") -> str:
         """格式化思考深度状态"""
         current_depth = session.get_metadata("thinking_depth")
-        depth_label = self.DEPTH_LABELS.get(current_depth or "medium", "中（平衡）")
+        depth_label = self.DEPTH_LABELS.get(current_depth or "medium", "medium (balanced)")
 
         lines = [
-            "📊 **思考深度设置**\n",
-            f"当前深度: **{depth_label}**\n",
+            "📊 **Thinking Depth Settings**\n",
+            f"Current depth: **{depth_label}**\n",
         ]
         for key, label in self.DEPTH_LABELS.items():
             marker = " ⬅️" if key == (current_depth or "medium") else ""
             lines.append(f"• `{key}` — {label}{marker}")
-        lines.append("\n用法: `/thinking_depth low|medium|high`")
+        lines.append("\nUsage: `/thinking_depth low|medium|high`")
         return "\n".join(lines)
 
 
@@ -712,9 +712,9 @@ class RestartCommandHandler:
             old = self._pending[session_key]
             await self._send(
                 message,
-                f"⚠️ 已有一个待确认的重启请求（确认码 **{old.confirm_code}**，"
-                f"剩余 {old.remaining_seconds}s）。\n"
-                f"发送确认码以确认，或 /cancel_restart 取消。",
+                f"⚠️ A restart request is already pending (code **{old.confirm_code}**, "
+                f"{old.remaining_seconds}s remaining).\n"
+                f"Send the code to confirm, or /cancel_restart to cancel.",
             )
             return
 
@@ -737,10 +737,10 @@ class RestartCommandHandler:
 
         await self._send(
             message,
-            f"🔄 **服务重启确认**\n\n"
-            f"确认码: `{code}`\n\n"
-            f"请在 **{self.CONFIRM_TIMEOUT} 秒** 内回复此确认码以执行重启。\n"
-            f"发送 `/cancel_restart` 取消重启。",
+            f"🔄 **Restart Confirmation**\n\n"
+            f"Code: `{code}`\n\n"
+            f"Reply with this code within **{self.CONFIRM_TIMEOUT} seconds** to restart.\n"
+            f"Send `/cancel_restart` to cancel.",
         )
 
     async def handle_pending_input(
@@ -764,14 +764,14 @@ class RestartCommandHandler:
         if text.lower() in self.CANCEL_COMMANDS or text.lower() == "/cancel":
             self._cleanup(session_key)
             logger.info(f"[Restart] Cancelled by user: {session_key}")
-            await self._send(message, "❌ 重启已取消。")
+            await self._send(message, "❌ Restart cancelled.")
             return True
 
         # 验证确认码
         if text == session.confirm_code:
             self._cleanup(session_key)
             logger.warning(f"[Restart] Confirmed by {session_key}, triggering restart...")
-            await self._send(message, "✅ 确认码正确，服务将在 3 秒后重启…")
+            await self._send(message, "✅ Code confirmed. Restarting in 3 seconds…")
             await asyncio.sleep(3)
             await self._trigger_restart()
             return True
@@ -780,8 +780,8 @@ class RestartCommandHandler:
         if text.isdigit() and len(text) == 6:
             await self._send(
                 message,
-                f"❌ 确认码不正确（剩余 {session.remaining_seconds}s）。\n"
-                f"请发送 `{session.confirm_code}` 或 `/cancel_restart` 取消。",
+                f"❌ Wrong code ({session.remaining_seconds}s remaining).\n"
+                f"Send `{session.confirm_code}` to confirm or `/cancel_restart` to cancel.",
             )
             return True
 
@@ -803,7 +803,7 @@ class RestartCommandHandler:
             msg = self._pending[session_key].message
             self._cleanup(session_key)
             logger.info(f"[Restart] Timed out for {session_key}")
-            await self._send(msg, "⏰ 重启确认已超时，已自动取消。")
+            await self._send(msg, "⏰ Restart confirmation timed out, auto-cancelled.")
 
     # ---------- 重启触发 ----------
 
@@ -986,8 +986,8 @@ class MessageGateway:
                 created_by=f"{message.channel}:{message.user_id}"
             )
             return (
-                f"🔑 配对码: **{code}**\n\n"
-                f"有效期 1 hours，发送给需要授权的用户即可。"
+                f"🔑 Pairing code: **{code}**\n\n"
+                f"Valid for 1 hour. Share this with the user who needs access."
             )
         elif sub == "list":
             authorized = self._dm_pairing.list_authorized()
@@ -999,13 +999,13 @@ class MessageGateway:
             parts_t = target.split(":", 1)
             if len(parts_t) == 2:
                 ok = self._dm_pairing.revoke(parts_t[0], parts_t[1])
-                return f"✅ 已撤销授权: {target}" if ok else f"❌ 未找到: {target}"
+                return f"✅ Revoked: {target}" if ok else f"❌ Not found: {target}"
             return "Usage: /pair revoke channel:chat_id"
         else:
             return (
-                "/pair generate — 生成配对码\n"
-                "/pair list — 查看已授权通道\n"
-                "/pair revoke channel:chat_id — 撤销授权"
+                "/pair generate — generate pairing code\n"
+                "/pair list — list authorized channels\n"
+                "/pair revoke channel:chat_id — revoke access"
             )
 
     async def _handle_background_command(
@@ -1020,10 +1020,10 @@ class MessageGateway:
         parts = text.split(None, 1)
         if len(parts) < 2:
             return (
-                "用法: `/background <任务描述>`\n\n"
-                "示例:\n"
-                "- `/background 帮我整理今天的会议纪要`\n"
-                "- `/bg 查询最新的项目进度并生成报告`"
+                "Usage: `/background <task description>`\n\n"
+                "Examples:\n"
+                "- `/background summarize today's meeting notes`\n"
+                "- `/bg generate the latest project status report`"
             )
 
         prompt = parts[1].strip()
@@ -1035,7 +1035,7 @@ class MessageGateway:
 
         await self._send_feedback(
             message,
-            f"⏳ 后台任务已启动: {prompt[:60]}...\n任务完成后会自动通知你。"
+            f"⏳ Background task started: {prompt[:60]}...\nYou'll be notified when it completes."
         )
 
         async def _run_background():
@@ -1047,7 +1047,7 @@ class MessageGateway:
 
                 task = ScheduledTask(
                     id=bg_id,
-                    name=f"后台任务: {prompt[:30]}",
+                    name=f"background task: {prompt[:30]}",
                     description=prompt,
                     trigger_type=TriggerType.ONCE,
                     trigger_config={},
@@ -1061,8 +1061,8 @@ class MessageGateway:
                 success, result = await executor.execute(task)
 
                 if message.channel and message.chat_id:
-                    status = "✅ 后台任务完成" if success else "❌ 后台任务失败"
-                    result_text = f"{status}\n\n**任务**: {prompt[:80]}\n\n**结果**:\n{result}"
+                    status = "✅ Background task complete" if success else "❌ Background task failed"
+                    result_text = f"{status}\n\n**Task**: {prompt[:80]}\n\n**Result**:\n{result}"
                     try:
                         await self.send(
                             channel=message.channel,
@@ -1078,7 +1078,7 @@ class MessageGateway:
                     await self.send(
                         channel=message.channel,
                         chat_id=message.chat_id,
-                        text=f"❌ 后台任务异常: {e}",
+                        text=f"❌ Background task error: {e}",
                     )
                 except Exception:
                     pass
@@ -1114,14 +1114,14 @@ class MessageGateway:
         if sub == "auth":
             if adapter and hasattr(adapter, "get_auth_url"):
                 url = adapter.get_auth_url()
-                return f"请在浏览器中打开以下链接完成飞书用户授权：\n{url}"
+                return f"Please open the following link in your browser to complete Feishu user auth:\n{url}"
             return "Feishu adapter not available"
 
         # /feishu 或 /feishu help
         return (
-            "/feishu start — 查看适配器状态与版本\n"
-            "/feishu auth  — 获取飞书用户授权链接\n"
-            "/feishu help  — 显示本帮助"
+            "/feishu start — show adapter status and version\n"
+            "/feishu auth  — get Feishu user auth link\n"
+            "/feishu help  — show this help"
         )
 
     async def _handle_mode_command(self, user_text: str) -> str:
@@ -1195,12 +1195,12 @@ class MessageGateway:
 
         if not arg:
             # 无参数：列出可用 Agent
-            lines = ["📋 **可用 Agent**\n"]
+            lines = ["📋 **Available Agents**\n"]
             current_id = session.context.agent_profile_id
             for p in all_profiles:
                 marker = " ⬅️ current" if p.id == current_id else ""
                 lines.append(f"• `{p.id}` — {p.icon} {p.name}: {p.description}{marker}")
-            lines.append("\n用法: `/切换 <agent_id>` 或 `/switch <agent_id>`")
+            lines.append("\nUsage: `/switch <agent_id>`")
             return "\n".join(lines)
 
         # 有参数：切换
@@ -1208,13 +1208,13 @@ class MessageGateway:
         profile_map = {p.id.lower(): p for p in all_profiles}
         if agent_id not in profile_map:
             available = ", ".join(p.id for p in all_profiles)
-            return f"❌ 未找到 Agent `{agent_id}`\n可用: {available}"
+            return f"❌ Agent `{agent_id}` not found\nAvailable: {available}"
 
         ctx = session.context
         p = profile_map[agent_id]
         old_id = ctx.agent_profile_id
         if old_id.lower() == agent_id:
-            return f"ℹ️ 当前已是 **{p.icon} {p.name}**"
+            return f"ℹ️ Already using **{p.icon} {p.name}**"
 
         ctx.agent_switch_history.append(
             {
@@ -1227,7 +1227,7 @@ class MessageGateway:
         self.session_manager.mark_dirty()
         logger.info(f"[IM] Agent switched: {old_id!r} -> {agent_id!r} for {session.session_key}")
 
-        return f"✅ 已切换到 **{p.icon} {p.name}** ({p.description})"
+        return f"✅ Switched to **{p.icon} {p.name}** ({p.description})"
 
     def _format_system_help(self) -> str:
         """格式化全局 /help 输出（所有模式可用）——基于统一命令注册表"""
@@ -1235,11 +1235,11 @@ class MessageGateway:
         from .slash_commands import format_help
 
         lines = [
-            "📖 **快捷指令**\n",
-            "**任务控制:**",
-            "  `停止` / `stop` / `/stop` / `kill` — 停止当前任务",
-            "  `跳过` / `skip` / `/skip` — 跳过当前步骤",
-            "  处理中直接发送新消息 — 自动注入当前任务上下文",
+            "📖 **Quick Commands**\n",
+            "**Task control:**",
+            "  `stop` / `/stop` / `kill` — stop current task",
+            "  `skip` / `/skip` — skip current step",
+            "  Send a message while task is running — inject into current task",
             "",
         ]
 
@@ -1247,10 +1247,10 @@ class MessageGateway:
 
         lines.extend(
             [
-                "**多Agent:**",
-                "  `/切换` / `/switch` — 列出或切换 Agent",
-                "  `/状态` / `/status` — 查看当前 Agent 信息",
-                "  `/重置` / `/agent_reset` — 重置为默认 Agent",
+                "**Multi-agent:**",
+                "  `/switch` — list or switch agent",
+                "  `/status` — show current agent info",
+                "  `/agent_reset` — reset to default agent",
                 "",
             ]
         )
@@ -1279,8 +1279,8 @@ class MessageGateway:
         p = profile_map.get(current_id.lower())
 
         if p:
-            return f"🤖 **当前 Agent**\n\n**{p.icon} {p.name}** (`{p.id}`)\n{p.description}"
-        return f"🤖 **当前 Agent**\n\nID: `{current_id}`"
+            return f"🤖 **Current Agent**\n\n**{p.icon} {p.name}** (`{p.id}`)\n{p.description}"
+        return f"🤖 **Current Agent**\n\nID: `{current_id}`"
 
     def _handle_agent_reset(self, session: Session) -> str:
         """处理 /重置：重置为该 bot 绑定的默认 agent（或 "default"）"""
@@ -1291,8 +1291,8 @@ class MessageGateway:
         ctx = session.context
         old_id = ctx.agent_profile_id
         if old_id == reset_target:
-            label = "默认 Agent" if reset_target == "default" else f"**{reset_target}**"
-            return f"ℹ️ 当前已是{label}"
+            label = "the default agent" if reset_target == "default" else f"**{reset_target}**"
+            return f"ℹ️ Already using {label}"
 
         ctx.agent_switch_history.append(
             {
@@ -1307,7 +1307,7 @@ class MessageGateway:
 
         if reset_target == "default":
             return "✅ Reset to default agent"
-        return f"✅ 已重置为 **{reset_target}**"
+        return f"✅ Reset to **{reset_target}**"
 
     def _get_bot_default_agent(self, channel: str) -> str:
         """Return the agent_profile_id configured on the adapter for *channel*."""
@@ -1478,8 +1478,8 @@ class MessageGateway:
             return ""
         n = len(items)
         lines = [
-            f"[群聊近期上下文] 以下是本群中最近 {n} 条未处理消息，供你理解上下文。\n"
-            f"请在回复末尾简要注明 [基于最近 {n} 条群聊消息]："
+            f"[Group context] The following are the {n} most recent unprocessed messages in this group.\n"
+            f"Please briefly note [based on {n} recent group messages] at the end of your response:"
         ]
         for entry in items:
             user = entry.get("user") or entry.get("user_id", "?")

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import signal
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -9,8 +10,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from openakita.agents.cli_runner import (
-    CliRunRequest,
     DEFAULT_MAX_CONCURRENT_EXTERNAL_CLIS,
+    CliRunRequest,
     ExitReason,
     ExternalCliLimiter,
     ProviderRunResult,
@@ -35,7 +36,7 @@ def test_cli_run_request_is_frozen():
         session=None,
         system_prompt_extra="",
     )
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         req.message = "other"
 
 
@@ -45,7 +46,7 @@ def test_provider_run_result_is_frozen():
         session_id=None, input_tokens=0, output_tokens=0,
         exit_reason=ExitReason.COMPLETED, errored=False, error_message=None,
     )
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         r.final_text = "other"
 
 

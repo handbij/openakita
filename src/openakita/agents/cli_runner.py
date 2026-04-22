@@ -13,13 +13,14 @@ monkey-patch them to zero.
 from __future__ import annotations
 
 import asyncio
+import signal
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from openakita.agents.cli_providers import ProviderAdapter  # noqa: F401
+    from openakita.agents.cli_providers import ProviderAdapter
 
 # --- cancellation timeouts (named, not magic) ------------------------------
 _SIGINT_GRACE_S = 3.0
@@ -74,3 +75,47 @@ class ExternalCliLimiter:
 
     async def __aexit__(self, *_exc) -> None:
         self._sem.release()
+
+
+class SubprocessRunner:
+    def __init__(
+        self,
+        adapter: ProviderAdapter,
+        limiter: ExternalCliLimiter,
+    ) -> None:
+        self._adapter = adapter
+        self._limiter = limiter
+        self._proc: asyncio.subprocess.Process | None = None
+
+    async def run(self, request: CliRunRequest) -> ProviderRunResult:
+        async with self._limiter:
+            argv = self._adapter.build_argv(request)
+            env = self._adapter.build_env(request)
+            return await self._adapter.run(request, argv, env, on_spawn=self._track_proc)
+
+    def _track_proc(self, proc: Any) -> None:
+        self._proc = proc
+
+    async def terminate_and_wait(self) -> None:
+        proc = self._proc
+        if proc is None or proc.returncode is not None:
+            return
+        for kind, grace in (
+            ("SIGINT", _SIGINT_GRACE_S),
+            ("SIGTERM", _SIGTERM_GRACE_S),
+            ("SIGKILL", _SIGKILL_GRACE_S),
+        ):
+            try:
+                if kind == "SIGINT":
+                    proc.send_signal(signal.SIGINT)
+                elif kind == "SIGTERM":
+                    proc.terminate()
+                else:
+                    proc.kill()
+            except ProcessLookupError:
+                return
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=grace)
+                return
+            except TimeoutError:   # NOT asyncio.TimeoutError — ruff UP041 prefers bare TimeoutError
+                continue

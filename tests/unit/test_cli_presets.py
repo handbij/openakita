@@ -1,13 +1,13 @@
 """Tests for CLI-backed system presets."""
 from __future__ import annotations
 
-from openakita.agents.presets import SYSTEM_PRESETS, get_preset_by_id
+from openakita.agents.cli_detector import CliProviderId
+from openakita.agents.presets import get_preset_by_id
 from openakita.agents.profile import (
     AgentProfile,
     AgentType,
     CliPermissionMode,
 )
-from openakita.agents.cli_detector import CliProviderId
 
 
 def test_claude_code_pair_preset_exists():
@@ -91,3 +91,32 @@ def test_multi_cli_planner_denies_other_profiles_by_default():
     )
     assert has_catch_all_deny, \
         "multi-cli-planner needs a catch-all `delegate_to_agent: * -> deny` rule"
+
+
+def test_deploy_detects_cli_field_drift_on_upgrade(tmp_path):
+    """If a SYSTEM preset's cli_provider_id or cli_permission_mode diverges from
+    the preset definition, deploy_system_presets must re-save it (unless
+    user_customized)."""
+    from openakita.agents.presets import deploy_system_presets
+    from openakita.agents.profile import ProfileStore
+
+    store = ProfileStore(tmp_path)
+
+    # Seed one preset cycle — all presets are fresh.
+    deploy_system_presets(store)
+
+    # Mutate claude-code-pair on disk: change cli_permission_mode to PLAN.
+    existing = store.get("claude-code-pair")
+    assert existing is not None
+    data = existing.to_dict()
+    data["cli_permission_mode"] = CliPermissionMode.PLAN.value
+    drifted = AgentProfile.from_dict(data)
+    store._cache["claude-code-pair"] = drifted
+    store._persist(drifted)
+
+    # Second deploy cycle — it must notice the drift and re-upgrade.
+    upgraded = deploy_system_presets(store)
+    assert upgraded >= 1
+
+    refreshed = store.get("claude-code-pair")
+    assert refreshed.cli_permission_mode == CliPermissionMode.WRITE

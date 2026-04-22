@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from .cli_detector import CliProviderId
 from .profile import (
     AgentProfile,
     AgentType,
@@ -15,7 +16,6 @@ from .profile import (
     SkillsMode,
     get_profile_store,
 )
-from .cli_detector import CliProviderId
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -847,7 +847,7 @@ def deploy_system_presets(store: ProfileStore) -> int:
             logger.info(f"Deployed system preset: {preset.id} ({preset.name})")
         else:
             existing = store.get(preset.id)
-            if existing and existing.is_system:
+            if existing and (existing.is_system or existing.type == AgentType.EXTERNAL_CLI):
                 if existing.user_customized:
                     logger.debug(f"Skipping customized preset: {preset.id} (user_customized=True)")
                     continue
@@ -856,6 +856,9 @@ def deploy_system_presets(store: ProfileStore) -> int:
                     or existing.category != preset.category
                     or sorted(existing.tools) != sorted(preset.tools)
                     or existing.tools_mode != preset.tools_mode
+                    or existing.cli_provider_id != preset.cli_provider_id
+                    or existing.cli_permission_mode != preset.cli_permission_mode
+                    or existing.fallback_profile_id != preset.fallback_profile_id
                 )
                 if needs_upgrade:
                     data = existing.to_dict()
@@ -868,11 +871,16 @@ def deploy_system_presets(store: ProfileStore) -> int:
                     data["mcp_mode"] = preset.mcp_mode
                     data["plugins"] = preset.plugins
                     data["plugins_mode"] = preset.plugins_mode
+                    data["cli_provider_id"] = (
+                        preset.cli_provider_id.value if preset.cli_provider_id else None
+                    )
+                    data["cli_permission_mode"] = preset.cli_permission_mode.value
+                    data["fallback_profile_id"] = preset.fallback_profile_id
                     updated = AgentProfile.from_dict(data)
                     store._cache[preset.id] = updated
                     store._persist(updated)
                     deployed += 1
-                    logger.info(f"Upgraded system preset: {preset.id} (skills/category synced)")
+                    logger.info(f"Upgraded system preset: {preset.id} (fields synced)")
     if deployed:
         logger.info(f"Deployed/upgraded {deployed} system preset profile(s)")
     return deployed

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from openakita.utils.checkbox_md import CheckboxCounts, count_checkboxes
+from openakita.utils.checkbox_md import count_checked, count_unchecked
 
 
 FIXTURE_MIXED = """\
@@ -40,3 +41,26 @@ def test_count_checkboxes_counts_checked_and_unchecked_maestro_parity():
     # Update expectation to match the regex literally.
     assert counts.checked == 5
     assert counts.unchecked == 4
+
+
+def test_count_checked_returns_int():
+    result = count_checked(FIXTURE_MIXED)
+    assert isinstance(result, int)
+    assert result == 5
+
+
+def test_count_unchecked_returns_int():
+    result = count_unchecked(FIXTURE_MIXED)
+    assert isinstance(result, int)
+    assert result == 4
+
+
+def test_count_on_empty_doc():
+    assert count_checkboxes("") == CheckboxCounts(checked=0, unchecked=0)
+    assert count_checked("") == 0
+    assert count_unchecked("") == 0
+
+
+def test_count_on_doc_with_no_lists():
+    content = "Some prose\n\nAnother paragraph without any lists.\n"
+    assert count_checkboxes(content) == CheckboxCounts(checked=0, unchecked=0)

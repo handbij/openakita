@@ -30,3 +30,11 @@ def count_checkboxes(content: str) -> CheckboxCounts:
         elif _UNCHECKED.match(line):
             unchecked += 1
     return CheckboxCounts(checked=checked, unchecked=unchecked)
+
+
+def count_unchecked(content: str) -> int:
+    return count_checkboxes(content).unchecked
+
+
+def count_checked(content: str) -> int:
+    return count_checkboxes(content).checked

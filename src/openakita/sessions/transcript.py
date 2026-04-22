@@ -13,7 +13,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 logger = logging.getLogger(__name__)
 
@@ -154,3 +154,104 @@ def _serialize_content(content: Any) -> Any:
                 result.append(str(block))
         return result
     return str(content)
+
+
+# -------------------------------------------------------------------------
+# External-CLI dialect parsers (Phase 1 — read-only historical browsing)
+# -------------------------------------------------------------------------
+
+
+class TranscriptEntry(TypedDict, total=False):
+    type: str
+    role: str
+    content: str | list
+    tool_use_id: str
+    tool_name: str
+    is_error: bool
+    _ts: str
+    _source: str
+
+
+def parse_claude_stream_json(line: str) -> TranscriptEntry | None:
+    """Map one line of Claude Code session JSONL to a TranscriptEntry.
+
+    Claude writes stream-json with shape:
+      {"type": "user"|"assistant", "message": {...Anthropic API format...},
+       "timestamp": "...", "session_id": "..."}
+    Plus control lines (`type=="system"`) that we skip.
+    """
+    try:
+        obj = json.loads(line) if line.strip() else None
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(obj, dict):
+        return None
+
+    kind = obj.get("type")
+    ts = obj.get("timestamp", "")
+    if kind in ("user", "assistant"):
+        message = obj.get("message") or {}
+        content = message.get("content", "")
+        role = message.get("role", kind)
+        # Collapse tool_result blocks (emitted on the user side) into a native
+        # tool_result entry so the frontend's existing renderer picks them up.
+        if isinstance(content, list) and len(content) == 1 and \
+                isinstance(content[0], dict) and content[0].get("type") == "tool_result":
+            block = content[0]
+            return {
+                "type": "tool_result",
+                "tool_use_id": block.get("tool_use_id", ""),
+                "tool_name": block.get("tool_name", ""),
+                "content": block.get("content", ""),
+                "is_error": bool(block.get("is_error", False)),
+                "_ts": ts,
+                "_source": "claude",
+            }
+        return {
+            "type": "message",
+            "role": role,
+            "content": content,
+            "_ts": ts,
+            "_source": "claude",
+        }
+    # System/meta/control lines are dropped — transcript viewer has no slot for them.
+    return None
+
+
+def parse_codex_jsonl(line: str) -> TranscriptEntry | None:
+    """Map one line of Codex session JSONL to a TranscriptEntry.
+
+    Codex writes JSONL with shape:
+      {"id": "...", "role": "user"|"assistant"|"tool", "text": "...", "ts": "..."}
+    or a tool invocation:
+      {"id": "...", "role": "tool", "tool_name": "shell", "tool_use_id": "...",
+       "output": "...", "error": false, "ts": "..."}
+    """
+    try:
+        obj = json.loads(line) if line.strip() else None
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(obj, dict):
+        return None
+
+    role = obj.get("role")
+    ts = obj.get("ts", obj.get("timestamp", ""))
+    if role in ("user", "assistant"):
+        return {
+            "type": "message",
+            "role": role,
+            "content": obj.get("text", ""),
+            "_ts": ts,
+            "_source": "codex",
+        }
+    if role == "tool":
+        return {
+            "type": "tool_result",
+            "tool_use_id": obj.get("tool_use_id", obj.get("id", "")),
+            "tool_name": obj.get("tool_name", ""),
+            "content": obj.get("output", obj.get("text", "")),
+            "is_error": bool(obj.get("error", False)),
+            "_ts": ts,
+            "_source": "codex",
+        }
+    return None

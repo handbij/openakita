@@ -526,3 +526,91 @@ async def test_execute_cleans_worktree_on_success(tmp_path, make_task, monkeypat
     ok, _ = await run.execute()
     assert ok is True
     cleanup.assert_awaited_once_with(wt_sentinel)
+
+
+@pytest.mark.asyncio
+async def test_execute_loops_with_reset(tmp_path, make_task, monkeypatch,
+                                        profile_store_mock):
+    """loop_enabled=True + reset_on_completion=True + max_loops=2:
+       - loop 0: agent flips both boxes on the Runs/{task_id}-loop0/ working copy
+       - reset-unchecks the working copy at the path the NEXT loop will read
+         (the loop-1 copy hasn't been created yet; reset happens on loop 0's copy)
+       - loop 1: agent flips both boxes on the Runs/{task_id}-loop1/ working copy
+       - max_loops=2 breaks the outer loop after loop 1.
+
+    Total agent invocations: 4 (2 boxes × 2 loops). Source file is never touched.
+    """
+    from openakita.scheduler import autorun_playbook as ap
+    from openakita.scheduler.autorun_playbook import PlaybookRun
+
+    src = tmp_path / "nightly.md"
+    src.write_text("- [ ] a\n- [ ] b\n")
+    task = make_task(
+        task_id="T2",
+        documents=[{"filename": str(src), "reset_on_completion": True}],
+        loop_enabled=True, max_loops=2,
+    )
+
+    # Agent flips one box in the CURRENT effective file. We pick the
+    # latest (highest-numbered) loop directory so we track progress in
+    # the loop execute() is currently working on rather than an earlier
+    # reset copy.
+    async def flip_first_unchecked(_prompt):
+        # Working copies live under {src.parent}/Runs/T2-loop*/
+        import re
+        for wc in sorted((src.parent / "Runs").glob("T2-loop*/nightly.md"), reverse=True):
+            text = wc.read_text()
+            text2, n = re.subn(r"^(\s*[-*]\s*)\[\s*\]",
+                               r"\1[x]", text, count=1, flags=re.MULTILINE)
+            if n:
+                wc.write_text(text2)
+                return
+    agent = AsyncMock()
+    agent.execute_task_from_message = AsyncMock(side_effect=flip_first_unchecked)
+    agent.shutdown = AsyncMock()
+    factory = MagicMock()
+    factory.create = AsyncMock(return_value=agent)
+
+    run = PlaybookRun(task, executor=MagicMock(),
+                     profile_store=profile_store_mock, agent_factory=factory)
+    monkeypatch.setattr(ap, "broadcast_event", AsyncMock())
+
+    ok, msg = await run.execute()
+    assert ok is True
+    assert msg == "completed 2 loop(s)"
+    # Source untouched
+    assert src.read_text() == "- [ ] a\n- [ ] b\n"
+    # Both working copies present, both fully flipped
+    loop0 = src.parent / "Runs" / "T2-loop0" / "nightly.md"
+    loop1 = src.parent / "Runs" / "T2-loop1" / "nightly.md"
+    assert loop0.exists() and loop1.exists()
+    assert loop1.read_text().count("[x]") == 2
+    # Agent called exactly (boxes_per_loop × loops) = 4 times
+    assert agent.execute_task_from_message.await_count == 4
+
+
+@pytest.mark.asyncio
+async def test_execute_loop_bounded_by_no_progress(tmp_path, make_task, monkeypatch,
+                                                   profile_store_mock):
+    """loop_enabled=True, but the first pass makes no progress — outer loop
+    must break immediately on `if not progressed: break`."""
+    from openakita.scheduler import autorun_playbook as ap
+    from openakita.scheduler.autorun_playbook import PlaybookRun
+
+    md = tmp_path / "x.md"
+    md.write_text("- [ ] a\n")
+    task = make_task(documents=[{"filename": str(md)}], loop_enabled=True, max_loops=10)
+
+    noop = AsyncMock()
+    noop.execute_task_from_message = AsyncMock(return_value=None)
+    noop.shutdown = AsyncMock()
+    factory = MagicMock()
+    factory.create = AsyncMock(return_value=noop)
+
+    run = PlaybookRun(task, executor=MagicMock(),
+                     profile_store=profile_store_mock, agent_factory=factory)
+    monkeypatch.setattr(ap, "broadcast_event", AsyncMock())
+
+    ok, msg = await run.execute()
+    assert ok is True
+    assert msg == "completed 1 loop(s)"

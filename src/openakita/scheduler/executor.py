@@ -612,6 +612,8 @@ Result:
                 coro = self._system_workspace_backup()
             elif action == "system:memory_nudge_review":
                 coro = self._system_memory_nudge_review()
+            elif action == "system:autorun_playbook":
+                return await self._system_autorun_playbook(task)
             else:
                 return False, f"Unknown system action: {action}"
 

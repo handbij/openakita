@@ -1,4 +1,10 @@
-from openakita.agents.profile import AgentProfile, AgentType
+from openakita.agents.cli_detector import CliProviderId
+from openakita.agents.profile import (
+    AgentProfile,
+    AgentType,
+    CliPermissionMode,
+    FilterMode,
+)
 
 
 def test_agent_profile_to_dict_exposes_definition_metadata():
@@ -13,15 +19,6 @@ def test_agent_profile_to_dict_exposes_definition_metadata():
     assert payload["origin"] == "system"
     assert payload["namespace"] == "system"
     assert payload["definition_id"].endswith("agent_definition:planner")
-
-
-from openakita.agents.cli_detector import CliProviderId
-from openakita.agents.profile import (
-    AgentProfile,
-    AgentType,
-    CliPermissionMode,
-    FilterMode,
-)
 
 
 def test_agent_type_has_external_cli_member():

@@ -189,3 +189,49 @@ async def test_pool_caches_external_cli_by_session_profile_key(monkeypatch):
 
     assert first is second
     assert "sess-1::claude-code-pair" in pool._pool
+
+
+# ---------------------------------------------------------------------------
+# Task 5 — Regression: native agent path unchanged
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_native_agent_path_unchanged(monkeypatch):
+    """Non-EXTERNAL_CLI profiles must still go through the normal filter chain."""
+    from openakita.agents.profile import AgentProfile as _AP
+
+    factory = AgentFactory()
+
+    # Replace Agent constructor + initialize with lightweight fakes so we don't
+    # spin up the real Agent machinery — we only care that the EXTERNAL_CLI
+    # branch is NOT taken for type=CUSTOM.
+    created_native = {"called": False}
+
+    class _FakeAgent:
+        def __init__(self, *a, **kw):
+            created_native["called"] = True
+            self._agent_profile = None
+            self.tool_catalog = None
+            self.mcp_catalog = None
+            self.prompt_assembler = None
+        async def initialize(self, **kw): pass
+
+    import openakita.core.agent as core_agent_module
+    monkeypatch.setattr(core_agent_module, "Agent", _FakeAgent)
+
+    # Bypass the filter body — we only check that the native branch was chosen.
+    monkeypatch.setattr(factory, "_apply_skill_filter", lambda *a, **k: None)
+    monkeypatch.setattr(factory, "_apply_tool_filter", lambda *a, **k: None)
+    monkeypatch.setattr(factory, "_apply_mcp_filter", lambda *a, **k: None)
+    async def _noop_plugin(*a, **k): pass
+    monkeypatch.setattr(factory, "_apply_plugin_filter", _noop_plugin)
+
+    native_profile = _AP(
+        id="default",
+        name="Default",
+        type=AgentType.CUSTOM,
+    )
+    agent = await factory.create(native_profile)
+
+    assert created_native["called"] is True
+    assert not isinstance(agent, ExternalCliAgent)

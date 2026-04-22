@@ -474,6 +474,18 @@ export function AgentManagerView({
     }
   }, [visible, fetchProfiles, fetchSkills, fetchCategories, fetchModels]);
 
+  // ── Deep-link preseed: Extensions "Configure →" button pre-fills the CLI wizard ──
+  useEffect(() => {
+    if (!visible) return;
+    const preseed = sessionStorage.getItem("__akita_cli_wizard_preseed");
+    if (preseed) {
+      sessionStorage.removeItem("__akita_cli_wizard_preseed");
+      setCliWizard({ ...EMPTY_CLI_WIZARD, provider_id: preseed });
+      setCliWizardOpen(true);
+      fetchDetectedClis();
+    }
+  }, [visible, fetchDetectedClis]);
+
   const generateId = (name: string) =>
     name
       .normalize("NFKD")

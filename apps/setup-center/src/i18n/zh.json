@@ -1831,6 +1831,7 @@
     "extInstall": "安装命令",
     "extUpgrade": "升级命令",
     "extSetup": "首次配置",
+    "extConfigure": "配置",
     "extHomepage": "项目主页",
     "extAuthor": "作者",
     "extLicense": "许可",

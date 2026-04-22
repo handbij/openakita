@@ -1831,6 +1831,7 @@
     "extInstall": "Install",
     "extUpgrade": "Upgrade",
     "extSetup": "Setup",
+    "extConfigure": "Configure",
     "extHomepage": "Homepage",
     "extAuthor": "Author",
     "extLicense": "License",

@@ -341,6 +341,19 @@ function MainApp() {
     };
   }, []);
 
+  // ── Deep-link: Extensions card "Configure →" button switches to Agent Manager ──
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ cli_provider_id?: string }>;
+      setView("agent_manager");
+      if (ce.detail?.cli_provider_id) {
+        sessionStorage.setItem("__akita_cli_wizard_preseed", ce.detail.cli_provider_id);
+      }
+    };
+    window.addEventListener("openAgentManagerWithCli", handler as EventListener);
+    return () => window.removeEventListener("openAgentManagerWithCli", handler as EventListener);
+  }, []);
+
   // ── Data mode: "local" (Tauri commands) or "remote" (HTTP API) ──
   // Web mode always starts in "remote" since the backend is already running
   const [dataMode, setDataMode] = useState<"local" | "remote">((IS_WEB || IS_CAPACITOR) ? "remote" : "local");

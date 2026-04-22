@@ -79,3 +79,21 @@ def test_unknown_provider_returns_empty_gracefully(client):
     r = client.get("/api/sessions/external-cli/unknown")
     assert r.status_code == 200
     assert r.json()["sessions"] == []
+
+
+def test_messages_session_id_traversal_is_blocked(client):
+    # A session_id with traversal characters must not escape the root.
+    # Starlette rejects slash-encoded path segments at the routing layer (404);
+    # the in-handler resolve() guard catches any edge cases that do reach it (200+empty).
+    r = client.get("/api/sessions/external-cli/claude_code/..%2F..%2Fetc%2Fpasswd/messages")
+    assert r.status_code in (200, 404)
+    if r.status_code == 200:
+        body = r.json()
+        assert body.get("entries") == []
+        assert body.get("eof") is True
+
+
+def test_messages_limit_upper_bound_rejected(client):
+    # Limit above the cap must 422.
+    r = client.get("/api/sessions/external-cli/claude_code/sid-42/messages?limit=999999")
+    assert r.status_code == 422

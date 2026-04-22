@@ -11,7 +11,7 @@ import logging
 import re
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from openakita.agents.cli_detector import CliProviderId, discover_all
@@ -437,7 +437,11 @@ def _claude_cwd_hash(cwd: str) -> str:
 
 
 @router.get("/external-cli/{provider}")
-async def list_external_cli_sessions(provider: str, cwd: str = "", limit: int = 50):
+async def list_external_cli_sessions(
+    provider: str,
+    cwd: str = "",
+    limit: int = Query(default=50, ge=1, le=500),
+):
     pid = _safe_provider(provider)
     if pid is None:
         return {"error": f"unknown provider: {provider}", "sessions": []}
@@ -471,7 +475,7 @@ async def stream_external_cli_messages(
     provider: str,
     session_id: str,
     cursor: str = "",
-    limit: int = 500,
+    limit: int = Query(default=500, ge=1, le=2000),
 ):
     pid = _safe_provider(provider)
     if pid is None:
@@ -488,6 +492,12 @@ async def stream_external_cli_messages(
         match = f
         break
     if match is None:
+        return {"error": "session not found", "entries": [], "next_cursor": None, "eof": True}
+
+    try:
+        if not match.resolve().is_relative_to(root.resolve()):
+            return {"error": "session not found", "entries": [], "next_cursor": None, "eof": True}
+    except (OSError, ValueError):
         return {"error": "session not found", "entries": [], "next_cursor": None, "eof": True}
 
     start = int(cursor) if cursor.isdigit() else 0

@@ -7,7 +7,15 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from .profile import AgentProfile, AgentType, ProfileStore, SkillsMode, get_profile_store
+from .profile import (
+    AgentProfile,
+    AgentType,
+    CliPermissionMode,
+    ProfileStore,
+    SkillsMode,
+    get_profile_store,
+)
+from .cli_detector import CliProviderId
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -712,6 +720,28 @@ SYSTEM_PRESETS: list[AgentProfile] = [
         description_i18n={
             "zh": "系统设计/架构图/技术选型",
             "en": "System design, architecture diagrams, tech stack selection",
+        },
+    ),
+    # ── External CLI agents (Phase 2) ────────────────────────────────
+    AgentProfile(
+        id="claude-code-pair",
+        name="Claude Code Pair",
+        description="Claude Code CLI as a sub-agent — pair-programming & large refactors",
+        type=AgentType.EXTERNAL_CLI,
+        cli_provider_id=CliProviderId.CLAUDE_CODE,
+        cli_permission_mode=CliPermissionMode.WRITE,
+        skills=[],
+        skills_mode=SkillsMode.ALL,  # CLI owns its own tool belt; filters are no-ops
+        custom_prompt="",
+        icon="🧑‍💻",
+        color="#D97757",
+        category="cli-agents",
+        fallback_profile_id="codex-writer",
+        created_by="system",
+        name_i18n={"zh": "Claude Code 结对", "en": "Claude Code Pair"},
+        description_i18n={
+            "zh": "以 Claude Code CLI 为子代理,适合结对编程与大规模重构",
+            "en": "Claude Code CLI as a sub-agent — pair-programming & large refactors",
         },
     ),
 ]

@@ -219,3 +219,128 @@ def classify_error(
         tool_name=tool_name,
         message=error_msg,
     )
+
+
+# ---------------------------------------------------------------------------
+# CLI-specific error classification (Phase 2a)
+# ---------------------------------------------------------------------------
+# Rules fire top-to-bottom; first match wins. Keyword-only signature so
+# callers don't accidentally swap `exit_code` and the old positional
+# `tool_name` of `classify_error`.
+
+
+_CONTEXT_OVERFLOW_NEEDLES = (
+    "context window exceeded",
+    "prompt tokens exceed",
+    "token limit",
+    "context length",
+)
+_AUTH_PERMANENT_NEEDLES = (
+    "not logged in",
+    "run: claude auth",
+    "codex login",
+    "token has expired",
+)
+_AUTH_NEEDLES = (
+    "authentication failed",
+    "401 unauthorized",
+    "invalid api key",
+)
+_BILLING_NEEDLES = (
+    "billing",
+    "payment required",
+    "quota exceeded",
+    "402",
+)
+_RATE_LIMIT_NEEDLES = (
+    "rate limit",
+    "too many requests",
+    "429",
+)
+_SERVER_NEEDLES = (
+    "500 internal server error",
+    "502 bad gateway",
+    "503 service unavailable",
+    "504 gateway timeout",
+)
+_NETWORK_NEEDLES = (
+    "network unreachable",
+    "connection refused",
+    "connection reset",
+    "dns resolution failed",
+    "enotfound",
+)
+_MODEL_NOT_FOUND_NEEDLES = (
+    "model not found",
+    "unknown model",
+    "unsupported model",
+)
+_CONTENT_FILTER_NEEDLES = (
+    "content filter",
+    "safety filter",
+    "response blocked",
+)
+_FORMAT_NEEDLES = (
+    "unexpected format",
+    "malformed stream",
+    "invalid jsonl",
+    "could not parse",
+)
+_DEPENDENCY_NEEDLES = (
+    "command not found",
+    "not recognized",
+    "no such file or directory",
+)
+
+
+def _any_match(haystack: str, needles: tuple[str, ...]) -> bool:
+    lo = haystack.lower()
+    return any(n in lo for n in needles)
+
+
+def classify_cli_error(
+    *,
+    exit_code: int,
+    stderr: str,
+    exception: Exception | None = None,
+) -> ErrorType:
+    """Return the `ErrorType` that best matches a failed external-CLI run.
+
+    Rule order (first match wins):
+      1. Exit code specifics (124=timeout, 137=oomkill, 127=dep-missing).
+      2. Stderr substring matching against needle lists above.
+      3. Exception-type fallback via existing `classify_error`.
+      4. Default: `ErrorType.PERMANENT`.
+    """
+    if exit_code == 124:
+        return ErrorType.TIMEOUT
+    if exit_code == 137:
+        return ErrorType.OVERLOADED
+    if exit_code == 127 or _any_match(stderr, _DEPENDENCY_NEEDLES):
+        return ErrorType.DEPENDENCY
+
+    if _any_match(stderr, _AUTH_PERMANENT_NEEDLES):
+        return ErrorType.AUTH_PERMANENT
+    if _any_match(stderr, _AUTH_NEEDLES):
+        return ErrorType.AUTH
+    if _any_match(stderr, _RATE_LIMIT_NEEDLES):
+        return ErrorType.RATE_LIMIT
+    if _any_match(stderr, _BILLING_NEEDLES):
+        return ErrorType.BILLING
+    if _any_match(stderr, _CONTEXT_OVERFLOW_NEEDLES):
+        return ErrorType.CONTEXT_OVERFLOW
+    if _any_match(stderr, _MODEL_NOT_FOUND_NEEDLES):
+        return ErrorType.MODEL_NOT_FOUND
+    if _any_match(stderr, _SERVER_NEEDLES):
+        return ErrorType.SERVER
+    if _any_match(stderr, _NETWORK_NEEDLES):
+        return ErrorType.NETWORK
+    if _any_match(stderr, _CONTENT_FILTER_NEEDLES):
+        return ErrorType.CONTENT_FILTER
+    if _any_match(stderr, _FORMAT_NEEDLES):
+        return ErrorType.FORMAT
+
+    if exception is not None:
+        return classify_error(exception).error_type
+
+    return ErrorType.PERMANENT

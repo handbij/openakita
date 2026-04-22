@@ -213,9 +213,9 @@ async def _list_models_openai(api_key: str, base_url: str, provider_slug: str | 
             if "json" not in ct:
                 preview = resp.text[:200].strip()
                 raise ValueError(
-                    f"API 返回了非 JSON 响应 (content-type: {ct})。"
-                    f"请检查 Base URL 是否正确（通常需要以 /v1 结尾）。"
-                    f"\n响应预览: {preview}"
+                    f"API returned a non-JSON response (content-type: {ct}). "
+                    f"Check that the Base URL is correct (it usually needs to end with /v1). "
+                    f"\nResponse preview: {preview}"
                 )
             data = resp.json()
         except httpx.HTTPStatusError:
@@ -417,9 +417,9 @@ async def list_models(
     api_type = (api_type or "").strip().lower()
     base_url = (base_url or "").strip()
     if not api_type:
-        raise ValueError("--api-type 不能为空")
+        raise ValueError("--api-type cannot be empty")
     if not base_url:
-        raise ValueError("--base-url 不能为空")
+        raise ValueError("--base-url cannot be empty")
     # 本地服务商（Ollama/LM Studio 等）不需要 API Key，允许空值
     # 前端会传入 placeholder key，但也兼容完全为空的情况
 
@@ -430,7 +430,7 @@ async def list_models(
         _json_print(await _list_models_anthropic(api_key, base_url, provider_slug))
         return
 
-    raise ValueError(f"不支持的 api-type: {api_type}")
+    raise ValueError(f"Unsupported api-type: {api_type}")
 
 
 async def health_check_endpoint(workspace_dir: str, endpoint_name: str | None) -> None:
@@ -442,7 +442,7 @@ async def health_check_endpoint(workspace_dir: str, endpoint_name: str | None) -
     wd = Path(workspace_dir).expanduser().resolve()
     config_path = wd / "data" / "llm_endpoints.json"
     if not config_path.exists():
-        raise ValueError(f"端点配置文件不存在: {config_path}")
+        raise ValueError(f"Endpoint config file not found: {config_path}")
 
     env_path = wd / ".env"
     if env_path.exists():
@@ -464,7 +464,7 @@ async def health_check_endpoint(workspace_dir: str, endpoint_name: str | None) -
     if endpoint_name:
         targets = [(n, p) for n, p in targets if n == endpoint_name]
         if not targets:
-            raise ValueError(f"未找到端点: {endpoint_name}")
+            raise ValueError(f"Endpoint not found: {endpoint_name}")
 
     for name, provider in targets:
         t0 = time.time()
@@ -529,19 +529,19 @@ async def health_check_im(workspace_dir: str, channel: str | None) -> None:
         },
         {
             "id": "feishu",
-            "name": "飞书",
+            "name": "Feishu",
             "enabled_key": "FEISHU_ENABLED",
             "required_keys": ["FEISHU_APP_ID", "FEISHU_APP_SECRET"],
         },
         {
             "id": "wework",
-            "name": "企业微信",
+            "name": "WeCom",
             "enabled_key": "WEWORK_ENABLED",
             "required_keys": ["WEWORK_CORP_ID", "WEWORK_TOKEN", "WEWORK_ENCODING_AES_KEY"],
         },
         {
             "id": "dingtalk",
-            "name": "钉钉",
+            "name": "DingTalk",
             "enabled_key": "DINGTALK_ENABLED",
             "required_keys": ["DINGTALK_CLIENT_ID", "DINGTALK_CLIENT_SECRET"],
         },
@@ -553,19 +553,19 @@ async def health_check_im(workspace_dir: str, channel: str | None) -> None:
         },
         {
             "id": "qqbot",
-            "name": "QQ 官方机器人",
+            "name": "QQ Official Bot",
             "enabled_key": "QQBOT_ENABLED",
             "required_keys": ["QQBOT_APP_ID", "QQBOT_APP_SECRET"],
         },
         {
             "id": "wework_ws",
-            "name": "企业微信(WS)",
+            "name": "WeCom (WS)",
             "enabled_key": "WEWORK_WS_ENABLED",
             "required_keys": ["WEWORK_WS_BOT_ID", "WEWORK_WS_SECRET"],
         },
         {
             "id": "wechat",
-            "name": "微信",
+            "name": "WeChat",
             "enabled_key": "WECHAT_ENABLED",
             "required_keys": ["WECHAT_TOKEN"],
         },
@@ -577,7 +577,7 @@ async def health_check_im(workspace_dir: str, channel: str | None) -> None:
     if channel:
         targets = [c for c in targets if c["id"] == channel]
         if not targets:
-            raise ValueError(f"未知 IM 通道: {channel}")
+            raise ValueError(f"Unknown IM channel: {channel}")
 
     results = []
     for ch in targets:
@@ -601,7 +601,7 @@ async def health_check_im(workspace_dir: str, channel: str | None) -> None:
                     "channel": ch["id"],
                     "name": ch["name"],
                     "status": "unhealthy",
-                    "error": f"缺少配置: {', '.join(missing)}",
+                    "error": f"Missing configuration: {', '.join(missing)}",
                     "last_checked_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 }
             )
@@ -619,7 +619,7 @@ async def health_check_im(workspace_dir: str, channel: str | None) -> None:
                     resp.raise_for_status()
                     data = resp.json()
                     if not data.get("ok"):
-                        raise Exception(data.get("description", "Telegram API 返回错误"))
+                        raise Exception(data.get("description", "Telegram API returned an error"))
                 elif ch["id"] == "feishu":
                     app_id = env["FEISHU_APP_ID"]
                     app_secret = env["FEISHU_APP_SECRET"]
@@ -630,7 +630,7 @@ async def health_check_im(workspace_dir: str, channel: str | None) -> None:
                     resp.raise_for_status()
                     data = resp.json()
                     if data.get("code", -1) != 0:
-                        raise Exception(data.get("msg", "飞书验证失败"))
+                        raise Exception(data.get("msg", "Feishu verification failed"))
                 elif ch["id"] == "wework":
                     # 智能机器人模式不需要 secret/access_token，无法通过 API 验证
                     # 只检查必填参数是否完整
@@ -645,7 +645,7 @@ async def health_check_im(workspace_dir: str, channel: str | None) -> None:
                             missing.append("WEWORK_TOKEN")
                         if not aes_key:
                             missing.append("WEWORK_ENCODING_AES_KEY")
-                        raise Exception(f"缺少必填参数: {', '.join(missing)}")
+                        raise Exception(f"Missing required parameters: {', '.join(missing)}")
                 elif ch["id"] == "dingtalk":
                     client_id = env["DINGTALK_CLIENT_ID"]
                     client_secret = env["DINGTALK_CLIENT_SECRET"]
@@ -656,13 +656,13 @@ async def health_check_im(workspace_dir: str, channel: str | None) -> None:
                     resp.raise_for_status()
                     data = resp.json()
                     if not data.get("accessToken"):
-                        raise Exception(data.get("message", "钉钉验证失败"))
+                        raise Exception(data.get("message", "DingTalk verification failed"))
                 elif ch["id"] == "onebot":
                     ob_mode = env.get("ONEBOT_MODE", "reverse").strip().lower()
                     if ob_mode == "forward":
                         ws_url = env.get("ONEBOT_WS_URL", "")
                         if not ws_url.startswith(("ws://", "wss://")):
-                            raise Exception(f"无效的 WebSocket URL: {ws_url}")
+                            raise Exception(f"Invalid WebSocket URL: {ws_url}")
                         http_url = ws_url.replace("ws://", "http://").replace("wss://", "https://")
                         resp = await client.get(http_url, timeout=5)
                     else:
@@ -672,7 +672,7 @@ async def health_check_im(workspace_dir: str, channel: str | None) -> None:
                             if not (1 <= port <= 65535):
                                 raise ValueError
                         except (ValueError, TypeError):
-                            raise Exception(f"无效的端口: {port_str}")
+                            raise Exception(f"Invalid port: {port_str}")
                 elif ch["id"] == "qqbot":
                     # QQ 官方机器人：验证 AppID/AppSecret 能获取 Access Token
                     app_id = env["QQBOT_APP_ID"]
@@ -684,7 +684,7 @@ async def health_check_im(workspace_dir: str, channel: str | None) -> None:
                     resp.raise_for_status()
                     data = resp.json()
                     if not data.get("access_token"):
-                        raise Exception(data.get("message", "QQ 机器人验证失败"))
+                        raise Exception(data.get("message", "QQ bot verification failed"))
                 elif ch["id"] == "wework_ws":
                     bot_id = env.get("WEWORK_WS_BOT_ID", "").strip()
                     secret = env.get("WEWORK_WS_SECRET", "").strip()
@@ -694,11 +694,11 @@ async def health_check_im(workspace_dir: str, channel: str | None) -> None:
                             missing_ws.append("WEWORK_WS_BOT_ID")
                         if not secret:
                             missing_ws.append("WEWORK_WS_SECRET")
-                        raise Exception(f"缺少必填参数: {', '.join(missing_ws)}")
+                        raise Exception(f"Missing required parameters: {', '.join(missing_ws)}")
                 elif ch["id"] == "wechat":
                     token = env.get("WECHAT_TOKEN", "").strip()
                     if not token:
-                        raise Exception("缺少必填参数: WECHAT_TOKEN")
+                        raise Exception("Missing required parameter: WECHAT_TOKEN")
 
             results.append(
                 {
@@ -844,7 +844,7 @@ def ensure_channel_deps(workspace_dir: str) -> None:
                     missing.append(pip_name)
 
     if not missing:
-        _json_print({"status": "ok", "installed": [], "message": "所有依赖已就绪"})
+        _json_print({"status": "ok", "installed": [], "message": "All dependencies are ready"})
         return
 
     py = get_python_executable() or sys.executable
@@ -906,7 +906,7 @@ def ensure_channel_deps(workspace_dir: str) -> None:
                     {
                         "status": "ok",
                         "installed": missing,
-                        "message": f"已安装(offline): {', '.join(missing)}",
+                        "message": f"Installed (offline): {', '.join(missing)}",
                     }
                 )
                 return
@@ -963,7 +963,7 @@ def ensure_channel_deps(workspace_dir: str) -> None:
                     {
                         "status": "ok",
                         "installed": missing,
-                        "message": f"已安装: {', '.join(missing)}",
+                        "message": f"Installed: {', '.join(missing)}",
                     }
                 )
                 return
@@ -976,7 +976,7 @@ def ensure_channel_deps(workspace_dir: str) -> None:
             "status": "error",
             "installed": [],
             "missing": missing,
-            "message": f"安装失败: {last_err}",
+            "message": f"Installation failed: {last_err}",
         }
     )
 
@@ -1121,7 +1121,7 @@ def list_skills(workspace_dir: str) -> None:
 
     wd = Path(workspace_dir).expanduser().resolve()
     if not wd.exists() or not wd.is_dir():
-        raise ValueError(f"--workspace-dir 不存在或不是目录: {workspace_dir}")
+        raise ValueError(f"--workspace-dir does not exist or is not a directory: {workspace_dir}")
 
     # 外部技能启用状态（Setup Center 用于展示“可启用/禁用”的开关）
     # 文件：<workspace>/data/skills.json
@@ -1305,7 +1305,7 @@ def _download_github_zip(repo_owner: str, repo_name: str, dest_dir: Path) -> Non
 
     if data is None:
         raise RuntimeError(
-            f"无法下载仓库 {repo_owner}/{repo_name}，请检查网络或安装 Git。（最后错误: {last_err}）"
+            f"Failed to download repository {repo_owner}/{repo_name}. Check your network or install Git. (Last error: {last_err})"
         )
 
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
@@ -1354,7 +1354,7 @@ def _git_clone(args: list[str]) -> None:
         )
     except FileNotFoundError:
         raise FileNotFoundError(
-            "未找到 git 命令。请安装 Git (https://git-scm.com) 或使用 GitHub 简写格式安装技能"
+            "git command not found. Install Git (https://git-scm.com) or use the GitHub shorthand format to install skills."
         )
 
 

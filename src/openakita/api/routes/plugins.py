@@ -535,8 +535,8 @@ async def uninstall_plugin(
                     },
                     "error": {
                         "code": PluginErrorCode.UNINSTALL_FAILED.value,
-                        "message": "插件目录无法完全删除",
-                        "guidance": "已尽力清理 db 文件，建议重启后端后重新安装以彻底清理",
+                        "message": "Plugin directory could not be fully deleted",
+                        "guidance": "Database files were cleaned up as best as possible; restart the backend and reinstall to fully clean up",
                         "detail": "; ".join(warnings),
                     },
                 },
@@ -547,7 +547,7 @@ async def uninstall_plugin(
             status_code=409,
             detail=make_error_response(
                 PluginErrorCode.UNINSTALL_FAILED,
-                detail="; ".join(warnings) or "目录无法删除",
+                detail="; ".join(warnings) or "Directory could not be deleted",
             ),
         )
 

@@ -288,13 +288,13 @@ class QQBotAdapter(ChannelAdapter):
         """将入队到投递的时间差格式化为可读文本。"""
         delta = int(time.time() - queued_at)
         if delta < 60:
-            return "刚刚"
+            return "just now"
         if delta < 3600:
-            return f"{delta // 60} 分钟前"
+            return f"{delta // 60} min ago"
         if delta < 86400:
             h, m = divmod(delta, 3600)
-            return f"{h} 小时{f' {m // 60} 分钟' if m // 60 else ''}前"
-        return f"{delta // 86400} 天前"
+            return f"{h}h{f' {m // 60}m' if m // 60 else ''} ago"
+        return f"{delta // 86400}d ago"
 
     async def _flush_pending_messages(self, chat_id: str) -> None:
         """当收到用户新消息时，投递该 chat_id 下缓存的待发消息。"""
@@ -311,7 +311,7 @@ class QQBotAdapter(ChannelAdapter):
             delay = self._format_pending_delay(queued_at)
             parts.append(f"[⏰ {delay}] {text}")
 
-        header = "📬 以下消息因 QQ 群聊限制未能及时发送，现在补发给你：\n"
+        header = "📬 The following messages could not be sent immediately due to QQ group restrictions and are being delivered now:\n"
         combined = header + "\n\n".join(parts)
 
         chat_type = self._chat_type_map.get(chat_id, "group")
@@ -324,7 +324,7 @@ class QQBotAdapter(ChannelAdapter):
     async def start(self) -> None:
         """启动 QQ 官方机器人"""
         if not self.app_id or not self.app_secret:
-            raise ValueError("QQ 机器人 AppID 或 AppSecret 未配置，请在 q.qq.com 开发设置中获取。")
+            raise ValueError("QQ bot AppID or AppSecret is not configured. Obtain them from the QQ Open Platform at q.qq.com.")
 
         self._running = True
 
@@ -547,8 +547,8 @@ class QQBotAdapter(ChannelAdapter):
 
                     if consecutive_fatal >= self._FATAL_GIVE_UP_THRESHOLD:
                         reason = (
-                            f"连续 {consecutive_fatal} 次认证失败: {err_msg}。"
-                            "请检查 QQ 开放平台 AppID / AppSecret / IP 白名单配置"
+                            f"Authentication failed {consecutive_fatal} consecutive times: {err_msg}. "
+                            "Check QQ Open Platform AppID / AppSecret / IP allowlist configuration."
                         )
                         logger.error(f"QQ Official Bot: {reason}")
                         self._running = False
@@ -1322,7 +1322,7 @@ class QQBotAdapter(ChannelAdapter):
         elapsed = time.time() - start
         if elapsed < 1.0:
             return text
-        return f"{text}\n\n⏱ 完成 ({elapsed:.1f}s)"
+        return f"{text}\n\n⏱ Done ({elapsed:.1f}s)"
 
     async def send_message(self, message: OutgoingMessage) -> str:
         """
@@ -1559,7 +1559,7 @@ class QQBotAdapter(ChannelAdapter):
         """
         chat_type = self._resolve_chat_type(chat_id)
         if chat_type == "channel":
-            raise NotImplementedError("QQ 频道暂不支持通过富媒体 API 发送文件")
+            raise NotImplementedError("QQ channels do not yet support file sending via the rich-media API")
         msg_id = self._resolve_msg_id(chat_id)
 
         if caption:
@@ -1620,7 +1620,7 @@ class QQBotAdapter(ChannelAdapter):
 
         chat_type = self._resolve_chat_type(chat_id)
         if chat_type == "channel":
-            raise NotImplementedError("QQ 频道暂不支持语音发送")
+            raise NotImplementedError("QQ channels do not yet support voice sending")
         msg_id = self._resolve_msg_id(chat_id)
 
         ext = src.suffix.lower()
@@ -1666,9 +1666,9 @@ class QQBotAdapter(ChannelAdapter):
 
         if not shutil.which("ffmpeg"):
             raise RuntimeError(
-                f"音频格式 {src_path.suffix} 不在 QQ 直传列表 "
-                f"(silk/wav/mp3/flac) 中，且系统未安装 ffmpeg 用于自动转码。"
-                f"请安装 ffmpeg，或将语音转换为受支持格式后再发送。"
+                f"Audio format {src_path.suffix} is not in the QQ direct-upload list "
+                f"(silk/wav/mp3/flac), and ffmpeg is not installed for automatic transcoding. "
+                f"Install ffmpeg, or convert the audio to a supported format before sending."
             )
 
         loop = asyncio.get_event_loop()
@@ -1705,7 +1705,7 @@ class QQBotAdapter(ChannelAdapter):
                 )
                 if proc.returncode != 0:
                     err = (proc.stderr or b"").decode("utf-8", errors="replace")[:300]
-                    raise RuntimeError(f"ffmpeg 转 mp3 失败: {err}")
+                    raise RuntimeError(f"ffmpeg mp3 conversion failed: {err}")
                 return Path(tmp_out).read_bytes()
             finally:
                 Path(tmp_out).unlink(missing_ok=True)
@@ -1785,7 +1785,7 @@ class QQBotAdapter(ChannelAdapter):
         headers = await self._build_api_headers()
         base_url = self._api_base_url()
 
-        body: dict[str, Any] = {"msg_type": 0, "content": "正在思考中..."}
+        body: dict[str, Any] = {"msg_type": 0, "content": "Thinking..."}
         if msg_id:
             body["msg_id"] = msg_id
         seq_key = msg_id or chat_id

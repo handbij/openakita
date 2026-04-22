@@ -192,15 +192,15 @@ class FilesystemHandler:
     SHELL_MAX_LINES = 200
 
     _EXIT_CODE_SEMANTICS: dict[str, dict[int, str]] = {
-        "grep": {1: "无匹配结果（非错误）"},
-        "egrep": {1: "无匹配结果（非错误）"},
-        "fgrep": {1: "无匹配结果（非错误）"},
-        "rg": {1: "无匹配结果（非错误）"},
-        "diff": {1: "文件存在差异（非错误）"},
-        "test": {1: "条件不成立（非错误）"},
-        "find": {1: "部分路径无法访问（非错误）"},
-        "cmp": {1: "文件不同（非错误）"},
-        "where": {1: "未找到命令（非错误）"},
+        "grep": {1: "no matches (non-error)"},
+        "egrep": {1: "no matches (non-error)"},
+        "fgrep": {1: "no matches (non-error)"},
+        "rg": {1: "no matches (non-error)"},
+        "diff": {1: "files differ (non-error)"},
+        "test": {1: "condition false (non-error)"},
+        "find": {1: "partial paths inaccessible (non-error)"},
+        "cmp": {1: "files differ (non-error)"},
+        "where": {1: "command not found (non-error)"},
     }
 
     @classmethod
@@ -223,17 +223,17 @@ class FilesystemHandler:
                     break
 
         lines = [
-            "❌ run_shell 缺少必要参数 'command'。",
+            "❌ run_shell missing required parameter 'command'.",
             'Usage: run_shell(command="ls -la", working_directory=None, timeout=60)',
             f"You passed keys: {keys}",
         ]
         if wrong_alias is not None:
             lines.append(
-                f"检测到你传了 '{wrong_alias}'，请改名为 'command' 后重试，参数值原样保留即可。"
+                f"Detected '{wrong_alias}' — rename it to 'command' and retry; keep the value as-is."
             )
         else:
             lines.append(
-                "常见误传字段：script / cmd / shell / bash / code → 都应使用 'command'。"
+                "Common misnamed fields: script / cmd / shell / bash / code → all should use 'command'."
             )
         return "\n".join(lines)
 
@@ -274,8 +274,8 @@ class FilesystemHandler:
                 try:
                     if re.search(pat, command, flags=re.IGNORECASE):
                         msg = (
-                            "❌ 自检自动修复护栏：禁止执行可能涉及系统/Windows 层面的命令。"
-                            f"\n命令: {command}"
+                            "❌ Self-check auto-fix guardrail: execution of commands that may affect the system/Windows layer is blocked."
+                            f"\nCommand: {command}"
                         )
                         logger.warning(msg)
                         return msg
@@ -331,9 +331,9 @@ class FilesystemHandler:
             )
             output = result.stdout
             if result.stderr:
-                output += f"\n[警告]:\n{result.stderr}"
+                output += f"\n[Warning]:\n{result.stderr}"
 
-            full_text = f"命令执行成功 (exit code: 0):\n{output}"
+            full_text = f"Command executed successfully (exit code: 0):\n{output}"
             return self._truncate_shell_output(full_text)
         else:
             # Check for known non-error exit codes before treating as failure
@@ -346,9 +346,9 @@ class FilesystemHandler:
                 )
                 output = result.stdout or ""
                 if result.stderr:
-                    output += f"\n[信息]:\n{result.stderr}"
+                    output += f"\n[Info]:\n{result.stderr}"
                 full_text = (
-                    f"命令执行完成 (exit code: {result.returncode}, {exit_meaning}):\n{output}"
+                    f"Command completed (exit code: {result.returncode}, {exit_meaning}):\n{output}"
                 )
                 return self._truncate_shell_output(full_text)
 
@@ -365,27 +365,27 @@ class FilesystemHandler:
                 if len(lines) > max_lines:
                     lines = lines[-max_lines:]
                     text = "\n".join(lines)
-                    text = f"...(已截断，仅保留最后 {max_lines} 行)\n{text}"
+                    text = f"...(truncated, showing last {max_lines} lines)\n{text}"
                 if len(text) > max_chars:
                     text = text[-max_chars:]
-                    text = f"...(已截断，仅保留最后 {max_chars} 字符)\n{text}"
+                    text = f"...(truncated, showing last {max_chars} chars)\n{text}"
                 return text
 
-            output_parts = [f"命令执行失败 (exit code: {result.returncode})"]
+            output_parts = [f"Command failed (exit code: {result.returncode})"]
 
             if result.returncode == 9009:
                 cmd_lower = command.strip().lower()
                 if cmd_lower.startswith(("python", "python3")):
                     output_parts.append(
-                        "⚠️ Python 不在系统 PATH 中（Windows 9009 = 命令未找到）。\n"
-                        "请先安装 Python：run_shell 执行 'winget install Python.Python.3.12 --accept-package-agreements --accept-source-agreements'\n"
-                        "安装完成后系统将自动检测，无需重启。不要再重试 python/python3 命令。"
+                        "⚠️ Python is not on the system PATH (Windows 9009 = command not found).\n"
+                        "Install Python first: run_shell with 'winget install Python.Python.3.12 --accept-package-agreements --accept-source-agreements'\n"
+                        "The system will detect it automatically after installation — no restart needed. Do not retry python/python3 commands."
                     )
                 else:
                     first_word = command.strip().split()[0] if command.strip() else command
                     output_parts.append(
-                        f"⚠️ '{first_word}' 不在系统 PATH 中（Windows 9009 = 命令未找到）。\n"
-                        "请检查该程序是否已安装，或使用完整路径。"
+                        f"⚠️ '{first_word}' is not on the system PATH (Windows 9009 = command not found).\n"
+                        "Check whether the program is installed, or use its full path."
                     )
 
             if result.stdout:
@@ -393,12 +393,12 @@ class FilesystemHandler:
             if result.stderr:
                 output_parts.append(f"[stderr-tail]:\n{_tail(result.stderr)}")
             if not result.stdout and not result.stderr and result.returncode != 9009:
-                output_parts.append("(无输出，可能命令不存在或语法错误)")
+                output_parts.append("(no output — command may not exist or has a syntax error)")
 
             full_error = "\n".join(output_parts)
             truncated_result = self._truncate_shell_output(full_error)
             truncated_result += (
-                "\n提示: 如果不确定原因，可以调用 get_session_logs 查看详细日志，或尝试其他命令。"
+                "\nHint: If the cause is unclear, call get_session_logs for detailed logs, or try a different command."
             )
             return truncated_result
 
@@ -414,11 +414,11 @@ class FilesystemHandler:
         overflow_path = save_overflow("run_shell", text)
         truncated = "\n".join(lines[: self.SHELL_MAX_LINES])
         truncated += (
-            f"\n\n[OUTPUT_TRUNCATED] 命令输出共 {total_lines} 行，"
-            f"已显示前 {self.SHELL_MAX_LINES} 行。\n"
-            f"完整输出已保存到: {overflow_path}\n"
-            f'使用 read_file(path="{overflow_path}", offset={self.SHELL_MAX_LINES + 1}) '
-            f"查看后续内容。"
+            f"\n\n[OUTPUT_TRUNCATED] Command output has {total_lines} lines total; "
+            f"showing first {self.SHELL_MAX_LINES} lines.\n"
+            f"Full output saved to: {overflow_path}\n"
+            f'Use read_file(path="{overflow_path}", offset={self.SHELL_MAX_LINES + 1}) '
+            f"to view the rest."
         )
         return truncated
 
@@ -454,23 +454,23 @@ class FilesystemHandler:
             content_len = len(str(content)) if content else 0
             if content_len > 5000:
                 return (
-                    f"❌ write_file 缺少必要参数 'path'（content 长度 {content_len} 字符，"
-                    "疑似因内容过长导致 JSON 参数被截断）。\n"
-                    "请缩短内容后重试：\n"
-                    "1. 将大文件拆分为多次写入（每次 < 8000 字符）\n"
-                    "2. 或用 run_shell 执行 Python 脚本生成大文件"
+                    f"❌ write_file missing required parameter 'path' (content length {content_len} chars; "
+                    "likely the JSON parameters were truncated due to oversized content).\n"
+                    "Shorten the content and retry:\n"
+                    "1. Split large files into multiple writes (< 8000 chars each)\n"
+                    "2. Or use run_shell to run a Python script that generates the large file"
                 )
-            return "❌ write_file 缺少必要参数 'path'。请提供文件路径和内容后重试。"
+            return "❌ write_file missing required parameter 'path'. Provide a file path and content, then retry."
         if content is None:
-            return "❌ write_file 缺少必要参数 'content'。请提供文件内容后重试。"
+            return "❌ write_file missing required parameter 'content'. Provide the file content and retry."
         policy = self._get_fix_policy()
         if policy:
             target = self._resolve_to_abs(path)
             write_roots = policy.get("write_roots") or []
             if not self._is_under_any_root(target, write_roots):
                 msg = (
-                    "❌ 自检自动修复护栏：禁止写入该路径（仅允许修复 tools/skills/mcps/channels 相关目录）。"
-                    f"\n目标: {target}"
+                    "❌ Self-check auto-fix guardrail: writing to this path is blocked (only tools/skills/mcps/channels directories are allowed)."
+                    f"\nTarget: {target}"
                 )
                 logger.warning(msg)
                 return msg
@@ -478,19 +478,19 @@ class FilesystemHandler:
         try:
             file_path = self.agent.file_tool._resolve_path(path)
             size = file_path.stat().st_size
-            result = f"文件已写入: {path} ({size} bytes)"
+            result = f"File written: {path} ({size} bytes)"
         except OSError:
-            result = f"文件已写入: {path}"
+            result = f"File written: {path}"
 
         from ...core.im_context import get_im_session
 
         if not get_im_session():
             result += (
-                "\n\n💡 当前为 Desktop 模式，用户无法直接访问服务器文件。"
-                "请将文件的关键内容直接包含在回复中，"
-                "或调用 deliver_artifacts(artifacts=[{type: 'file', path: '"
+                "\n\n💡 Currently in Desktop mode — users cannot access server files directly. "
+                "Include the key file content in your reply, "
+                "or call deliver_artifacts(artifacts=[{type: 'file', path: '"
                 + str(path)
-                + "'}]) 使文件在前端可下载。"
+                + "'}]) to make the file downloadable in the frontend."
             )
         return result
 
@@ -501,7 +501,7 @@ class FilesystemHandler:
         """读取文件（支持 offset/limit 分页）"""
         path = params.get("path", "")
         if not path:
-            return "❌ read_file 缺少必要参数 'path'。"
+            return "❌ read_file missing required parameter 'path'."
         unc_err = self._check_unc(path)
         if unc_err:
             return f"❌ {unc_err}"
@@ -511,7 +511,7 @@ class FilesystemHandler:
             target = self._resolve_to_abs(path)
             read_roots = policy.get("read_roots") or []
             if not self._is_under_any_root(target, read_roots):
-                msg = f"❌ 自检自动修复护栏：禁止读取该路径。\n目标: {target}"
+                msg = f"❌ Self-check auto-fix guardrail: reading this path is blocked.\nTarget: {target}"
                 logger.warning(msg)
                 return msg
 
@@ -530,31 +530,31 @@ class FilesystemHandler:
         lines = content.split("\n")
         total_lines = len(lines)
 
-        # 如果文件在 limit 范围内且从头读取，直接返回全部
+        # If file fits within limit and reading from the start, return everything
         if total_lines <= limit and offset <= 1:
-            return f"文件内容 ({total_lines} 行):\n{content}"
+            return f"File contents ({total_lines} lines):\n{content}"
 
-        # 分页截取
-        start = offset - 1  # 转为 0-based
+        # Paginated slice
+        start = offset - 1  # convert to 0-based
         end = min(start + limit, total_lines)
 
         if start >= total_lines:
             return (
-                f"⚠️ offset={offset} 超出文件范围（文件共 {total_lines} 行）。\n"
-                f'使用 read_file(path="{path}", offset=1, limit={limit}) 从头开始读取。'
+                f"⚠️ offset={offset} exceeds file length (file has {total_lines} lines).\n"
+                f'Use read_file(path="{path}", offset=1, limit={limit}) to read from the beginning.'
             )
 
         shown = "\n".join(lines[start:end])
-        result = f"文件内容 (第 {start + 1}-{end} 行，共 {total_lines} 行):\n{shown}"
+        result = f"File contents (lines {start + 1}-{end} of {total_lines}):\n{shown}"
 
-        # 如果还有更多内容，附加分页提示
+        # Append pagination hint if there is more content
         if end < total_lines:
             remaining = total_lines - end
             result += (
-                f"\n\n[OUTPUT_TRUNCATED] 文件共 {total_lines} 行，"
-                f"当前显示第 {start + 1}-{end} 行，剩余 {remaining} 行。\n"
-                f'使用 read_file(path="{path}", offset={end + 1}, limit={limit}) '
-                f"查看后续内容。"
+                f"\n\n[OUTPUT_TRUNCATED] File has {total_lines} lines total; "
+                f"showing lines {start + 1}-{end}, {remaining} remaining.\n"
+                f'Use read_file(path="{path}", offset={end + 1}, limit={limit}) '
+                f"to view more."
             )
 
         return result
@@ -569,20 +569,20 @@ class FilesystemHandler:
         new_string = params.get("new_string")
 
         if not path:
-            return "❌ edit_file 缺少必要参数 'path'。"
+            return "❌ edit_file missing required parameter 'path'."
         if old_string is None:
-            return "❌ edit_file 缺少必要参数 'old_string'。"
+            return "❌ edit_file missing required parameter 'old_string'."
         if new_string is None:
-            return "❌ edit_file 缺少必要参数 'new_string'。"
+            return "❌ edit_file missing required parameter 'new_string'."
         if old_string == new_string:
-            return "❌ old_string 和 new_string 相同，无需替换。"
+            return "❌ old_string and new_string are identical — no replacement needed."
 
         policy = self._get_fix_policy()
         if policy:
             target = self._resolve_to_abs(path)
             write_roots = policy.get("write_roots") or []
             if not self._is_under_any_root(target, write_roots):
-                msg = f"❌ 自检自动修复护栏：禁止编辑该路径。\n目标: {target}"
+                msg = f"❌ Self-check auto-fix guardrail: editing this path is blocked.\nTarget: {target}"
                 logger.warning(msg)
                 return msg
 
@@ -603,25 +603,25 @@ class FilesystemHandler:
             except OSError:
                 size_info = ""
             if replace_all and replaced > 1:
-                return f"文件已编辑: {path}（替换了 {replaced} 处匹配）{size_info}"
-            return f"文件已编辑: {path}{size_info}"
+                return f"File edited: {path} ({replaced} matches replaced){size_info}"
+            return f"File edited: {path}{size_info}"
         except FileNotFoundError:
-            return f"❌ 文件不存在: {path}"
+            return f"❌ File not found: {path}"
         except ValueError as e:
-            return f"❌ edit_file 失败: {e}"
+            return f"❌ edit_file failed: {e}"
 
     async def _list_directory(self, params: dict) -> str:
         """列出目录（支持 pattern/recursive/max_items）"""
         path = params.get("path", "")
         if not path:
-            return "❌ list_directory 缺少必要参数 'path'。"
+            return "❌ list_directory missing required parameter 'path'."
 
         policy = self._get_fix_policy()
         if policy:
             target = self._resolve_to_abs(path)
             read_roots = policy.get("read_roots") or []
             if not self._is_under_any_root(target, read_roots):
-                msg = f"❌ 自检自动修复护栏：禁止列出该目录。\n目标: {target}"
+                msg = f"❌ Self-check auto-fix guardrail: listing this directory is blocked.\nTarget: {target}"
                 logger.warning(msg)
                 return msg
 
@@ -641,14 +641,14 @@ class FilesystemHandler:
 
         total = len(files)
         if total <= max_items:
-            result = f"目录内容 ({total} 条):\n" + "\n".join(files)
+            result = f"Directory contents ({total} items):\n" + "\n".join(files)
         else:
             shown = files[:max_items]
-            result = f"目录内容 (显示前 {max_items} 条，共 {total} 条):\n" + "\n".join(shown)
+            result = f"Directory contents (showing {max_items} of {total}):\n" + "\n".join(shown)
             result += (
-                f"\n\n[OUTPUT_TRUNCATED] 目录共 {total} 条目，已显示前 {max_items} 条。\n"
-                f'如需查看更多，请使用 list_directory(path="{path}", max_items={total}) '
-                f"或缩小查询范围。"
+                f"\n\n[OUTPUT_TRUNCATED] Directory has {total} entries; showing first {max_items}.\n"
+                f'Use list_directory(path="{path}", max_items={total}) '
+                f"to see more, or narrow your query."
             )
 
         from ...utils.subdir_context import inject_subdir_context
@@ -662,7 +662,7 @@ class FilesystemHandler:
         """内容搜索"""
         pattern = params.get("pattern", "")
         if not pattern:
-            return "❌ grep 缺少必要参数 'pattern'。"
+            return "❌ grep missing required parameter 'pattern'."
 
         path = params.get("path", ".")
         include = params.get("include")
@@ -691,10 +691,10 @@ class FilesystemHandler:
         except FileNotFoundError as e:
             return f"❌ {e}"
         except ValueError as e:
-            return f"❌ 正则表达式错误: {e}"
+            return f"❌ Regex error: {e}"
 
         if not results:
-            return f"未找到匹配 '{pattern}' 的内容。"
+            return f"No matches found for '{pattern}'."
 
         lines: list[str] = []
         for m in results:
@@ -708,9 +708,9 @@ class FilesystemHandler:
                 lines.append("")
 
         total = len(results)
-        header = f"找到 {total} 条匹配"
+        header = f"Found {total} matches"
         if total >= max_results:
-            header += f"（已达上限 {max_results}，可能还有更多）"
+            header += f" (limit {max_results} reached — there may be more)"
         header += ":\n"
 
         output = header + "\n".join(lines)
@@ -721,9 +721,9 @@ class FilesystemHandler:
             overflow_path = save_overflow("grep", output)
             truncated = "\n".join(output.split("\n")[: self.SHELL_MAX_LINES])
             truncated += (
-                f"\n\n[OUTPUT_TRUNCATED] 完整结果已保存到: {overflow_path}\n"
-                f'使用 read_file(path="{overflow_path}", offset={self.SHELL_MAX_LINES + 1}) '
-                f"查看后续内容。"
+                f"\n\n[OUTPUT_TRUNCATED] Full results saved to: {overflow_path}\n"
+                f'Use read_file(path="{overflow_path}", offset={self.SHELL_MAX_LINES + 1}) '
+                f"to view the rest."
             )
             return truncated
 
@@ -733,7 +733,7 @@ class FilesystemHandler:
         """文件名模式搜索"""
         pattern = params.get("pattern", "")
         if not pattern:
-            return "❌ glob 缺少必要参数 'pattern'。"
+            return "❌ glob missing required parameter 'pattern'."
 
         path = params.get("path", ".")
 
@@ -743,7 +743,7 @@ class FilesystemHandler:
 
         dir_path = self.agent.file_tool._resolve_path(path)
         if not dir_path.is_dir():
-            return f"❌ 目录不存在: {path}"
+            return f"❌ Directory not found: {path}"
 
         from ..file import DEFAULT_IGNORE_DIRS
 
@@ -770,15 +770,15 @@ class FilesystemHandler:
         results.sort(key=lambda x: x[1], reverse=True)
 
         if not results:
-            return f"未找到匹配 '{pattern}' 的文件。"
+            return f"No files found matching '{pattern}'."
 
         total = len(results)
         max_show = self.LIST_DIR_DEFAULT_MAX
         file_list = [r[0] for r in results[:max_show]]
-        output = f"找到 {total} 个文件（按修改时间排序）:\n" + "\n".join(file_list)
+        output = f"Found {total} files (sorted by modification time):\n" + "\n".join(file_list)
 
         if total > max_show:
-            output += f"\n\n[OUTPUT_TRUNCATED] 共 {total} 个文件，已显示前 {max_show} 个。"
+            output += f"\n\n[OUTPUT_TRUNCATED] {total} files total; showing first {max_show}."
 
         return output
 
@@ -786,41 +786,41 @@ class FilesystemHandler:
         """删除文件或空目录"""
         path = params.get("path", "")
         if not path:
-            return "❌ delete_file 缺少必要参数 'path'。"
+            return "❌ delete_file missing required parameter 'path'."
 
         policy = self._get_fix_policy()
         if policy:
             target = self._resolve_to_abs(path)
             write_roots = policy.get("write_roots") or []
             if not self._is_under_any_root(target, write_roots):
-                msg = f"❌ 自检自动修复护栏：禁止删除该路径。\n目标: {target}"
+                msg = f"❌ Self-check auto-fix guardrail: deleting this path is blocked.\nTarget: {target}"
                 logger.warning(msg)
                 return msg
 
         file_path = self.agent.file_tool._resolve_path(path)
 
         if not file_path.exists():
-            return f"❌ 路径不存在: {path}"
+            return f"❌ Path not found: {path}"
 
         if file_path.is_dir():
             try:
                 children = list(file_path.iterdir())
             except PermissionError:
-                return f"❌ 没有权限访问目录: {path}"
+                return f"❌ Permission denied accessing directory: {path}"
             if children:
                 return (
-                    f"❌ 目录非空 ({len(children)} 个项目)，不允许直接删除。"
-                    f"请确认是否确实需要删除此目录及其所有内容。"
+                    f"❌ Directory is not empty ({len(children)} items) — direct deletion is not allowed. "
+                    f"Confirm that you really want to delete this directory and all its contents."
                 )
 
         is_dir = file_path.is_dir()
         success = await self.agent.file_tool.delete(path)
         if success:
             if file_path.exists():
-                return f"⚠️ 删除操作返回成功但路径仍存在: {path}"
-            kind = "目录" if is_dir else "文件"
-            return f"{kind}已删除: {path}"
-        return f"❌ 删除失败: {path}"
+                return f"⚠️ Delete returned success but path still exists: {path}"
+            kind = "Directory" if is_dir else "File"
+            return f"{kind} deleted: {path}"
+        return f"❌ Delete failed: {path}"
 
 
 def create_handler(agent: "Agent"):

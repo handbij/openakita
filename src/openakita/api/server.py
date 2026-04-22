@@ -220,34 +220,34 @@ def create_app(
     from openakita import get_version_string
 
     tags_metadata = [
-        {"name": "认证", "description": "登录、登出、Token 刷新"},
-        {"name": "对话", "description": "聊天交互、消息控制"},
-        {"name": "智能体", "description": "Agent 配置文件、Bot 管理、协作拓扑"},
-        {"name": "模型", "description": "可用模型/端点列表"},
-        {"name": "配置", "description": "工作区配置、环境变量、端点管理"},
-        {"name": "技能", "description": "技能市场、安装、配置"},
-        {"name": "MCP", "description": "MCP 服务器连接与工具管理"},
-        {"name": "记忆", "description": "长期记忆 CRUD 与向量检索"},
-        {"name": "会话", "description": "会话历史管理"},
-        {"name": "文件", "description": "文件浏览与上传"},
-        {"name": "身份", "description": "AI 身份定义文件管理"},
-        {"name": "定时任务", "description": "计划任务调度"},
-        {"name": "即时通讯", "description": "IM 渠道与消息"},
-        {"name": "Hub", "description": "Agent/Skill 导入导出与市场"},
-        {"name": "工作区", "description": "备份、导入导出"},
-        {"name": "健康检查", "description": "服务健康、诊断、调试"},
-        {"name": "统计", "description": "Token 用量统计"},
-        {"name": "日志", "description": "服务日志查询"},
-        {"name": "反馈", "description": "Bug 报告与功能建议"},
-        {"name": "WebSocket", "description": "实时事件推送"},
-        {"name": "系统", "description": "根路径、关机等系统操作"},
+        {"name": "Auth", "description": "Login, logout, token refresh"},
+        {"name": "Chat", "description": "Chat interaction and message control"},
+        {"name": "Agents", "description": "Agent profiles, bot management, collaboration topology"},
+        {"name": "Models", "description": "Available models and endpoint list"},
+        {"name": "Config", "description": "Workspace configuration, environment variables, endpoint management"},
+        {"name": "Skills", "description": "Skill marketplace, installation, configuration"},
+        {"name": "MCP", "description": "MCP server connections and tool management"},
+        {"name": "Memory", "description": "Long-term memory CRUD and vector search"},
+        {"name": "Sessions", "description": "Session history management"},
+        {"name": "Files", "description": "File browsing and upload"},
+        {"name": "Identity", "description": "AI identity definition file management"},
+        {"name": "Scheduler", "description": "Scheduled task management"},
+        {"name": "IM", "description": "Instant messaging channels and messages"},
+        {"name": "Hub", "description": "Agent/Skill import, export, and marketplace"},
+        {"name": "Workspace", "description": "Backup, import, and export"},
+        {"name": "Health", "description": "Service health, diagnostics, and debugging"},
+        {"name": "Stats", "description": "Token usage statistics"},
+        {"name": "Logs", "description": "Service log queries"},
+        {"name": "Feedback", "description": "Bug reports and feature suggestions"},
+        {"name": "WebSocket", "description": "Real-time event streaming"},
+        {"name": "System", "description": "Root path, shutdown, and other system operations"},
     ]
 
     app = FastAPI(
         title="OpenAkita API",
         description=(
-            "OpenAkita 智能体平台 HTTP API\n\n"
-            "提供对话、Agent 管理、技能配置、MCP 工具、定时任务等完整接口。\n\n"
+            "OpenAkita Agent Platform HTTP API\n\n"
+            "Full API for chat, agent management, skill configuration, MCP tools, scheduled tasks, and more.\n\n"
             "- Swagger UI: `/docs`\n"
             "- ReDoc: `/redoc`"
         ),
@@ -348,40 +348,40 @@ def create_app(
     app.state.org_runtime = org_runtime
 
     # Mount routes
-    app.include_router(auth_routes.router, tags=["认证"])
-    app.include_router(agents.router, tags=["智能体"])
-    app.include_router(bug_report.router, tags=["反馈"])
-    app.include_router(chat.router, tags=["对话"])
-    app.include_router(chat_models.router, tags=["模型"])
-    app.include_router(config.router, tags=["配置"])
-    app.include_router(feishu_onboard.router, tags=["飞书扫码"])
-    app.include_router(qqbot_onboard.router, tags=["QQ扫码"])
-    app.include_router(wechat_onboard.router, tags=["微信扫码"])
-    app.include_router(wecom_onboard.router, tags=["企微扫码"])
-    app.include_router(files.router, tags=["文件"])
-    app.include_router(health.router, tags=["健康检查"])
-    app.include_router(im.router, tags=["即时通讯"])
-    app.include_router(logs.router, tags=["日志"])
+    app.include_router(auth_routes.router, tags=["Auth"])
+    app.include_router(agents.router, tags=["Agents"])
+    app.include_router(bug_report.router, tags=["Feedback"])
+    app.include_router(chat.router, tags=["Chat"])
+    app.include_router(chat_models.router, tags=["Models"])
+    app.include_router(config.router, tags=["Config"])
+    app.include_router(feishu_onboard.router, tags=["Feishu onboarding"])
+    app.include_router(qqbot_onboard.router, tags=["QQ onboarding"])
+    app.include_router(wechat_onboard.router, tags=["WeChat onboarding"])
+    app.include_router(wecom_onboard.router, tags=["WeCom onboarding"])
+    app.include_router(files.router, tags=["Files"])
+    app.include_router(health.router, tags=["Health"])
+    app.include_router(im.router, tags=["IM"])
+    app.include_router(logs.router, tags=["Logs"])
     app.include_router(mcp.router, tags=["MCP"])
-    app.include_router(memory.router, tags=["记忆"])
-    app.include_router(scheduler.router, tags=["定时任务"])
-    app.include_router(sessions.router, tags=["会话"])
-    app.include_router(skills.router, tags=["技能"])
-    app.include_router(skill_categories.router, tags=["技能分类"])
-    app.include_router(token_stats.router, tags=["统计"])
-    app.include_router(upload.router, tags=["文件"])
-    app.include_router(workspace_io.router, tags=["工作区"])
+    app.include_router(memory.router, tags=["Memory"])
+    app.include_router(scheduler.router, tags=["Scheduler"])
+    app.include_router(sessions.router, tags=["Sessions"])
+    app.include_router(skills.router, tags=["Skills"])
+    app.include_router(skill_categories.router, tags=["Skill categories"])
+    app.include_router(token_stats.router, tags=["Stats"])
+    app.include_router(upload.router, tags=["Files"])
+    app.include_router(workspace_io.router, tags=["Workspace"])
     app.include_router(ws_routes.router, tags=["WebSocket"])
     app.include_router(hub.router, tags=["Hub"])
-    app.include_router(identity.router, tags=["身份"])
-    app.include_router(orgs.router, tags=["组织编排"])
-    app.include_router(orgs.inbox_router, tags=["组织消息中心"])
+    app.include_router(identity.router, tags=["Identity"])
+    app.include_router(orgs.router, tags=["Org orchestration"])
+    app.include_router(orgs.inbox_router, tags=["Org inbox"])
     if plugins_routes is not None:
         app.include_router(plugins_routes.router)
     if plugin_deps_routes is not None:
-        app.include_router(plugin_deps_routes.router, tags=["插件依赖"])
+        app.include_router(plugin_deps_routes.router, tags=["Plugin deps"])
 
-    @app.get("/", tags=["系统"])
+    @app.get("/", tags=["System"])
     async def root():
         # If web frontend is available, redirect to it
         web_dist = _find_web_dist()
@@ -472,7 +472,7 @@ def create_app(
     # ── Serve web frontend static files ──
     _mount_web_frontend(app)
 
-    @app.post("/api/shutdown", tags=["系统"])
+    @app.post("/api/shutdown", tags=["System"])
     async def shutdown(request: Request):
         """Gracefully shut down the OpenAkita service process.
 

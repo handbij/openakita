@@ -281,7 +281,7 @@ def _truncate_end(content: str, target_chars: int) -> str:
     if last_newline > target_chars * 0.8:
         truncated = truncated[:last_newline]
 
-    return truncated + "\n...(已截断)"
+    return truncated + "\n...(truncated)"
 
 
 def _truncate_start(content: str, target_chars: int) -> str:
@@ -297,7 +297,7 @@ def _truncate_start(content: str, target_chars: int) -> str:
     if first_newline > 0 and first_newline < len(truncated) * 0.2:
         truncated = truncated[first_newline + 1 :]
 
-    return "...(已截断)\n" + truncated
+    return "...(truncated)\n" + truncated
 
 
 def _truncate_middle(content: str, target_chars: int) -> str:
@@ -319,7 +319,7 @@ def _truncate_middle(content: str, target_chars: int) -> str:
     if first_newline_tail > 0 and first_newline_tail < len(tail) * 0.3:
         tail = tail[first_newline_tail + 1 :]
 
-    return head + "\n...(中间已截断)...\n" + tail
+    return head + "\n...(middle truncated)...\n" + tail
 
 
 def apply_budget_to_sections(

@@ -74,7 +74,7 @@ def _safe_join(root: Path, rel: str) -> Path:
         candidate.relative_to(root.resolve())
     except ValueError as e:
         raise HTTPException(
-            status_code=400, detail=f"非法路径（疑似路径穿越）: {rel}"
+            status_code=400, detail=f"Illegal path (possible path traversal): {rel}"
         ) from e
     return candidate
 
@@ -94,12 +94,12 @@ async def list_categories(request: Request):
     """
     agent = _resolve_agent(request)
     if agent is None:
-        raise HTTPException(status_code=503, detail="Agent 尚未就绪")
+        raise HTTPException(status_code=503, detail="Agent not ready")
 
     cat_registry = getattr(agent, "skill_category_registry", None)
     skill_registry = getattr(agent, "skill_registry", None)
     if cat_registry is None or skill_registry is None:
-        raise HTTPException(status_code=503, detail="技能系统未初始化")
+        raise HTTPException(status_code=503, detail="Skill system not initialized")
 
     by_category: dict[str, list] = {}
     for s in skill_registry.list_all():
@@ -148,18 +148,18 @@ async def create_category(request: Request):
     if not is_valid_category_name(name):
         raise HTTPException(
             status_code=400,
-            detail="分类名非法：仅支持小写字母/数字/连字符，可用 / 表示嵌套；不可与系统命名空间冲突",
+            detail="Invalid category name: only lowercase letters, digits, and hyphens are allowed; use / for nesting; must not conflict with system namespaces",
         )
 
     root = _resolve_writable_root()
     cat_dir = _safe_join(root, name)
     if cat_dir.exists():
-        raise HTTPException(status_code=409, detail=f"分类目录已存在: {name}")
+        raise HTTPException(status_code=409, detail=f"Category directory already exists: {name}")
 
     try:
         cat_dir.mkdir(parents=True, exist_ok=False)
     except OSError as e:
-        raise HTTPException(status_code=500, detail=f"创建分类目录失败: {e}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to create category directory: {e}") from e
 
     desc_text = description or f"User-defined category '{name}'."
     desc_file = cat_dir / "DESCRIPTION.md"
@@ -174,7 +174,7 @@ async def create_category(request: Request):
             cat_dir.rmdir()
         except OSError:
             pass
-        raise HTTPException(status_code=500, detail=f"写 DESCRIPTION.md 失败: {e}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to write DESCRIPTION.md: {e}") from e
 
     await _propagate(request, "category_create", rescan=True)
     return {"status": "ok", "name": name, "path": str(cat_dir)}
@@ -198,7 +198,7 @@ async def patch_category(name: str, request: Request):
     root = _resolve_writable_root()
     src = _safe_join(root, name)
     if not src.exists() or not src.is_dir():
-        raise HTTPException(status_code=404, detail=f"分类不存在: {name}")
+        raise HTTPException(status_code=404, detail=f"Category not found: {name}")
 
     # 只读分类（system / __builtin__）拒绝写
     agent = _resolve_agent(request)
@@ -207,7 +207,7 @@ async def patch_category(name: str, request: Request):
         if cat_registry is not None:
             entry = cat_registry.get(name)
             if entry is not None and entry.system_readonly:
-                raise HTTPException(status_code=409, detail="只读分类不可修改")
+                raise HTTPException(status_code=409, detail="Read-only category cannot be modified")
 
     # 1. 重命名（包含描述时一起处理）
     final_name = name
@@ -215,15 +215,15 @@ async def patch_category(name: str, request: Request):
     if new_name_raw and isinstance(new_name_raw, str) and new_name_raw.strip() != name:
         new_name = new_name_raw.strip()
         if not is_valid_category_name(new_name):
-            raise HTTPException(status_code=400, detail="新分类名非法")
+            raise HTTPException(status_code=400, detail="Invalid new category name")
         dst = _safe_join(root, new_name)
         if dst.exists():
-            raise HTTPException(status_code=409, detail=f"目标分类已存在: {new_name}")
+            raise HTTPException(status_code=409, detail=f"Target category already exists: {new_name}")
         try:
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(src), str(dst))
         except OSError as e:
-            raise HTTPException(status_code=500, detail=f"重命名失败: {e}") from e
+            raise HTTPException(status_code=500, detail=f"Rename failed: {e}") from e
         final_name = new_name
         final_dir = dst
 
@@ -238,7 +238,7 @@ async def patch_category(name: str, request: Request):
             )
         except OSError as e:
             raise HTTPException(
-                status_code=500, detail=f"写 DESCRIPTION.md 失败: {e}"
+                status_code=500, detail=f"Failed to write DESCRIPTION.md: {e}"
             ) from e
 
     await _propagate(request, "category_patch", rescan=True)
@@ -276,10 +276,10 @@ async def enable_category(name: str, request: Request):
 
     agent = _resolve_agent(request)
     if agent is None:
-        raise HTTPException(status_code=503, detail="Agent 尚未就绪")
+        raise HTTPException(status_code=503, detail="Agent not ready")
     skill_registry = getattr(agent, "skill_registry", None)
     if skill_registry is None:
-        raise HTTPException(status_code=503, detail="SkillRegistry 未初始化")
+        raise HTTPException(status_code=503, detail="SkillRegistry not initialized")
 
     target_ids = _collect_external_skill_ids_in_category(skill_registry, name)
     if not target_ids:
@@ -290,7 +290,7 @@ async def enable_category(name: str, request: Request):
         # 未声明：先 materialize（compute_effective_allowlist 会扣除 default disabled）
         loader = getattr(agent, "skill_loader", None)
         if loader is None:
-            raise HTTPException(status_code=503, detail="SkillLoader 未初始化")
+            raise HTTPException(status_code=503, detail="SkillLoader not initialized")
         try:
             effective = loader.compute_effective_allowlist(None) or set()
         except Exception:
@@ -322,10 +322,10 @@ async def disable_category(name: str, request: Request):
 
     agent = _resolve_agent(request)
     if agent is None:
-        raise HTTPException(status_code=503, detail="Agent 尚未就绪")
+        raise HTTPException(status_code=503, detail="Agent not ready")
     skill_registry = getattr(agent, "skill_registry", None)
     if skill_registry is None:
-        raise HTTPException(status_code=503, detail="SkillRegistry 未初始化")
+        raise HTTPException(status_code=503, detail="SkillRegistry not initialized")
 
     target_ids = _collect_external_skill_ids_in_category(skill_registry, name)
     if not target_ids:
@@ -335,7 +335,7 @@ async def disable_category(name: str, request: Request):
     if declared is None:
         loader = getattr(agent, "skill_loader", None)
         if loader is None:
-            raise HTTPException(status_code=503, detail="SkillLoader 未初始化")
+            raise HTTPException(status_code=503, detail="SkillLoader not initialized")
         try:
             effective = loader.compute_effective_allowlist(None) or set()
         except Exception:
@@ -370,26 +370,26 @@ async def move_skill(request: Request):
         target_category = target_category.strip() or None
 
     if not skill_id:
-        raise HTTPException(status_code=400, detail="skill_id 必填")
+        raise HTTPException(status_code=400, detail="skill_id is required")
     if target_category and not is_valid_category_name(target_category):
-        raise HTTPException(status_code=400, detail="目标分类名非法")
+        raise HTTPException(status_code=400, detail="Invalid target category name")
 
     agent = _resolve_agent(request)
     if agent is None:
-        raise HTTPException(status_code=503, detail="Agent 尚未就绪")
+        raise HTTPException(status_code=503, detail="Agent not ready")
     skill_registry = getattr(agent, "skill_registry", None)
     if skill_registry is None:
-        raise HTTPException(status_code=503, detail="SkillRegistry 未初始化")
+        raise HTTPException(status_code=503, detail="SkillRegistry not initialized")
 
     entry = skill_registry.get(skill_id)
     if entry is None:
-        raise HTTPException(status_code=404, detail=f"技能不存在: {skill_id}")
+        raise HTTPException(status_code=404, detail=f"Skill not found: {skill_id}")
     if getattr(entry, "system", False):
-        raise HTTPException(status_code=409, detail="系统技能不可移动")
+        raise HTTPException(status_code=409, detail="System skills cannot be moved")
 
     skill_path = getattr(entry, "skill_path", None)
     if not skill_path:
-        raise HTTPException(status_code=404, detail="技能没有源目录路径，无法移动")
+        raise HTTPException(status_code=404, detail="Skill has no source directory path and cannot be moved")
     # SkillEntry.skill_path 指向 SKILL.md 文件本身，移动的是其所在目录
     src_dir = Path(skill_path).parent.resolve()
 
@@ -398,7 +398,7 @@ async def move_skill(request: Request):
         src_dir.relative_to(root)
     except ValueError as e:
         raise HTTPException(
-            status_code=409, detail="只读源（非用户可写根下）不可移动"
+            status_code=409, detail="Read-only source (not under user-writable root) cannot be moved"
         ) from e
 
     if target_category:
@@ -411,12 +411,12 @@ async def move_skill(request: Request):
     if dst_dir.resolve() == src_dir:
         return {"status": "ok", "skill_id": skill_id, "moved": False}
     if dst_dir.exists():
-        raise HTTPException(status_code=409, detail=f"目标已存在: {dst_dir}")
+        raise HTTPException(status_code=409, detail=f"Target already exists: {dst_dir}")
 
     try:
         shutil.move(str(src_dir), str(dst_dir))
     except OSError as e:
-        raise HTTPException(status_code=500, detail=f"移动失败: {e}") from e
+        raise HTTPException(status_code=500, detail=f"Move failed: {e}") from e
 
     await _propagate(request, "category_move", rescan=True)
     return {

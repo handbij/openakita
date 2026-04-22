@@ -69,14 +69,14 @@ def _validate_task_name(name: str | None) -> tuple[bool, str]:
     if name is None:
         return True, ""
     if not isinstance(name, str):
-        return False, "name 必须是字符串"
+        return False, "name must be a string"
     n = name.strip()
     if not n:
-        return False, "name 不能为空"
+        return False, "name cannot be empty"
     if len(n) > 200:
-        return False, "name 长度不能超过 200"
+        return False, "name cannot exceed 200 characters"
     if any(token in n for token in _TASK_NAME_FORBIDDEN):
-        return False, "name 包含非法字符（路径穿越/控制字符/Windows 保留字符）"
+        return False, "name contains illegal characters (path traversal / control characters / Windows reserved characters)"
     return True, ""
 
 

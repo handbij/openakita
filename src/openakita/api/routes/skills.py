@@ -277,12 +277,12 @@ async def install_skill(request: Request):
 
         await asyncio.to_thread(_install_skill, workspace_dir, url, category=category)
     except FileNotFoundError as e:
-        missing = getattr(e, "filename", None) or "外部命令"
+        missing = getattr(e, "filename", None) or "external command"
         logger.error("Skill install missing dependency: %s", e, exc_info=True)
         return {
             "error": (
-                f"安装失败：未找到可执行命令 `{missing}`。"
-                "请先安装 Git 并确保在 PATH 中，或改用 GitHub 简写/单个 SKILL.md 链接。"
+                f"Installation failed: executable not found `{missing}`. "
+                "Please install Git and ensure it is on PATH, or use a GitHub shorthand / single SKILL.md link."
             )
         }
     except Exception as e:
@@ -340,8 +340,8 @@ async def install_skill(request: Request):
                 shutil.rmtree(str(candidates[0]), ignore_errors=True)
                 return {
                     "error": (
-                        f"技能文件已下载，但 SKILL.md 格式无效，无法加载：{parse_err}。"
-                        "该技能可能不兼容 OpenAkita 格式，已自动清理。"
+                        f"Skill files downloaded but SKILL.md has an invalid format and cannot be loaded: {parse_err}. "
+                        "This skill may not be compatible with the OpenAkita format. The files have been cleaned up automatically."
                     )
                 }
     except Exception as ve:

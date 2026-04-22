@@ -264,3 +264,60 @@ def test_docs_snapshot_returns_list_in_doc_order(tmp_path, make_task,
     assert [d["filename"] for d in snap] == [str(a), str(b)]
     assert snap[0]["checked"] == 0
     assert snap[1]["checked"] == 1
+
+
+@pytest.mark.asyncio
+async def test_broadcast_emits_full_state(tmp_path, make_task, monkeypatch,
+                                          profile_store_mock, agent_factory_mock):
+    from openakita.scheduler import autorun_playbook as ap
+    from openakita.scheduler.autorun_playbook import PlaybookRun, PlaybookState
+
+    factory, _ = agent_factory_mock
+    md = tmp_path / "x.md"
+    md.write_text("- [ ] a\n- [x] b\n")
+    task = make_task(task_id="T1", documents=[{"filename": str(md)}])
+    run = PlaybookRun(task, executor=MagicMock(),
+                     profile_store=profile_store_mock, agent_factory=factory)
+    run.state = PlaybookState.RUNNING
+    run._refresh_all_doc_snapshots(loop_iter=0)
+
+    captured = AsyncMock()
+    monkeypatch.setattr(ap, "broadcast_event", captured)
+    await run._broadcast(active_doc=str(md), delta=1, loop_iter=3)
+
+    captured.assert_awaited_once()
+    event_name, payload = captured.await_args.args
+    assert event_name == "autorun:state"
+    assert payload["task_id"] == "T1"
+    assert payload["run_id"].startswith("run-")
+    assert payload["state"] == "running"
+    assert payload["active_doc"] == str(md)
+    assert payload["delta"] == 1
+    assert payload["loop_iter"] == 3
+    assert payload["error"] is None
+    assert len(payload["docs"]) == 1
+    assert payload["docs"][0]["checked"] == 1
+    assert payload["docs"][0]["total"] == 2
+
+
+@pytest.mark.asyncio
+async def test_broadcast_defaults_to_none_fields(tmp_path, make_task, monkeypatch,
+                                                 profile_store_mock, agent_factory_mock):
+    from openakita.scheduler import autorun_playbook as ap
+    from openakita.scheduler.autorun_playbook import PlaybookRun
+
+    factory, _ = agent_factory_mock
+    md = tmp_path / "x.md"
+    md.write_text("- [ ] a\n")
+    task = make_task(documents=[{"filename": str(md)}])
+    run = PlaybookRun(task, executor=MagicMock(),
+                     profile_store=profile_store_mock, agent_factory=factory)
+
+    captured = AsyncMock()
+    monkeypatch.setattr(ap, "broadcast_event", captured)
+    await run._broadcast()
+
+    _, payload = captured.await_args.args
+    assert payload["active_doc"] is None
+    assert payload["delta"] is None
+    assert payload["error"] is None

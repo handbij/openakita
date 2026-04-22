@@ -15,6 +15,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from openakita.agents.factory import AgentFactory
+from openakita.api.routes.websocket import broadcast_event
 from openakita.utils.checkbox_md import count_checkboxes
 from openakita.utils.worktree import WorktreeInfo
 
@@ -133,6 +134,21 @@ class PlaybookRun:
         return [dict(self._doc_snapshots.get(d.filename, {
             "filename": d.filename, "total": 0, "checked": 0, "stalled": False,
         })) for d in self.cfg.documents]
+
+    async def _broadcast(self, **extra) -> None:
+        """One full-state push per reducer step (Maestro parity). Extra kwargs
+        land on the event payload verbatim so callers can attach loop_iter,
+        stalled, etc. without widening this method's surface."""
+        await broadcast_event("autorun:state", {
+            "run_id": self.run_id,
+            "task_id": self.task.task_id,
+            "state": self.state.value,
+            "docs": self._docs_snapshot(),
+            "active_doc": extra.pop("active_doc", None),
+            "delta": extra.pop("delta", None),
+            "error": extra.pop("error", None),
+            **extra,
+        })
 
 
 __all__ = [

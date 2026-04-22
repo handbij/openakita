@@ -88,3 +88,56 @@ class TestErrorTypes:
             ErrorType.RATE_LIMIT, ErrorType.DEPENDENCY,
         ]
         assert len(types) == 8
+
+
+# ---------------------------------------------------------------------------
+# Plan 06: CLI ErrorType extensions + classify_cli_error
+# ---------------------------------------------------------------------------
+
+from openakita.tools.errors import classify_cli_error  # noqa: E402
+
+
+def test_new_error_type_members_present():
+    for name in (
+        "AUTH", "AUTH_PERMANENT", "BILLING", "OVERLOADED",
+        "MODEL_NOT_FOUND", "CONTEXT_OVERFLOW", "SERVER",
+        "NETWORK", "CONTENT_FILTER", "FORMAT",
+    ):
+        assert hasattr(ErrorType, name), f"missing: {name}"
+
+
+@pytest.mark.parametrize(
+    "exit_code, stderr, expected",
+    [
+        (1,   "Not logged in. Run: claude auth", ErrorType.AUTH_PERMANENT),
+        (1,   "authentication failed",           ErrorType.AUTH),
+        (2,   "rate limit exceeded",             ErrorType.RATE_LIMIT),
+        (1,   "429 Too Many Requests",           ErrorType.RATE_LIMIT),
+        (1,   "payment required",                ErrorType.BILLING),
+        (1,   "billing account inactive",        ErrorType.BILLING),
+        (124, "",                                ErrorType.TIMEOUT),
+        (137, "killed",                          ErrorType.OVERLOADED),
+        (1,   "model not found: claude-3.5",    ErrorType.MODEL_NOT_FOUND),
+        (1,   "context window exceeded",         ErrorType.CONTEXT_OVERFLOW),
+        (1,   "prompt tokens exceed limit",      ErrorType.CONTEXT_OVERFLOW),
+        (1,   "500 internal server error",       ErrorType.SERVER),
+        (1,   "503 service unavailable",         ErrorType.SERVER),
+        (1,   "network unreachable",             ErrorType.NETWORK),
+        (1,   "response blocked by safety filter", ErrorType.CONTENT_FILTER),
+        (1,   "unexpected format in stream-json", ErrorType.FORMAT),
+        (127, "claude: command not found",       ErrorType.DEPENDENCY),
+    ],
+)
+def test_classify_cli_error_rules(exit_code: int, stderr: str, expected: ErrorType):
+    assert classify_cli_error(exit_code=exit_code, stderr=stderr) == expected
+
+
+def test_classify_cli_error_falls_back_to_permanent():
+    assert classify_cli_error(exit_code=1, stderr="weird unclassified thing") == ErrorType.PERMANENT
+
+
+def test_classify_cli_error_uses_exception_fallback():
+    assert classify_cli_error(
+        exit_code=1, stderr="",
+        exception=TimeoutError("wall-clock")
+    ) == ErrorType.TIMEOUT

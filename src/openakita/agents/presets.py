@@ -786,6 +786,45 @@ SYSTEM_PRESETS: list[AgentProfile] = [
             "en": "Goose CLI as a sub-agent — runs against any local provider (Ollama, vLLM, etc.)",
         },
     ),
+    # ── Native ReAct planner that orchestrates the CLI presets above ──
+    AgentProfile(
+        id="multi-cli-planner",
+        name="Multi-CLI Planner",
+        description="ReAct planner that delegates to CLI sub-agents (Claude Code / Codex / Goose)",
+        type=AgentType.SYSTEM,
+        skills=[
+            "obra/superpowers@brainstorming",
+            "obra/superpowers@writing-plans",
+            "obra/superpowers@subagent-driven-development",
+            "obra/superpowers@dispatching-parallel-agents",
+        ],
+        skills_mode=SkillsMode.INCLUSIVE,
+        custom_prompt=(
+            "You are a planner that breaks a user task into sub-tasks and dispatches each "
+            "to the most-suitable CLI sub-agent:\n"
+            "- `claude-code-pair` for large-scope code edits, refactors, debugging\n"
+            "- `codex-writer` for code generation, fresh implementations, test writing\n"
+            "- `local-goose` for anything that should stay on a local model\n"
+            "You must reach every delegation through the `delegate_to_agent` tool. "
+            "Do not attempt to invoke other agents — your permission rules forbid it."
+        ),
+        permission_rules=[
+            {"permission": "delegate_to_agent", "pattern": "claude-code-pair", "action": "allow"},
+            {"permission": "delegate_to_agent", "pattern": "codex-writer", "action": "allow"},
+            {"permission": "delegate_to_agent", "pattern": "local-goose", "action": "allow"},
+            {"permission": "delegate_to_agent", "pattern": "*", "action": "deny"},
+        ],
+        icon="🧭",
+        color="#7C3AED",
+        category="cli-agents",
+        fallback_profile_id="default",
+        created_by="system",
+        name_i18n={"zh": "多 CLI 规划师", "en": "Multi-CLI Planner"},
+        description_i18n={
+            "zh": "ReAct 规划师,把任务分发给 Claude Code / Codex / Goose 三个 CLI 子代理",
+            "en": "ReAct planner that delegates to CLI sub-agents (Claude Code / Codex / Goose)",
+        },
+    ),
 ]
 
 

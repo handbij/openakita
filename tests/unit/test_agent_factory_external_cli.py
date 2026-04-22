@@ -122,3 +122,70 @@ async def test_create_external_cli_requires_cli_provider_id(monkeypatch):
 
     with pytest.raises(ValueError, match="cli_provider_id"):
         await factory.create(profile)
+
+
+# ---------------------------------------------------------------------------
+# Task 4 — Pool skips brain sharing for EXTERNAL_CLI
+# ---------------------------------------------------------------------------
+
+from openakita.agents.factory import AgentInstancePool
+
+
+class _FakeNativeAgent:
+    """Minimal stand-in so the pool thinks this is a native Agent with a brain."""
+    def __init__(self, profile_id: str):
+        self._agent_profile = _make_cli_profile(id=profile_id, type=AgentType.CUSTOM,
+                                                cli_provider_id=None)
+        self.brain = MagicMock(name=f"brain-for-{profile_id}")
+
+    async def shutdown(self):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_pool_skips_brain_sharing_for_external_cli(monkeypatch):
+    """When creating an EXTERNAL_CLI agent, the pool must NOT pass
+    parent_brain to factory.create() even if native agents are in the pool."""
+    from openakita.agents import cli_providers
+    monkeypatch.setitem(
+        cli_providers.PROVIDERS, CliProviderId.CLAUDE_CODE, MagicMock()
+    )
+
+    factory = AgentFactory()
+    pool = AgentInstancePool(factory=factory)
+
+    # Pre-seed the pool with a native agent so _find_parent_brain has something to return.
+    from openakita.agents.factory import _PoolEntry
+    native = _FakeNativeAgent("default")
+    pool._pool["sess-1::default"] = _PoolEntry(native, "default", "sess-1", 0)
+
+    captured = {}
+    orig_create = factory.create
+    async def spy_create(prof, *, parent_brain=None, **kw):
+        captured["parent_brain"] = parent_brain
+        return await orig_create(prof, parent_brain=parent_brain, **kw)
+    monkeypatch.setattr(factory, "create", spy_create)
+
+    cli_profile = _make_cli_profile(id="claude-code-pair")
+    agent = await pool.get_or_create("sess-1", cli_profile)
+
+    assert isinstance(agent, ExternalCliAgent)
+    assert captured["parent_brain"] is None, "EXTERNAL_CLI must not inherit a parent brain"
+
+
+@pytest.mark.asyncio
+async def test_pool_caches_external_cli_by_session_profile_key(monkeypatch):
+    from openakita.agents import cli_providers
+    monkeypatch.setitem(
+        cli_providers.PROVIDERS, CliProviderId.CLAUDE_CODE, MagicMock()
+    )
+
+    factory = AgentFactory()
+    pool = AgentInstancePool(factory=factory)
+    profile = _make_cli_profile()
+
+    first = await pool.get_or_create("sess-1", profile)
+    second = await pool.get_or_create("sess-1", profile)
+
+    assert first is second
+    assert "sess-1::claude-code-pair" in pool._pool

@@ -567,6 +567,35 @@ class AgentInstancePool:
     def _make_key(session_id: str, profile_id: str) -> str:
         return f"{session_id}::{profile_id}"
 
+    def _find_parent_brain(self, session_id: str) -> Any:
+        """Pick the best already-pooled native agent's Brain for sharing in
+        *session_id*. Prefers ``default`` profile, then ``SYSTEM`` type, then
+        earliest-created. Returns None when the session has no native agents
+        (or only EXTERNAL_CLI agents, whose brains are null)."""
+        session_entries = [
+            e
+            for e in self._pool.values()
+            if e.session_id == session_id and hasattr(e.agent, "brain")
+        ]
+        # Exclude EXTERNAL_CLI agents — their brain is _NullBrain and must not
+        # leak into a native sibling.
+        session_entries = [
+            e for e in session_entries
+            if getattr(getattr(e.agent, "_agent_profile", None), "type", None)
+               != AgentType.EXTERNAL_CLI
+        ]
+        if not session_entries:
+            return None
+
+        def _sort_key(e: _PoolEntry) -> tuple:
+            prof = getattr(e.agent, "_agent_profile", None)
+            is_default = e.profile_id == "default"
+            is_system = prof is not None and getattr(prof, "type", None) == AgentType.SYSTEM
+            return (not is_default, not is_system, e.created_at)
+
+        best = min(session_entries, key=_sort_key)
+        return best.agent.brain
+
     @staticmethod
     def _schedule_shutdown(agent: Any) -> None:
         if not hasattr(agent, "shutdown"):
@@ -659,29 +688,15 @@ class AgentInstancePool:
                 entry.touch()
                 return entry.agent
 
-            parent_brain = None
-            session_entries = [
-                e
-                for e in self._pool.values()
-                if e.session_id == session_id and hasattr(e.agent, "brain")
-            ]
-            if session_entries:
-                # Prefer default/system profiles, then earliest created
-                def _sort_key(e: _PoolEntry) -> tuple:
-                    profile = getattr(e.agent, "_agent_profile", None)
-                    is_default = e.profile_id == "default"
-                    is_system = (
-                        profile is not None and getattr(profile, "type", None) == AgentType.SYSTEM
-                    )
-                    return (not is_default, not is_system, e.created_at)
-
-                best = min(session_entries, key=_sort_key)
-                parent_brain = best.agent.brain
-
-            if parent_brain is None:
+            if profile.type == AgentType.EXTERNAL_CLI:
+                # External CLI owns its own conversation; no shared Brain.
                 agent = await self._factory.create(profile)
             else:
-                agent = await self._factory.create(profile, parent_brain=parent_brain)
+                parent_brain = self._find_parent_brain(session_id)
+                if parent_brain is None:
+                    agent = await self._factory.create(profile)
+                else:
+                    agent = await self._factory.create(profile, parent_brain=parent_brain)
             new_entry = _PoolEntry(agent, profile.id, session_id, current_version)
             self._pool[key] = new_entry
 

@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from openakita.sessions.transcript import (
-    TranscriptEntry,
     parse_claude_stream_json,
     parse_codex_jsonl,
 )

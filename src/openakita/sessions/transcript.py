@@ -195,6 +195,8 @@ def parse_claude_stream_json(line: str) -> TranscriptEntry | None:
         role = message.get("role", kind)
         # Collapse tool_result blocks (emitted on the user side) into a native
         # tool_result entry so the frontend's existing renderer picks them up.
+        # Phase 1: only single-item lists are collapsed; multi-block batches (parallel
+        # tool_results) fall through to the generic "message" path intentionally.
         if isinstance(content, list) and len(content) == 1 and \
                 isinstance(content[0], dict) and content[0].get("type") == "tool_result":
             block = content[0]

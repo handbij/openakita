@@ -86,13 +86,13 @@ def test_autoload_registers_well_formed_providers(tmp_path, monkeypatch):
         "    async def run(self, request, argv, env, *, on_spawn): return None\n"
         "    async def cleanup(self): pass\n"
         "PROVIDER = _FakeAdapter()\n"
-        "CLI_PROVIDER_ID = CliProviderId.DROID\n"
+        "CLI_PROVIDER_ID = CliProviderId.QWEN\n"
     )
     try:
         sys.modules.pop("openakita.agents.cli_providers.testfakeprovider", None)
         cli_providers._autoload()
-        assert CliProviderId.DROID in cli_providers.PROVIDERS
+        assert CliProviderId.QWEN in cli_providers.PROVIDERS
     finally:
         target.unlink(missing_ok=True)
-        cli_providers.PROVIDERS.pop(CliProviderId.DROID, None)
+        cli_providers.PROVIDERS.pop(CliProviderId.QWEN, None)
         sys.modules.pop("openakita.agents.cli_providers.testfakeprovider", None)

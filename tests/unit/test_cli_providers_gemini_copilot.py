@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 import pytest
 
-from openakita.agents.cli_providers import PROVIDERS
 from openakita.agents.cli_detector import CliProviderId
+from openakita.agents.cli_providers import PROVIDERS
 from openakita.agents.cli_runner import CliRunRequest, ExitReason, ProviderRunResult
 from openakita.agents.profile import AgentProfile, AgentType, CliPermissionMode
 
@@ -80,7 +80,7 @@ def test_gemini_build_argv_resume():
 def test_gemini_session_root():
     from openakita.agents.cli_providers import gemini
 
-    assert gemini.SESSION_ROOT == Path.home() / ".gemini" / "sessions"
+    assert Path.home() / ".gemini" / "sessions" == gemini.SESSION_ROOT
 
 
 @pytest.mark.asyncio
@@ -133,7 +133,7 @@ def test_copilot_build_argv_base():
 def test_copilot_session_root():
     from openakita.agents.cli_providers import copilot
 
-    assert copilot.SESSION_ROOT == Path.home() / ".copilot" / "sessions"
+    assert Path.home() / ".copilot" / "sessions" == copilot.SESSION_ROOT
 
 
 def test_copilot_ansi_strip():

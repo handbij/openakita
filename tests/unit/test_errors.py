@@ -3,7 +3,7 @@
 import pytest
 
 from openakita.core.errors import UserCancelledError
-from openakita.tools.errors import ToolError, ErrorType, classify_error
+from openakita.tools.errors import ErrorType, ToolError, classify_cli_error, classify_error
 
 
 class TestUserCancelledError:
@@ -93,9 +93,6 @@ class TestErrorTypes:
 # ---------------------------------------------------------------------------
 # Plan 06: CLI ErrorType extensions + classify_cli_error
 # ---------------------------------------------------------------------------
-
-from openakita.tools.errors import classify_cli_error  # noqa: E402
-
 
 def test_new_error_type_members_present():
     for name in (

@@ -105,6 +105,9 @@ class TaskUpdateRequest(BaseModel):
     channel_id: str | None = None
     chat_id: str | None = None
     enabled: bool | None = None
+    action: str | None = None
+    metadata: dict | None = None
+    agent_profile_id: str | None = None
 
 
 @router.get("/api/scheduler/tasks")
@@ -254,6 +257,13 @@ async def update_task(request: Request, task_id: str, body: TaskUpdateRequest):
 
     if body.trigger_config is not None:
         updates["trigger_config"] = body.trigger_config
+
+    if body.action is not None:
+        updates["action"] = body.action
+    if body.metadata is not None:
+        updates["metadata"] = body.metadata
+    if body.agent_profile_id is not None:
+        updates["agent_profile_id"] = body.agent_profile_id
 
     if updates.get("name") or updates.get("reminder_message") or updates.get("prompt"):
         updates["description"] = (

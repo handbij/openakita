@@ -26,6 +26,7 @@ from ..core.capabilities import (
     build_namespace,
 )
 from ..utils.atomic_io import atomic_json_write
+from .cli_detector import CliProviderId
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ class AgentType(StrEnum):
     SYSTEM = "system"
     CUSTOM = "custom"
     DYNAMIC = "dynamic"
+    EXTERNAL_CLI = "external_cli"
 
 
 class SkillsMode(StrEnum):
@@ -80,6 +82,35 @@ def safe_skills_mode(value: Any) -> SkillsMode:
         return SkillsMode.ALL
 
 
+class FilterMode(StrEnum):
+    ALL = "all"
+    INCLUSIVE = "inclusive"
+    EXCLUSIVE = "exclusive"
+
+
+class CliPermissionMode(StrEnum):
+    PLAN = "plan"
+    WRITE = "write"
+
+
+def safe_filter_mode(value: Any) -> FilterMode:
+    if isinstance(value, FilterMode):
+        return value
+    try:
+        return FilterMode(value)
+    except (ValueError, KeyError, TypeError):
+        return FilterMode.ALL
+
+
+def safe_cli_permission_mode(value: Any) -> CliPermissionMode:
+    if isinstance(value, CliPermissionMode):
+        return value
+    try:
+        return CliPermissionMode(value)
+    except (ValueError, KeyError, TypeError):
+        return CliPermissionMode.WRITE
+
+
 # Identity fields in SYSTEM profiles that cannot be modified by users (all others are customizable)
 _SYSTEM_IMMUTABLE_FIELDS = frozenset(
     {
@@ -104,15 +135,15 @@ class AgentProfile:
 
     # Tool control (category names or specific tool names; reuses TOOL_CATEGORIES from orgs/tool_categories.py)
     tools: list[str] = field(default_factory=list)
-    tools_mode: str = "all"  # "all" | "inclusive" | "exclusive"
+    tools_mode: FilterMode = FilterMode.ALL
 
     # MCP server control
     mcp_servers: list[str] = field(default_factory=list)
-    mcp_mode: str = "all"  # "all" | "inclusive" | "exclusive"
+    mcp_mode: FilterMode = FilterMode.ALL
 
     # Plugin control
     plugins: list[str] = field(default_factory=list)
-    plugins_mode: str = "all"  # "all" | "inclusive" | "exclusive"
+    plugins_mode: FilterMode = FilterMode.ALL
 
     # Custom prompt (appended to the system prompt)
     custom_prompt: str = ""
@@ -130,6 +161,10 @@ class AgentProfile:
     # Permission rule set (OpenCode style; empty list = allow all)
     # Format: [{"permission": "edit", "pattern": "*", "action": "deny"}, ...]
     permission_rules: list[dict[str, str]] = field(default_factory=list)
+
+    # External CLI agent fields — populated only when type == EXTERNAL_CLI.
+    cli_provider_id: CliProviderId | None = None
+    cli_permission_mode: CliPermissionMode = CliPermissionMode.WRITE
 
     # Metadata
     created_by: str = "system"
@@ -171,6 +206,15 @@ class AgentProfile:
     def __post_init__(self):
         self.type = safe_agent_type(self.type)
         self.skills_mode = safe_skills_mode(self.skills_mode)
+        self.tools_mode = safe_filter_mode(self.tools_mode)
+        self.mcp_mode = safe_filter_mode(self.mcp_mode)
+        self.plugins_mode = safe_filter_mode(self.plugins_mode)
+        self.cli_permission_mode = safe_cli_permission_mode(self.cli_permission_mode)
+        if self.cli_provider_id is not None and not isinstance(self.cli_provider_id, CliProviderId):
+            try:
+                self.cli_provider_id = CliProviderId(self.cli_provider_id)
+            except (ValueError, KeyError, TypeError):
+                self.cli_provider_id = None
         if not self.created_at:
             self.created_at = datetime.now(UTC).isoformat()
 
@@ -222,8 +266,8 @@ class AgentProfile:
                 "role": self.role,
                 "ephemeral": self.ephemeral,
                 "skills_mode": self.skills_mode.value,
-                "tools_mode": self.tools_mode,
-                "plugins_mode": self.plugins_mode,
+                "tools_mode": self.tools_mode.value,
+                "plugins_mode": self.plugins_mode.value,
             },
         )
 
@@ -231,6 +275,11 @@ class AgentProfile:
         d = asdict(self)
         d["type"] = self.type.value
         d["skills_mode"] = self.skills_mode.value
+        d["tools_mode"] = self.tools_mode.value
+        d["mcp_mode"] = self.mcp_mode.value
+        d["plugins_mode"] = self.plugins_mode.value
+        d["cli_permission_mode"] = self.cli_permission_mode.value
+        d["cli_provider_id"] = self.cli_provider_id.value if self.cli_provider_id else None
         d["origin"] = self.origin.value
         d["namespace"] = self.namespace
         d["definition_id"] = self.definition_id

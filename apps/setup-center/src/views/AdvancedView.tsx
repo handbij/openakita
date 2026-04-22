@@ -1007,7 +1007,9 @@ function ExtensionsCard({
                 <Button
                   variant="default"
                   size="xs"
+                  disabled={!ext.cli_provider_id}
                   onClick={() => {
+                    if (!ext.cli_provider_id) return;
                     window.dispatchEvent(new CustomEvent("openAgentManagerWithCli", {
                       detail: { cli_provider_id: ext.cli_provider_id },
                     }));

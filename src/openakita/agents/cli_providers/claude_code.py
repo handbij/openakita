@@ -29,8 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from openakita.agents.cli_detector import CliProviderId
-from openakita.agents.cli_providers._common import stream_cli_subprocess
-from openakita.agents.cli_providers.codex import write_mcp_config
+from openakita.agents.cli_providers._common import stream_cli_subprocess, write_mcp_config
 from openakita.agents.cli_runner import (
     CliRunRequest,
     ExitReason,

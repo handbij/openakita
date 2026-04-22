@@ -100,10 +100,10 @@ def test_build_env_sets_codex_home_to_per_turn_tempdir():
 
 
 def test_write_mcp_config_toml_contains_server_sections(tmp_path):
-    from openakita.agents.cli_providers.codex import write_mcp_config
+    from openakita.agents.cli_providers._common import write_mcp_config
 
     fake_info = MagicMock(command="npx", args=["-y", "pkg"], env={})
-    with patch("openakita.agents.cli_providers.codex.MCPCatalog") as Catalog:
+    with patch("openakita.agents.cli_providers._common.MCPCatalog") as Catalog:
         Catalog.return_value.get_server = MagicMock(return_value=fake_info)
         path = write_mcp_config(tmp_path, ("web-search", "github"), fmt="toml")
 
@@ -114,10 +114,10 @@ def test_write_mcp_config_toml_contains_server_sections(tmp_path):
 
 
 def test_write_mcp_config_json_contains_server_keys(tmp_path):
-    from openakita.agents.cli_providers.codex import write_mcp_config
+    from openakita.agents.cli_providers._common import write_mcp_config
 
     fake_info = MagicMock(command="npx", args=["-y", "pkg"], env={})
-    with patch("openakita.agents.cli_providers.codex.MCPCatalog") as Catalog:
+    with patch("openakita.agents.cli_providers._common.MCPCatalog") as Catalog:
         Catalog.return_value.get_server = MagicMock(return_value=fake_info)
         path = write_mcp_config(tmp_path, ("web-search", "github"), fmt="json")
 
@@ -128,7 +128,7 @@ def test_write_mcp_config_json_contains_server_keys(tmp_path):
 
 
 def test_write_mcp_config_returns_none_for_empty():
-    from openakita.agents.cli_providers.codex import write_mcp_config
+    from openakita.agents.cli_providers._common import write_mcp_config
 
     assert write_mcp_config(Path("/tmp"), (), fmt="toml") is None
     assert write_mcp_config(Path("/tmp"), (), fmt="json") is None

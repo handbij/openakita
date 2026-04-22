@@ -33,6 +33,10 @@ class Settings(BaseSettings):
 
     # Agent configuration
     agent_name: str = Field(default="OpenAkita", description="Agent name")
+    external_cli_max_concurrent: int = Field(
+        default=3,
+        description="Max concurrent external CLI agent subprocesses (Claude Code, Codex, Goose, etc.).",
+    )
     max_iterations: int = Field(
         default=30,
         ge=5,

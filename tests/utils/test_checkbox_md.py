@@ -1,10 +1,13 @@
 """Maestro-parity tests for src/openakita/utils/checkbox_md.py."""
 from __future__ import annotations
 
-from openakita.utils.checkbox_md import CheckboxCounts, count_checkboxes
-from openakita.utils.checkbox_md import count_checked, count_unchecked
-from openakita.utils.checkbox_md import uncheck_all
-
+from openakita.utils.checkbox_md import (
+    CheckboxCounts,
+    count_checkboxes,
+    count_checked,
+    count_unchecked,
+    uncheck_all,
+)
 
 FIXTURE_MIXED = """\
 # Backlog
@@ -109,3 +112,18 @@ def test_uncheck_all_leaves_non_task_brackets_alone():
     # must be left alone so we don't corrupt prose.
     content = "This paragraph mentions [x] in the middle of a sentence.\n"
     assert uncheck_all(content) == content
+
+
+def test_public_exports():
+    import openakita.utils.checkbox_md as mod
+
+    assert set(mod.__all__) == {
+        "CheckboxCounts",
+        "count_checkboxes",
+        "count_unchecked",
+        "count_checked",
+        "uncheck_all",
+    }
+    # Internal regexes stay private.
+    assert mod._UNCHECKED  # still accessible for whitebox tests
+    # The underscore prefix is the only "please don't import me" hint.

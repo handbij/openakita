@@ -7,6 +7,14 @@ both `-` and `*` bullets and leading whitespace are handled too.
 """
 from __future__ import annotations
 
+__all__ = [
+    "CheckboxCounts",
+    "count_checkboxes",
+    "count_unchecked",
+    "count_checked",
+    "uncheck_all",
+]
+
 import re
 from dataclasses import dataclass
 

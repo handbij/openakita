@@ -309,7 +309,7 @@ function taskToForm(task: ScheduledTask): TaskForm {
       loop_enabled: !!pb.loop_enabled,
       max_loops: typeof pb.max_loops === "number" ? pb.max_loops : null,
       worktree_enabled: !!(pb.worktree && pb.worktree.enabled),
-      agent_profile_id: (task as any).agent_profile_id || "default",
+      agent_profile_id: task.agent_profile_id || "default",
     };
   }
 
@@ -498,8 +498,15 @@ export function SchedulerView({ serviceRunning, apiBaseUrl = "" }: { serviceRunn
     if (!IS_WEB) return;
     return onWsEvent((event, payload) => {
       if (event === "scheduler:task_update") fetchTasks(false);
-      if (event === "autorun:state" && payload && (payload as any).task_id) {
-        setAutorunStates(prev => ({ ...prev, [(payload as any).task_id]: payload as AutorunState }));
+      if (
+        event === "autorun:state" &&
+        payload !== null &&
+        typeof payload === "object" &&
+        "task_id" in payload &&
+        typeof (payload as { task_id: unknown }).task_id === "string"
+      ) {
+        const state = payload as AutorunState;
+        setAutorunStates(prev => ({ ...prev, [state.task_id]: state }));
       }
     });
   }, [fetchTasks]);

@@ -452,3 +452,77 @@ async def test_maybe_create_worktree_enabled(make_task, monkeypatch,
     wt = await run._maybe_create_worktree()
     assert wt is sentinel
     captured.assert_awaited_once_with(agent_id=run.run_id, project_root="/abs/repo")
+
+
+@pytest.mark.asyncio
+async def test_execute_returns_error_when_profile_missing(make_task, monkeypatch,
+                                                          agent_factory_mock):
+    from openakita.scheduler import autorun_playbook as ap
+    from openakita.scheduler.autorun_playbook import PlaybookRun
+
+    factory, _ = agent_factory_mock
+    store = MagicMock()
+    store.get = MagicMock(return_value=None)
+    task = make_task(agent_profile_id="gone")
+    run = PlaybookRun(task, executor=MagicMock(),
+                     profile_store=store, agent_factory=factory)
+    monkeypatch.setattr(ap, "broadcast_event", AsyncMock())
+
+    ok, msg = await run.execute()
+    assert ok is False
+    assert "gone" in msg
+    factory.create.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_execute_happy_path_single_loop(tmp_path, make_task, monkeypatch,
+                                              profile_store_mock):
+    """loop_enabled=False: one pass, agent flips all boxes, state transitions
+    INITIALIZING -> RUNNING -> COMPLETING, return (True, "completed 1 loop(s)")."""
+    from openakita.scheduler import autorun_playbook as ap
+    from openakita.scheduler.autorun_playbook import PlaybookRun
+
+    md = tmp_path / "x.md"
+    md.write_text("- [ ] a\n- [ ] b\n")
+    task = make_task(documents=[{"filename": str(md)}], loop_enabled=False)
+
+    agent = _make_flipping_agent(md)
+    factory = MagicMock()
+    factory.create = AsyncMock(return_value=agent)
+    run = PlaybookRun(task, executor=MagicMock(),
+                     profile_store=profile_store_mock, agent_factory=factory)
+    monkeypatch.setattr(ap, "broadcast_event", AsyncMock())
+
+    ok, msg = await run.execute()
+    assert ok is True
+    assert msg == "completed 1 loop(s)"
+    assert md.read_text().count("[x]") == 2
+    agent.shutdown.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_cleans_worktree_on_success(tmp_path, make_task, monkeypatch,
+                                                  profile_store_mock):
+    from openakita.scheduler import autorun_playbook as ap
+    from openakita.scheduler.autorun_playbook import PlaybookRun
+
+    md = tmp_path / "x.md"
+    md.write_text("- [ ] a\n")
+    task = make_task(documents=[{"filename": str(md)}],
+                     worktree={"enabled": True, "keep_on_failure": True})
+
+    agent = _make_flipping_agent(md)
+    factory = MagicMock()
+    factory.create = AsyncMock(return_value=agent)
+    run = PlaybookRun(task, executor=MagicMock(),
+                     profile_store=profile_store_mock, agent_factory=factory)
+
+    wt_sentinel = MagicMock(name="WorktreeInfo")
+    monkeypatch.setattr(ap, "broadcast_event", AsyncMock())
+    monkeypatch.setattr(ap, "create_agent_worktree", AsyncMock(return_value=wt_sentinel))
+    cleanup = AsyncMock(return_value=True)
+    monkeypatch.setattr(ap, "cleanup_agent_worktree", cleanup)
+
+    ok, _ = await run.execute()
+    assert ok is True
+    cleanup.assert_awaited_once_with(wt_sentinel)

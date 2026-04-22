@@ -8,6 +8,7 @@ identical.
 """
 from __future__ import annotations
 
+import asyncio
 import shutil
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -16,9 +17,11 @@ from uuid import uuid4
 
 from openakita.agents.factory import AgentFactory
 from openakita.api.routes.websocket import broadcast_event
-from openakita.utils.checkbox_md import count_checkboxes
+from openakita.utils.atomic_io import safe_write
+from openakita.utils.checkbox_md import count_checkboxes, uncheck_all
 from openakita.utils.worktree import (
     WorktreeInfo,
+    cleanup_agent_worktree,
     create_agent_worktree,
 )
 
@@ -199,6 +202,53 @@ class PlaybookRun:
             "error": extra.pop("error", None),
             **extra,
         })
+
+    async def execute(self) -> tuple[bool, str]:
+        """Outer orchestration. Returns (ok, summary_msg)."""
+        profile = self.profile_store.get(self.profile_id)
+        if profile is None:
+            return False, f"agent profile not found: {self.profile_id}"
+
+        agent = None
+        agent, self.wt_info = await asyncio.gather(
+            self.agent_factory.create(profile),
+            self._maybe_create_worktree(),
+        )
+        succeeded = False
+        loop_iter = 0
+        try:
+            self.state = PlaybookState.RUNNING
+            self._refresh_all_doc_snapshots(loop_iter)
+            await self._broadcast()
+            while True:
+                progressed = await self._run_doc_pass(agent, loop_iter)
+                if self._stopping:
+                    break
+                if not self.cfg.loop_enabled:
+                    break
+                if self.cfg.max_loops and loop_iter + 1 >= self.cfg.max_loops:
+                    break
+                if not progressed:
+                    break
+                for doc in self._reset_docs():
+                    reset_path = Path(self._effective_path(doc, loop_iter))
+                    safe_write(reset_path, uncheck_all(reset_path.read_text()))
+                    self._refresh_doc_snapshot(doc, reset_path)
+                loop_iter += 1
+                self._loop_iter = loop_iter
+                self._refresh_all_doc_snapshots(loop_iter)
+                await self._broadcast(loop_iter=loop_iter)
+            self.state = PlaybookState.COMPLETING
+            await self._broadcast()
+            succeeded = True
+            return True, f"completed {loop_iter + 1} loop(s)"
+        finally:
+            if self.wt_info is not None:
+                keep = self.cfg.worktree.keep_on_failure
+                if succeeded or not keep:
+                    await cleanup_agent_worktree(self.wt_info)
+            if agent is not None and hasattr(agent, "shutdown"):
+                await agent.shutdown()
 
 
 __all__ = [

@@ -138,3 +138,76 @@ def test_session_root_is_codex_sessions():
     from openakita.agents.cli_providers import codex
 
     assert codex.SESSION_ROOT == Path.home() / ".codex" / "sessions"
+
+
+@pytest.mark.asyncio
+async def test_run_streams_events_into_provider_run_result(tmp_path):
+    from openakita.agents.cli_providers import codex
+
+    events = [
+        {"type": "session_start", "session_id": "codex-sess-7"},
+        {"type": "assistant_delta", "text": "Refactoring "},
+        {"type": "tool_call", "name": "write_file"},
+        {"type": "assistant_delta", "text": "complete."},
+        {"type": "turn_end", "usage": {"input_tokens": 8, "output_tokens": 2}},
+    ]
+    script = "\n".join("echo " + json.dumps(json.dumps(e)) for e in events)
+    argv = ["sh", "-c", script]
+
+    profile = _make_profile()
+    req = _make_request(profile, cwd=tmp_path)
+    result = await codex.PROVIDER.run(
+        req, argv, env={}, on_spawn=lambda _: None,
+    )
+
+    assert isinstance(result, ProviderRunResult)
+    assert result.session_id == "codex-sess-7"
+    assert result.final_text == "Refactoring complete."
+    assert result.tools_used == ["write_file"]
+    assert result.input_tokens == 8
+    assert result.output_tokens == 2
+    assert result.exit_reason == ExitReason.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_run_honors_cancellation(tmp_path):
+    from openakita.agents.cli_providers import codex
+
+    profile = _make_profile()
+    req = _make_request(profile, cwd=tmp_path)
+    req.cancelled.set()
+    argv = ["sh", "-c", "for i in $(seq 1 100); do echo '{}'; sleep 0.1; done"]
+
+    result = await codex.PROVIDER.run(req, argv, env={}, on_spawn=lambda _: None)
+    assert result.exit_reason == ExitReason.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_codex_home_tempdir_is_cleaned_up(tmp_path):
+    from openakita.agents.cli_providers import codex
+
+    captured_home: dict[str, str] = {}
+    argv = [
+        "sh", "-c",
+        'echo {\\"type\\":\\"turn_end\\",\\"usage\\":{\\"input_tokens\\":1,\\"output_tokens\\":1}}',
+    ]
+
+    # Monkey-patch stream_cli_subprocess to capture the env CODEX_HOME value,
+    # then yield the one canned line.
+    from openakita.agents.cli_providers import _common as common_mod
+
+    async def fake_stream(argv, env, cwd, cancelled, *, on_spawn):
+        captured_home["home"] = env.get("CODEX_HOME", "")
+        on_spawn(type("P", (), {"stderr": None, "returncode": 0,
+                                "wait": lambda self: asyncio.sleep(0)})())
+        yield b'{"type":"turn_end","usage":{"input_tokens":1,"output_tokens":1}}\n'
+
+    with patch.object(common_mod, "stream_cli_subprocess", fake_stream), \
+         patch("openakita.agents.cli_providers.codex.stream_cli_subprocess", fake_stream):
+        profile = _make_profile(cli_permission_mode=CliPermissionMode.WRITE)
+        req = _make_request(profile, cwd=tmp_path, mcp_servers=("web-search",))
+        await codex.PROVIDER.run(req, argv, env={}, on_spawn=lambda _: None)
+
+    assert captured_home["home"]
+    # After run returns, the tempdir must no longer exist.
+    assert not Path(captured_home["home"]).exists()

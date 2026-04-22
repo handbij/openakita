@@ -892,6 +892,13 @@ interface ExtInfo {
   homepage: string;
   license: string;
   author: string;
+  cli_provider_id?: string;
+}
+
+function categoryBadgeColor(category: string): string {
+  if (category === "Web") return "var(--accent, #5B8DEF)";
+  if (category === "AI Agent") return "#D97757";
+  return "#8b5cf6";
 }
 
 function ExtensionsCard({
@@ -969,7 +976,7 @@ function ExtensionsCard({
               <span style={{ fontSize: 14, fontWeight: 600 }}>{ext.name}</span>
               <span style={{
                 fontSize: 10, padding: "1px 6px", borderRadius: 4, fontWeight: 600,
-                background: ext.category === "Web" ? "var(--accent, #5B8DEF)" : "#8b5cf6",
+                background: categoryBadgeColor(ext.category),
                 color: "#fff",
               }}>
                 {ext.category}
@@ -994,35 +1001,66 @@ function ExtensionsCard({
             </p>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "4px 8px", alignItems: "center", fontSize: 12 }}>
-            <span className="text-muted-foreground">{t("adv.extInstall")}:</span>
-            <code className="text-xs font-mono" style={{ background: "var(--muted-bg, #f4f4f5)", padding: "1px 6px", borderRadius: 4 }}>
-              {ext.install_cmd}
-            </code>
-            <Button variant="ghost" size="xs" onClick={() => copyCmd(ext.install_cmd)} style={{ padding: "2px 6px", fontSize: 11 }}>
-              <IconClipboard size={12} />
-            </Button>
-
-            <span className="text-muted-foreground">{t("adv.extUpgrade")}:</span>
-            <code className="text-xs font-mono" style={{ background: "var(--muted-bg, #f4f4f5)", padding: "1px 6px", borderRadius: 4 }}>
-              {ext.upgrade_cmd}
-            </code>
-            <Button variant="ghost" size="xs" onClick={() => copyCmd(ext.upgrade_cmd)} style={{ padding: "2px 6px", fontSize: 11 }}>
-              <IconClipboard size={12} />
-            </Button>
-
-            {ext.setup_cmd && (
-              <>
-                <span className="text-muted-foreground">{t("adv.extSetup")}:</span>
-                <code className="text-xs font-mono" style={{ background: "var(--muted-bg, #f4f4f5)", padding: "1px 6px", borderRadius: 4 }}>
-                  {ext.setup_cmd}
-                </code>
-                <Button variant="ghost" size="xs" onClick={() => copyCmd(ext.setup_cmd!)} style={{ padding: "2px 6px", fontSize: 11 }}>
-                  <IconClipboard size={12} />
+          {ext.category === "AI Agent" ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 12 }}>
+              {ext.installed ? (
+                <Button
+                  variant="default"
+                  size="xs"
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent("openAgentManagerWithCli", {
+                      detail: { cli_provider_id: ext.cli_provider_id },
+                    }));
+                  }}
+                >
+                  {t("adv.extConfigure")} →
                 </Button>
-              </>
-            )}
-          </div>
+              ) : (
+                <>
+                  <span className="text-muted-foreground">{t("adv.extInstall")}:</span>
+                  <code className="text-xs font-mono" style={{
+                    background: "var(--muted-bg, #f4f4f5)", padding: "1px 6px", borderRadius: 4,
+                  }}>
+                    {ext.install_cmd}
+                  </code>
+                  <Button variant="ghost" size="xs" onClick={() => copyCmd(ext.install_cmd)}
+                          style={{ padding: "2px 6px", fontSize: 11 }}>
+                    <IconClipboard size={12} />
+                  </Button>
+                </>
+              )}
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "4px 8px", alignItems: "center", fontSize: 12 }}>
+              <span className="text-muted-foreground">{t("adv.extInstall")}:</span>
+              <code className="text-xs font-mono" style={{ background: "var(--muted-bg, #f4f4f5)", padding: "1px 6px", borderRadius: 4 }}>
+                {ext.install_cmd}
+              </code>
+              <Button variant="ghost" size="xs" onClick={() => copyCmd(ext.install_cmd)} style={{ padding: "2px 6px", fontSize: 11 }}>
+                <IconClipboard size={12} />
+              </Button>
+
+              <span className="text-muted-foreground">{t("adv.extUpgrade")}:</span>
+              <code className="text-xs font-mono" style={{ background: "var(--muted-bg, #f4f4f5)", padding: "1px 6px", borderRadius: 4 }}>
+                {ext.upgrade_cmd}
+              </code>
+              <Button variant="ghost" size="xs" onClick={() => copyCmd(ext.upgrade_cmd)} style={{ padding: "2px 6px", fontSize: 11 }}>
+                <IconClipboard size={12} />
+              </Button>
+
+              {ext.setup_cmd && (
+                <>
+                  <span className="text-muted-foreground">{t("adv.extSetup")}:</span>
+                  <code className="text-xs font-mono" style={{ background: "var(--muted-bg, #f4f4f5)", padding: "1px 6px", borderRadius: 4 }}>
+                    {ext.setup_cmd}
+                  </code>
+                  <Button variant="ghost" size="xs" onClick={() => copyCmd(ext.setup_cmd!)} style={{ padding: "2px 6px", fontSize: 11 }}>
+                    <IconClipboard size={12} />
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
 
           <div className="flex items-center gap-3 text-xs text-muted-foreground" style={{ marginTop: 8 }}>
             <a href={ext.homepage} style={{ color: "var(--accent, #5B8DEF)", textDecoration: "none" }}>

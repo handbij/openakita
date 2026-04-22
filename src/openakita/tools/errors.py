@@ -37,6 +37,17 @@ class ErrorType(Enum):
     RESOURCE_NOT_FOUND = "not_found"  # Resource not found (file, URL, etc.)
     RATE_LIMIT = "rate_limit"  # Rate limit exceeded, retry after waiting
     DEPENDENCY = "dependency"  # Dependency missing (missing command, library, etc.)
+    # Added for external-CLI fallback routing (plan 06)
+    AUTH = "auth"
+    AUTH_PERMANENT = "auth_permanent"
+    BILLING = "billing"
+    OVERLOADED = "overloaded"
+    MODEL_NOT_FOUND = "model_not_found"
+    CONTEXT_OVERFLOW = "context_overflow"
+    SERVER = "server"
+    NETWORK = "network"
+    CONTENT_FILTER = "content_filter"
+    FORMAT = "format"
 
 
 # LLM-friendly error type hints, injected into tool_result to help the LLM decide
@@ -49,6 +60,16 @@ _ERROR_TYPE_HINTS: dict[ErrorType, str] = {
     ErrorType.RESOURCE_NOT_FOUND: "Target resource not found, please confirm the path/URL and retry",
     ErrorType.RATE_LIMIT: "Request rate too high, please wait a few seconds and retry",
     ErrorType.DEPENDENCY: "Missing dependency (command or library), please install it first and retry",
+    ErrorType.AUTH: "Authentication issue — refresh credentials and retry",
+    ErrorType.AUTH_PERMANENT: "Authentication permanently failed — user must re-auth manually",
+    ErrorType.BILLING: "Billing error — check account quota or payment method",
+    ErrorType.OVERLOADED: "Provider is overloaded — retry later or use a fallback profile",
+    ErrorType.MODEL_NOT_FOUND: "Requested model not available — check model id in profile",
+    ErrorType.CONTEXT_OVERFLOW: "Context window exceeded — shorten input or switch to a longer-context model",
+    ErrorType.SERVER: "Provider server error (5xx) — retry after brief wait",
+    ErrorType.NETWORK: "Network error — check connectivity and retry",
+    ErrorType.CONTENT_FILTER: "Response blocked by content filter — rephrase the prompt",
+    ErrorType.FORMAT: "Provider returned malformed output — retry once; if persistent, file a bug",
 }
 
 

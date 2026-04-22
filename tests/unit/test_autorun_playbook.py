@@ -194,3 +194,73 @@ def test_reset_docs_filters_by_flag(make_task, profile_store_mock, agent_factory
                      profile_store=profile_store_mock, agent_factory=factory)
     reset = run._reset_docs()
     assert [d.filename for d in reset] == ["/b.md", "/c.md"]
+
+
+def test_refresh_doc_snapshot_counts_checkboxes(tmp_path, make_task,
+                                                profile_store_mock, agent_factory_mock):
+    from openakita.scheduler.autorun_playbook import PlaybookDocumentSpec, PlaybookRun
+
+    factory, _ = agent_factory_mock
+    md = tmp_path / "x.md"
+    md.write_text("- [ ] a\n- [x] b\n- [ ] c\n")
+    task = make_task(documents=[{"filename": str(md)}])
+    run = PlaybookRun(task, executor=MagicMock(),
+                     profile_store=profile_store_mock, agent_factory=factory)
+
+    doc = PlaybookDocumentSpec(filename=str(md))
+    run._refresh_doc_snapshot(doc, md)
+    snap = run._doc_snapshots[str(md)]
+    assert snap == {"filename": str(md), "total": 3, "checked": 1, "stalled": False}
+
+
+def test_refresh_doc_snapshot_preserves_stalled_flag(tmp_path, make_task,
+                                                     profile_store_mock, agent_factory_mock):
+    from openakita.scheduler.autorun_playbook import PlaybookDocumentSpec, PlaybookRun
+
+    factory, _ = agent_factory_mock
+    md = tmp_path / "x.md"
+    md.write_text("- [ ] a\n")
+    task = make_task(documents=[{"filename": str(md)}])
+    run = PlaybookRun(task, executor=MagicMock(),
+                     profile_store=profile_store_mock, agent_factory=factory)
+
+    doc = PlaybookDocumentSpec(filename=str(md))
+    run._doc_snapshots[str(md)] = {"filename": str(md), "total": 1,
+                                   "checked": 0, "stalled": True}
+    run._refresh_doc_snapshot(doc, md)
+    assert run._doc_snapshots[str(md)]["stalled"] is True
+
+
+def test_refresh_all_handles_missing_file(tmp_path, make_task,
+                                          profile_store_mock, agent_factory_mock):
+    from openakita.scheduler.autorun_playbook import PlaybookRun
+
+    factory, _ = agent_factory_mock
+    missing = tmp_path / "nope.md"
+    task = make_task(documents=[{"filename": str(missing)}])
+    run = PlaybookRun(task, executor=MagicMock(),
+                     profile_store=profile_store_mock, agent_factory=factory)
+
+    run._refresh_all_doc_snapshots(loop_iter=0)
+    snap = run._doc_snapshots[str(missing)]
+    assert snap == {"filename": str(missing), "total": 0, "checked": 0, "stalled": False}
+
+
+def test_docs_snapshot_returns_list_in_doc_order(tmp_path, make_task,
+                                                 profile_store_mock, agent_factory_mock):
+    from openakita.scheduler.autorun_playbook import PlaybookRun
+
+    factory, _ = agent_factory_mock
+    a = tmp_path / "a.md"
+    a.write_text("- [ ] x\n")
+    b = tmp_path / "b.md"
+    b.write_text("- [x] y\n")
+    task = make_task(documents=[{"filename": str(a)}, {"filename": str(b)}])
+    run = PlaybookRun(task, executor=MagicMock(),
+                     profile_store=profile_store_mock, agent_factory=factory)
+
+    run._refresh_all_doc_snapshots(loop_iter=0)
+    snap = run._docs_snapshot()
+    assert [d["filename"] for d in snap] == [str(a), str(b)]
+    assert snap[0]["checked"] == 0
+    assert snap[1]["checked"] == 1

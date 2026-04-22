@@ -15,6 +15,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from openakita.agents.factory import AgentFactory
+from openakita.utils.checkbox_md import count_checkboxes
 from openakita.utils.worktree import WorktreeInfo
 
 MAX_CONSECUTIVE_NO_CHANGES = 2
@@ -103,6 +104,35 @@ class PlaybookRun:
 
     def _reset_docs(self) -> list[PlaybookDocumentSpec]:
         return [d for d in self.cfg.documents if d.reset_on_completion]
+
+    def _refresh_doc_snapshot(self, doc: PlaybookDocumentSpec, path: Path,
+                              counts=None) -> None:
+        counts = counts or count_checkboxes(path.read_text())
+        prev_stalled = self._doc_snapshots.get(doc.filename, {}).get("stalled", False)
+        self._doc_snapshots[doc.filename] = {
+            "filename": doc.filename,
+            "total": counts.checked + counts.unchecked,
+            "checked": counts.checked,
+            "stalled": prev_stalled,
+        }
+
+    def _refresh_all_doc_snapshots(self, loop_iter: int) -> None:
+        for doc in self.cfg.documents:
+            effective = Path(self._effective_path(doc, loop_iter))
+            try:
+                self._refresh_doc_snapshot(doc, effective)
+            except OSError:
+                self._doc_snapshots[doc.filename] = {
+                    "filename": doc.filename, "total": 0, "checked": 0, "stalled": False,
+                }
+
+    def _docs_snapshot(self) -> list[dict]:
+        """Full per-doc checkbox state included on every broadcast so the frontend
+        reconstructs the run from the last payload alone (Maestro full-state-push
+        pattern). Counts come from `_doc_snapshots`; broadcast does not re-scan."""
+        return [dict(self._doc_snapshots.get(d.filename, {
+            "filename": d.filename, "total": 0, "checked": 0, "stalled": False,
+        })) for d in self.cfg.documents]
 
 
 __all__ = [

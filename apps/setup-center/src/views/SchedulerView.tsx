@@ -414,7 +414,20 @@ export function SchedulerView({ serviceRunning, apiBaseUrl = "" }: { serviceRunn
     }
   }, [serviceRunning, t]);
 
-  useEffect(() => { fetchTasks(); fetchChannels(); }, [fetchTasks, fetchChannels]);
+  const fetchProfiles = useCallback(async () => {
+    if (!serviceRunning) return;
+    try {
+      const res = await safeFetch(`${API_BASE}/api/agents/profiles?include_hidden=true`);
+      const data = await res.json();
+      const list = (data.profiles || []) as AgentProfile[];
+      setProfiles(list);
+    } catch {
+      /* non-fatal — the form falls back to the default profile */
+    }
+  }, [serviceRunning, API_BASE]);
+
+  useEffect(() => { fetchTasks(); fetchChannels(); fetchProfiles(); },
+            [fetchTasks, fetchChannels, fetchProfiles]);
 
   useEffect(() => {
     if (!serviceRunning) return;
@@ -1317,11 +1330,173 @@ export function SchedulerView({ serviceRunning, apiBaseUrl = "" }: { serviceRunn
 
 type AgentProfile = { profile_id: string; name: string; agent_type?: string };
 
-function PlaybookFormSection(_props: {
+function makeDocKey(): string {
+  return `doc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function PlaybookFormSection({
+  form, setForm, t, profiles,
+}: {
   form: TaskForm;
   setForm: React.Dispatch<React.SetStateAction<TaskForm>>;
   t: (k: string, opts?: any) => string;
   profiles: AgentProfile[];
 }) {
-  return null;
+  const pb = form.playbook;
+  const setPb = (updater: (prev: TaskForm["playbook"]) => TaskForm["playbook"]) =>
+    setForm(f => ({ ...f, playbook: updater(f.playbook) }));
+
+  const addDoc = () => setPb(prev => ({
+    ...prev,
+    documents: [...prev.documents, { key: makeDocKey(), filename: "", reset_on_completion: false }],
+  }));
+  const removeDoc = (key: string) => setPb(prev => ({
+    ...prev, documents: prev.documents.filter(d => d.key !== key),
+  }));
+  const updateDoc = (key: string, patch: Partial<PlaybookDocForm>) => setPb(prev => ({
+    ...prev,
+    documents: prev.documents.map(d => d.key === key ? { ...d, ...patch } : d),
+  }));
+
+  // Native HTML5 DnD reorder. `draggedKey` is local to the component — no
+  // extra library, no extra state lifted to the parent.
+  const [draggedKey, setDraggedKey] = React.useState<string | null>(null);
+  const onDragStart = (key: string) => setDraggedKey(key);
+  const onDragOver = (e: React.DragEvent, overKey: string) => {
+    e.preventDefault();
+    if (!draggedKey || draggedKey === overKey) return;
+    setPb(prev => {
+      const from = prev.documents.findIndex(d => d.key === draggedKey);
+      const to = prev.documents.findIndex(d => d.key === overKey);
+      if (from < 0 || to < 0) return prev;
+      const next = prev.documents.slice();
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return { ...prev, documents: next };
+    });
+  };
+  const onDragEnd = () => setDraggedKey(null);
+
+  return (
+    <div className="space-y-4 border rounded p-3">
+      <div className="space-y-1.5">
+        <Label>{t("scheduler.playbook.agentProfile")}</Label>
+        <Select
+          value={pb.agent_profile_id}
+          onValueChange={v => setPb(prev => ({ ...prev, agent_profile_id: v }))}
+        >
+          <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {profiles.map(p => (
+              <SelectItem key={p.profile_id} value={p.profile_id}>
+                {p.name || p.profile_id}
+                {p.agent_type === "external_cli" ? " · CLI" : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <Label className="mb-0">{t("scheduler.playbook.documents")}</Label>
+          <Button type="button" variant="outline" size="sm" onClick={addDoc}>
+            <Plus size={14} className="mr-1" />
+            {t("scheduler.playbook.addDocument")}
+          </Button>
+        </div>
+        {pb.documents.length === 0 && (
+          <p className="text-xs text-muted-foreground">
+            {t("scheduler.playbook.noDocuments")}
+          </p>
+        )}
+        <ul className="space-y-1.5">
+          {pb.documents.map(doc => (
+            <li
+              key={doc.key}
+              draggable
+              onDragStart={() => onDragStart(doc.key)}
+              onDragOver={e => onDragOver(e, doc.key)}
+              onDragEnd={onDragEnd}
+              className={cn(
+                "flex items-center gap-2 border rounded px-2 py-1.5 bg-background",
+                draggedKey === doc.key && "opacity-50",
+              )}
+              title={t("scheduler.playbook.dragToReorder")}
+            >
+              <span className="cursor-grab select-none text-muted-foreground">⋮⋮</span>
+              <Input
+                className="flex-1 h-8"
+                placeholder={t("scheduler.playbook.filenamePlaceholder")}
+                value={doc.filename}
+                onChange={e => updateDoc(doc.key, { filename: e.target.value })}
+              />
+              <label className="flex items-center gap-1.5 text-xs whitespace-nowrap">
+                <Checkbox
+                  checked={doc.reset_on_completion}
+                  onCheckedChange={c => updateDoc(doc.key, { reset_on_completion: !!c })}
+                />
+                {t("scheduler.playbook.resetOnCompletion")}
+              </label>
+              <Button
+                type="button" variant="ghost" size="icon-sm"
+                title={t("scheduler.playbook.removeDoc")}
+                onClick={() => removeDoc(doc.key)}
+                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 size={12} />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>{t("scheduler.playbook.prompt")}</Label>
+        <Textarea
+          rows={3}
+          value={pb.prompt}
+          onChange={e => setPb(prev => ({ ...prev, prompt: e.target.value }))}
+          className="resize-y"
+        />
+        <p className="text-xs text-muted-foreground">{t("scheduler.playbook.promptHint")}</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <label className="flex items-center gap-2">
+          <Checkbox
+            checked={pb.loop_enabled}
+            onCheckedChange={c => setPb(prev => ({ ...prev, loop_enabled: !!c }))}
+          />
+          <span className="text-sm">{t("scheduler.playbook.loopEnabled")}</span>
+        </label>
+        <div className="space-y-1">
+          <Label className="text-xs">{t("scheduler.playbook.maxLoops")}</Label>
+          <Input
+            type="number" min={1}
+            className="h-8"
+            placeholder={t("scheduler.playbook.maxLoopsPlaceholder")}
+            value={pb.max_loops == null ? "" : String(pb.max_loops)}
+            onChange={e => {
+              const raw = e.target.value.trim();
+              const next = raw === "" ? null : Math.max(1, parseInt(raw, 10) || 1);
+              setPb(prev => ({ ...prev, max_loops: next }));
+            }}
+            disabled={!pb.loop_enabled}
+          />
+        </div>
+      </div>
+
+      <label className="flex items-center gap-2">
+        <Checkbox
+          checked={pb.worktree_enabled}
+          onCheckedChange={c => setPb(prev => ({ ...prev, worktree_enabled: !!c }))}
+        />
+        <span className="text-sm">{t("scheduler.playbook.worktreeEnabled")}</span>
+      </label>
+      <p className="text-xs text-muted-foreground -mt-3">
+        {t("scheduler.playbook.worktreeHint")}
+      </p>
+    </div>
+  );
 }

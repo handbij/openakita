@@ -73,6 +73,25 @@ type IMChannel = {
 // Frontend-only schedule mode; maps to backend trigger_type (once/interval/cron)
 type ScheduleMode = "once" | "interval" | "daily" | "weekly" | "monthly" | "custom";
 
+type AutorunDocState = {
+  filename: string;
+  total: number;
+  checked: number;
+  stalled: boolean;
+};
+
+type AutorunState = {
+  run_id: string;
+  task_id: string;
+  state: "initializing" | "running" | "stopping" | "completing";
+  docs: AutorunDocState[];
+  active_doc: string | null;
+  delta: number | null;
+  loop_iter?: number;
+  error?: string | null;
+  stalled?: boolean;
+};
+
 type PlaybookDocForm = {
   key: string;
   filename: string;
@@ -408,6 +427,7 @@ export function SchedulerView({ serviceRunning, apiBaseUrl = "" }: { serviceRunn
   
   const [channels, setChannels] = useState<IMChannel[]>([]);
   const [profiles, setProfiles] = useState<AgentProfile[]>([]);
+  const [autorunStates, setAutorunStates] = useState<Record<string, AutorunState>>({});
   const [activeTab, setActiveTab] = useState<TaskTab>("active");
   const [searchQuery, setSearchQuery] = useState("");
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
@@ -476,8 +496,11 @@ export function SchedulerView({ serviceRunning, apiBaseUrl = "" }: { serviceRunn
 
   useEffect(() => {
     if (!IS_WEB) return;
-    return onWsEvent((event) => {
+    return onWsEvent((event, payload) => {
       if (event === "scheduler:task_update") fetchTasks(false);
+      if (event === "autorun:state" && payload && (payload as any).task_id) {
+        setAutorunStates(prev => ({ ...prev, [(payload as any).task_id]: payload as AutorunState }));
+      }
     });
   }, [fetchTasks]);
 
@@ -1335,6 +1358,10 @@ export function SchedulerView({ serviceRunning, apiBaseUrl = "" }: { serviceRunn
                     </div>
                   )}
 
+                  {task.action === "system:autorun_playbook" && (
+                    <PlaybookProgressCard state={autorunStates[task.id]} t={t} />
+                  )}
+
                   {/* Execution history */}
                   {expandedHistory[task.id] && (
                     <div className="mt-2.5 px-3 py-2 rounded-md bg-muted/40 border border-border/60 text-xs text-muted-foreground animate-in slide-in-from-top-2 duration-200">
@@ -1558,6 +1585,45 @@ function PlaybookFormSection({
       <p className="text-xs text-muted-foreground -mt-3">
         {t("scheduler.playbook.worktreeHint")}
       </p>
+    </div>
+  );
+}
+
+function PlaybookProgressCard({ state, t }: {
+  state: AutorunState | undefined;
+  t: (k: string, opts?: any) => string;
+}) {
+  if (!state) return null;
+  const totalChecked = state.docs.reduce((s, d) => s + d.checked, 0);
+  const totalTotal = state.docs.reduce((s, d) => s + d.total, 0);
+  const pct = totalTotal === 0 ? 0 : Math.round((totalChecked / totalTotal) * 100);
+
+  let label: string;
+  if (state.error) label = t("scheduler.playbook.progressError", { error: state.error });
+  else if (state.state === "completing") label = t("scheduler.playbook.progressCompleting");
+  else label = t("scheduler.playbook.progressRunning");
+
+  return (
+    <div className="mt-2 rounded border bg-muted/30 p-2 text-xs space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="font-medium">{label}</span>
+        {typeof state.loop_iter === "number" && (
+          <Badge variant="secondary" className="text-[10px]">
+            {t("scheduler.playbook.progressLoop", { n: state.loop_iter + 1 })}
+          </Badge>
+        )}
+      </div>
+      <div className="h-1.5 w-full bg-background rounded overflow-hidden">
+        <div className="h-full bg-primary transition-[width]" style={{ width: `${pct}%` }} />
+      </div>
+      <div className="text-[10px] text-muted-foreground">
+        {t("scheduler.playbook.progressDocs", { checked: totalChecked, total: totalTotal })}
+      </div>
+      {state.docs.filter(d => d.stalled).map(d => (
+        <div key={d.filename} className="text-[10px] text-amber-600 dark:text-amber-400">
+          ⚠︎ {d.filename}: {t("scheduler.playbook.progressStalled")}
+        </div>
+      ))}
     </div>
   );
 }

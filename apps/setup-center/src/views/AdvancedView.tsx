@@ -882,7 +882,6 @@ interface ExtInfo {
   id: string;
   name: string;
   description: string;
-  description_zh: string;
   category: string;
   installed: boolean;
   path: string | null;
@@ -937,8 +936,6 @@ function ExtensionsCard({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiReady]);
 
-  const isZh = i18n.language?.startsWith("zh");
-
   function copyCmd(cmd: string) {
     navigator.clipboard.writeText(cmd).then(() => {
       notifySuccess(t("adv.extCopied"));
@@ -992,7 +989,7 @@ function ExtensionsCard({
           </div>
 
           <p className="text-xs text-muted-foreground" style={{ marginBottom: 8 }}>
-            {isZh ? ext.description_zh : ext.description}
+            {ext.description}
           </p>
 
           {ext.installed && ext.path && (

@@ -889,14 +889,14 @@ async def export_plugin(plugin_id: str) -> Response:
 # --- Hub / Marketplace ---
 
 PLUGIN_CATEGORIES = [
-    {"slug": "channel", "name": "Chat Providers", "name_zh": "聊天通道", "icon": "message-circle"},
-    {"slug": "llm", "name": "AI Models", "name_zh": "AI 模型", "icon": "cpu"},
-    {"slug": "knowledge", "name": "Productivity", "name_zh": "知识与效率", "icon": "book-open"},
-    {"slug": "tool", "name": "Tools & Automation", "name_zh": "工具与自动化", "icon": "wrench"},
-    {"slug": "memory", "name": "Memory", "name_zh": "记忆存储", "icon": "brain"},
-    {"slug": "hook", "name": "Hooks & Extensions", "name_zh": "钩子与扩展", "icon": "git-branch"},
-    {"slug": "skill", "name": "Skills", "name_zh": "技能", "icon": "star"},
-    {"slug": "mcp", "name": "MCP Servers", "name_zh": "MCP 服务", "icon": "plug"},
+    {"slug": "channel", "name": "Chat Providers", "icon": "message-circle"},
+    {"slug": "llm", "name": "AI Models", "icon": "cpu"},
+    {"slug": "knowledge", "name": "Productivity", "icon": "book-open"},
+    {"slug": "tool", "name": "Tools & Automation", "icon": "wrench"},
+    {"slug": "memory", "name": "Memory", "icon": "brain"},
+    {"slug": "hook", "name": "Hooks & Extensions", "icon": "git-branch"},
+    {"slug": "skill", "name": "Skills", "icon": "star"},
+    {"slug": "mcp", "name": "MCP Servers", "icon": "plug"},
 ]
 
 

@@ -188,27 +188,18 @@ class AgentToolHandler:
                 if store:
                     # ALL occurrences (including the first) get ephemeral clones
                     # to avoid sharing a pool instance with previous delegations
-                    from ...agents.profile import AgentProfile, AgentType
+                    from ...agents.profile import AgentProfile
 
                     base = store.get(agent_id)
                     if base:
                         ts = int(time.time() * 1000)
                         idx = seen_counter[agent_id]
                         eph_id = f"ephemeral_{agent_id}_{ts}_{idx}"
-                        clone = AgentProfile(
+                        clone = AgentProfile.derive_ephemeral_from(
+                            base,
                             id=eph_id,
                             name=f"{base.name} (clone-{idx})",
-                            description=base.description,
-                            type=AgentType.DYNAMIC,
-                            skills=list(base.skills),
-                            skills_mode=base.skills_mode,
-                            custom_prompt=base.custom_prompt or "",
-                            icon=base.icon or "🤖",
-                            color=base.color or "#6b7280",
-                            fallback_profile_id=base.fallback_profile_id,
                             created_by="ai_parallel_clone",
-                            ephemeral=True,
-                            inherit_from=agent_id,
                         )
                         store.save(clone)
                         ephemeral_ids.append(eph_id)
@@ -374,7 +365,7 @@ class AgentToolHandler:
             getattr(getattr(session, "context", None), "agent_profile_id", "default") or "default"
         )
 
-        from ...agents.profile import AgentProfile, AgentType, SkillsMode
+        from ...agents.profile import AgentProfile, SkillsMode
 
         store = self._get_profile_store()
         base_profile = store.get(inherit_from) if store else None
@@ -396,20 +387,15 @@ class AgentToolHandler:
         if custom_prompt_overlay:
             merged_prompt = f"{merged_prompt}\n\n{custom_prompt_overlay}".strip()
 
-        ephemeral_profile = AgentProfile(
+        ephemeral_profile = AgentProfile.derive_ephemeral_from(
+            base_profile,
             id=ephemeral_id,
             name=f"{base_profile.name} (ephemeral)",
             description=f"Inherited from {inherit_from}: {reason or message[:80]}",
-            type=AgentType.DYNAMIC,
             skills=merged_skills,
             skills_mode=base_profile.skills_mode if merged_skills else SkillsMode.ALL,
             custom_prompt=merged_prompt,
-            icon=base_profile.icon or "🤖",
-            color=base_profile.color or "#6b7280",
-            fallback_profile_id=base_profile.fallback_profile_id,
             created_by="ai_spawn",
-            ephemeral=True,
-            inherit_from=inherit_from,
         )
 
         store.save(ephemeral_profile)
@@ -562,9 +548,7 @@ class AgentToolHandler:
                     "[AgentToolHandler] Orchestrator was None — lazily created as fallback"
                 )
             else:
-                logger.warning(
-                    "[AgentToolHandler] _orchestrator is None (multi_agent disabled)"
-                )
+                logger.warning("[AgentToolHandler] _orchestrator is None (multi_agent disabled)")
             return orch
         except (ImportError, AttributeError) as e:
             logger.warning(f"[AgentToolHandler] Cannot access _orchestrator: {e}")

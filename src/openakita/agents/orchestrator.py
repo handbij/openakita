@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from openakita.agents.profile import AgentType
 from openakita.agents.task_queue import TaskQueue
 from openakita.core.timeout_utils import check_progress_timeout
 
@@ -650,6 +651,10 @@ class AgentOrchestrator:
             **existing_state,
             "agent_id": agent_profile_id,
             "profile_id": profile.id,
+            "agent_type": profile.type.value,
+            "cli_provider_id": (
+                profile.cli_provider_id.value if getattr(profile, "cli_provider_id", None) else None
+            ),
             "session_id": session.id,
             "chat_id": getattr(session, "chat_id", session.id),
             "status": "starting",
@@ -751,6 +756,12 @@ class AgentOrchestrator:
                     self._update_sub_state(state_key, "timeout", elapsed)
                     raise TimeoutError()
 
+            if task.cancelled():
+                raise asyncio.CancelledError()
+            if task.exception() is not None:
+                self._update_sub_state(state_key, "error", time.monotonic() - start)
+                return task.result()
+
             self._update_sub_state(state_key, "completed", time.monotonic() - start)
             return task.result()
         except asyncio.CancelledError:
@@ -841,6 +852,8 @@ class AgentOrchestrator:
                 "chat_id": state_entry.get("chat_id", ""),
                 "agent_id": state_entry.get("agent_id", ""),
                 "profile_id": state_entry.get("profile_id", ""),
+                "agent_type": state_entry.get("agent_type"),
+                "cli_provider_id": state_entry.get("cli_provider_id"),
                 "name": state_entry.get("name", ""),
                 "icon": state_entry.get("icon", ""),
                 "status": status,
@@ -994,6 +1007,8 @@ class AgentOrchestrator:
 
             _start = time.time()
             exit_reason = "completed"
+            profile = getattr(agent, "_agent_profile", None)
+            is_external_cli_agent = getattr(profile, "type", None) == AgentType.EXTERNAL_CLI
             try:
                 session_messages = session.context.get_messages()
                 result = await agent.chat_with_session(
@@ -1019,6 +1034,11 @@ class AgentOrchestrator:
                             result_artifacts.append({"path": str(artifact)})
                     if result.get("exit_reason"):
                         exit_reason = str(result["exit_reason"])
+                    if is_external_cli_agent and exit_reason == "error":
+                        err_text = str(
+                            result.get("error") or result.get("text") or "unknown error"
+                        )
+                        raise RuntimeError(f"external cli agent failed: {err_text[:300]}")
 
                 # Persist sub-agent work record into parent session
                 try:
@@ -1074,8 +1094,6 @@ class AgentOrchestrator:
                             )
                 except Exception as e:
                     logger.warning(f"[Orchestrator] Failed to forward artifact receipts: {e}")
-
-                profile = getattr(agent, "_agent_profile", None)
 
                 # 子 Agent 输出守卫：数值/统计任务但 trace 中未真实跑代码时，
                 # 在结论尾部追加 ⚠️ 数据未经代码执行验证，避免 P0 幻觉。
@@ -1239,14 +1257,22 @@ class AgentOrchestrator:
         state_key = f"{session.id}:{to_agent}:{uuid.uuid4().hex[:8]}"
         profile_name = to_agent
         profile_icon = "🤖"
+        agent_type = None
+        cli_provider_id = None
         if self._profile_store:
             p = self._profile_store.get(to_agent)
             if p:
                 profile_name = p.get_display_name()
                 profile_icon = p.icon or "🤖"
+                agent_type = p.type.value
+                cli_provider_id = (
+                    p.cli_provider_id.value if getattr(p, "cli_provider_id", None) else None
+                )
         self._sub_agent_states[state_key] = {
             "agent_id": to_agent,
             "profile_id": to_agent,
+            "agent_type": agent_type,
+            "cli_provider_id": cli_provider_id,
             "session_id": session.id,
             "chat_id": getattr(session, "chat_id", session.id),
             "name": profile_name,

@@ -1024,7 +1024,7 @@ function MainApp() {
     (async () => {
       unlisten = await listen("quit_failed", async (ev) => {
         const p = ev.payload as any;
-        const msg = String(p?.message || "退出失败：后台服务仍在运行。请先停止服务。");
+        const msg = String(p?.message || "Exit failed: the backend service is still running. Stop it first.");
         setView("status");
         notifyError(msg);
         try {
@@ -1342,7 +1342,7 @@ function MainApp() {
       notifyError(msg);
       setVenvStatus(`Installation failed: ${msg}`);
       setInstallLog("");
-      if (msg.includes("缺少 Setup Center 所需模块") || msg.includes("No module named 'openakita.setup_center'")) {
+      if (msg.includes("Missing Setup Center module") || msg.includes("No module named 'openakita.setup_center'")) {
         notifySuccess("The installed openakita does not include the Setup Center module. Try switching the install source to GitHub or Local source and reinstalling.");
       }
     } finally {
@@ -1602,7 +1602,7 @@ function MainApp() {
     if (IS_TAURI && currentWorkspaceId) {
       return invoke<string>("workspace_read_file", { workspaceId: currentWorkspaceId, relativePath });
     }
-    throw new Error(`读取配置失败：服务未运行且无本地工作区 (${relativePath})`);
+    throw new Error(`Failed to read configuration: service not running and no local workspace (${relativePath})`);
   }
 
   async function writeWorkspaceFile(relativePath: string, content: string): Promise<void> {
@@ -1618,7 +1618,7 @@ function MainApp() {
           });
           const reloaded = await triggerConfigReload();
           if (!reloaded) {
-            toast.warning("配置已保存，但热重载未生效。建议重启后端服务以应用更改。", { duration: 6000 });
+            toast.warning("Configuration saved, but hot reload did not apply. Restart the backend service to pick up changes.", { duration: 6000 });
           }
           return;
         }
@@ -1647,7 +1647,7 @@ function MainApp() {
       await invoke("workspace_write_file", { workspaceId: currentWorkspaceId, relativePath, content });
       return;
     }
-    throw new Error(`写入配置失败：服务未运行且无本地工作区 (${relativePath})`);
+    throw new Error(`Failed to write configuration: service not running and no local workspace (${relativePath})`);
   }
 
   /**
@@ -3218,28 +3218,28 @@ function MainApp() {
     return (
       <>
         <div className="card">
-          <div className="cardTitle">工具与集成（全覆盖写入 .env）</div>
+          <div className="cardTitle">Tools & Integrations (full .env overwrite)</div>
           <div className="cardHint">
-            这一页会把项目里常用的开关与参数集中起来（参考 `examples/.env.example` + MCP 文档 + 桌面自动化配置）。
+            This page collects commonly used switches and parameters from the project (see `examples/.env.example` + MCP docs + desktop automation config).
             <br />
-            只会写入你实际填写/修改过的键；留空保存会从工作区 `.env` 删除该键（可选项不填就不会落盘）。
+            Only keys you actually fill in or modify are written; saving an empty field removes that key from the workspace `.env` (optional fields left blank are not persisted).
           </div>
           <div className="divider" />
 
           <div className="card" style={{ marginTop: 0 }}>
             <div className="cardTitle" style={{ fontSize: 14, marginBottom: 6 }}>
-              LLM（不在这里重复填）
+              LLM (not filled in here)
             </div>
             <div className="cardHint">
-              LLM 的 API Key / Base URL / 模型选择，统一在上一步"LLM 端点"里完成：端点会写入 `data/llm_endpoints.json`，并把对应 `api_key_env` 写入工作区 `.env`。
+              Configure the LLM API Key / Base URL / model selection in the previous "LLM Endpoints" step: endpoints are written to `data/llm_endpoints.json`, and the corresponding `api_key_env` is written to the workspace `.env`.
               <br />
-              这里主要管理 IM / MCP / 桌面自动化 / Agent/调度 等"运行期开关与参数"。
+              This page mainly manages "runtime switches and parameters" for IM / MCP / Desktop Automation / Agent / Scheduler.
             </div>
           </div>
 
           <div className="card" style={{ marginTop: 0 }}>
             <div className="cardTitle" style={{ fontSize: 14, marginBottom: 6 }}>
-              网络代理与并行
+              Network Proxy & Parallelism
             </div>
             <div className="grid3">
               {FT({ k: "HTTP_PROXY", label: "HTTP_PROXY", placeholder: "http://127.0.0.1:7890" })}
@@ -3247,18 +3247,18 @@ function MainApp() {
               {FT({ k: "ALL_PROXY", label: "ALL_PROXY", placeholder: "socks5://127.0.0.1:1080" })}
             </div>
             <div className="grid3" style={{ marginTop: 10 }}>
-              {FB({ k: "FORCE_IPV4", label: "强制 IPv4", help: "某些 VPN/IPv6 环境下有用" })}
-              {FT({ k: "TOOL_MAX_PARALLEL", label: "TOOL_MAX_PARALLEL", placeholder: "1", help: "单轮多工具并行数（默认 1=串行）" })}
+              {FB({ k: "FORCE_IPV4", label: "Force IPv4", help: "Useful in some VPN/IPv6 environments" })}
+              {FT({ k: "TOOL_MAX_PARALLEL", label: "TOOL_MAX_PARALLEL", placeholder: "1", help: "Parallel tools per turn (default 1 = serial)" })}
               {FT({ k: "LOG_LEVEL", label: "LOG_LEVEL", placeholder: "INFO", help: "DEBUG/INFO/WARNING/ERROR" })}
             </div>
           </div>
 
           <div className="card">
             <div className="cardTitle" style={{ fontSize: 14, marginBottom: 6 }}>
-              IM 通道
+              IM Channels
             </div>
             <div className="cardHint">
-              默认折叠显示。选择"启用"后展开填写信息（上下排列）。建议先把 LLM 端点配置好，再回来启用 IM。
+              Collapsed by default. Toggle "Enable" to expand and fill in the details. We recommend configuring LLM endpoints first, then enabling IM.
             </div>
             <div className="divider" />
 
@@ -3269,8 +3269,8 @@ function MainApp() {
                 apply: "https://t.me/BotFather",
                 body: (
                   <>
-                    {FT({ k: "TELEGRAM_BOT_TOKEN", label: "Bot Token", placeholder: "从 BotFather 获取（仅会显示一次）", type: "password" })}
-                    {FT({ k: "TELEGRAM_PROXY", label: "代理（可选）", placeholder: "http://127.0.0.1:7890 / socks5://..." })}
+                    {FT({ k: "TELEGRAM_BOT_TOKEN", label: "Bot Token", placeholder: "Get from BotFather (shown only once)", type: "password" })}
+                    {FT({ k: "TELEGRAM_PROXY", label: "Proxy (optional)", placeholder: "http://127.0.0.1:7890 / socks5://..." })}
                     {FB({ k: "TELEGRAM_REQUIRE_PAIRING", label: t("config.imPairing") })}
                     {FT({ k: "TELEGRAM_PAIRING_CODE", label: t("config.imPairingCode"), placeholder: t("config.imPairingCodeHint") })}
                     <TelegramPairingCodeHint currentWorkspaceId={currentWorkspaceId} envDraft={envDraft} onEnvChange={setEnvDraft} />
@@ -3279,7 +3279,7 @@ function MainApp() {
                 ),
               },
               {
-                title: "飞书（需要 openakita[feishu]）",
+                title: "Feishu (requires openakita[feishu])",
                 enabledKey: "FEISHU_ENABLED",
                 apply: "https://open.feishu.cn/",
                 body: (
@@ -3293,7 +3293,7 @@ function MainApp() {
                 const wMode = (envDraft["WEWORK_MODE"] || "websocket") as "http" | "websocket";
                 const isWs = wMode === "websocket";
                 return {
-                  title: "企业微信（需要 openakita[wework]）",
+                  title: "WeCom (requires openakita[wework])",
                   enabledKey: isWs ? "WEWORK_WS_ENABLED" : "WEWORK_ENABLED",
                   apply: "https://work.weixin.qq.com/",
                   body: (
@@ -3327,11 +3327,11 @@ function MainApp() {
                       ) : (
                         <>
                           {FT({ k: "WEWORK_CORP_ID", label: "Corp ID" })}
-                          {FT({ k: "WEWORK_TOKEN", label: "回调 Token", placeholder: "在企业微信后台「接收消息」设置中获取" })}
-                          {FT({ k: "WEWORK_ENCODING_AES_KEY", label: "EncodingAESKey", placeholder: "在企业微信后台「接收消息」设置中获取", type: "password" })}
-                          {FT({ k: "WEWORK_CALLBACK_PORT", label: "回调端口", placeholder: "9880" })}
+                          {FT({ k: "WEWORK_TOKEN", label: "Callback Token", placeholder: "Get from WeCom admin > Receive Messages settings" })}
+                          {FT({ k: "WEWORK_ENCODING_AES_KEY", label: "EncodingAESKey", placeholder: "Get from WeCom admin > Receive Messages settings", type: "password" })}
+                          {FT({ k: "WEWORK_CALLBACK_PORT", label: "Callback Port", placeholder: "9880" })}
                           <div style={{ fontSize: 12, color: "var(--muted)", margin: "4px 0 0 0", lineHeight: 1.6 }}>
-                            <IconLightbulb size={12} /> 企业微信后台「接收消息服务器配置」的 URL 请填：<code style={{ background: "#f5f5f5", padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>http://your-domain:9880/callback</code>
+                            <IconLightbulb size={12} /> In WeCom admin {'>'} Receive Messages Server Config, set the URL to: <code style={{ background: "#f5f5f5", padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>http://your-domain:9880/callback</code>
                           </div>
                         </>
                       )}
@@ -3340,7 +3340,7 @@ function MainApp() {
                 };
               })(),
               {
-                title: "钉钉（需要 openakita[dingtalk]）",
+                title: "DingTalk (requires openakita[dingtalk])",
                 enabledKey: "DINGTALK_ENABLED",
                 apply: "https://open.dingtalk.com/",
                 body: (
@@ -3351,13 +3351,13 @@ function MainApp() {
                 ),
               },
               {
-                title: "QQ 官方机器人（需要 openakita[qqbot]）",
+                title: "QQ Official Bot (requires openakita[qqbot])",
                 enabledKey: "QQBOT_ENABLED",
                 apply: "https://bot.q.qq.com/wiki/develop/api-v2/",
                 body: (
                   <>
-                    {FT({ k: "QQBOT_APP_ID", label: "AppID", placeholder: "q.qq.com 开发设置" })}
-                    {FT({ k: "QQBOT_APP_SECRET", label: "AppSecret", type: "password", placeholder: "q.qq.com 开发设置" })}
+                    {FT({ k: "QQBOT_APP_ID", label: "AppID", placeholder: "q.qq.com developer settings" })}
+                    {FT({ k: "QQBOT_APP_SECRET", label: "AppSecret", type: "password", placeholder: "q.qq.com developer settings" })}
                     {FB({ k: "QQBOT_SANDBOX", label: t("config.imQQBotSandbox") })}
                     <div style={{ marginTop: 8 }}>
                       <div className="label">{t("config.imQQBotMode")}</div>
@@ -3381,7 +3381,7 @@ function MainApp() {
                 ),
               },
               {
-                title: t("config.imWechat") + "（需要 openakita[wechat]）",
+                title: t("config.imWechat") + " (requires openakita[wechat])",
                 enabledKey: "WECHAT_ENABLED",
                 apply: "",
                 body: (
@@ -3395,7 +3395,7 @@ function MainApp() {
                 const obMode = (envDraft["ONEBOT_MODE"] || "reverse") as "reverse" | "forward";
                 const isReverse = obMode === "reverse";
                 return {
-                  title: "OneBot（需要 openakita[onebot] + NapCat/Lagrange）",
+                  title: "OneBot (requires openakita[onebot] + NapCat/Lagrange)",
                   enabledKey: "ONEBOT_ENABLED",
                   apply: "https://github.com/botuniverse/onebot-11",
                   body: (
@@ -3438,11 +3438,11 @@ function MainApp() {
                         checked={enabled}
                         onChange={(e) => setEnvDraft((m) => envSet(m, c.enabledKey, String(e.target.checked)))}
                       />
-                      启用
+                      Enable
                     </label>
                   </div>
                   <div className="help" style={{ marginTop: 8 }}>
-                    申请/文档：<code style={{ userSelect: "all", fontSize: 12 }}>{c.apply}</code>
+                    Apply / docs: <code style={{ userSelect: "all", fontSize: 12 }}>{c.apply}</code>
                   </div>
                   {enabled ? (
                     <>
@@ -3451,7 +3451,7 @@ function MainApp() {
                     </>
                   ) : (
                     <div className="cardHint" style={{ marginTop: 8 }}>
-                      未启用：保持折叠。
+                      Not enabled — kept collapsed.
                     </div>
                   )}
                 </div>
@@ -3461,14 +3461,14 @@ function MainApp() {
 
           <div className="card">
             <div className="cardTitle" style={{ fontSize: 14, marginBottom: 6 }}>
-              MCP / 桌面自动化 / 语音与 GitHub
+              MCP / Desktop Automation / Voice & GitHub
             </div>
             <div className="grid2">
               <div className="card" style={{ marginTop: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                   <div className="label" style={{ marginBottom: 0 }}>MCP</div>
                   <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--fg2)", cursor: "pointer", userSelect: "none" }} onClick={(e) => e.stopPropagation()}>
-                    <span>{envDraft["MCP_ENABLED"] === "false" ? "已禁用" : "已启用"}</span>
+                    <span>{envDraft["MCP_ENABLED"] === "false" ? "Disabled" : "Enabled"}</span>
                     <div
                       onClick={() => setEnvDraft((p) => ({ ...p, MCP_ENABLED: p.MCP_ENABLED === "false" ? "true" : "false" }))}
                       style={{
@@ -3493,9 +3493,9 @@ function MainApp() {
 
               <div className="card" style={{ marginTop: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                  <div className="label" style={{ marginBottom: 0 }}>桌面自动化（Windows）</div>
+                  <div className="label" style={{ marginBottom: 0 }}>Desktop Automation (Windows)</div>
                   <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--fg2)", cursor: "pointer", userSelect: "none" }} onClick={(e) => e.stopPropagation()}>
-                    <span>{envDraft["DESKTOP_ENABLED"] === "false" ? "已禁用" : "已启用"}</span>
+                    <span>{envDraft["DESKTOP_ENABLED"] === "false" ? "Disabled" : "Enabled"}</span>
                     <div
                       onClick={() => setEnvDraft((p) => ({ ...p, DESKTOP_ENABLED: p.DESKTOP_ENABLED === "false" ? "true" : "false" }))}
                       style={{
@@ -3515,17 +3515,17 @@ function MainApp() {
                 </div>
                 <div className="divider" />
                 <div className="grid3">
-                  {FT({ k: "DESKTOP_DEFAULT_MONITOR", label: "默认显示器", placeholder: "0" })}
-                  {FT({ k: "DESKTOP_MAX_WIDTH", label: "最大宽", placeholder: "1920" })}
-                  {FT({ k: "DESKTOP_MAX_HEIGHT", label: "最大高", placeholder: "1080" })}
+                  {FT({ k: "DESKTOP_DEFAULT_MONITOR", label: "Default Monitor", placeholder: "0" })}
+                  {FT({ k: "DESKTOP_MAX_WIDTH", label: "Max Width", placeholder: "1920" })}
+                  {FT({ k: "DESKTOP_MAX_HEIGHT", label: "Max Height", placeholder: "1080" })}
                 </div>
                 <div className="grid3" style={{ marginTop: 10 }}>
-                  {FT({ k: "DESKTOP_COMPRESSION_QUALITY", label: "压缩质量", placeholder: "85" })}
-                  {FT({ k: "DESKTOP_CACHE_TTL", label: "截图缓存秒", placeholder: "1.0" })}
-                  {FB({ k: "DESKTOP_FAILSAFE", label: "failsafe", help: "鼠标移到角落中止（PyAutoGUI 风格）" })}
+                  {FT({ k: "DESKTOP_COMPRESSION_QUALITY", label: "Compression Quality", placeholder: "85" })}
+                  {FT({ k: "DESKTOP_CACHE_TTL", label: "Screenshot Cache (s)", placeholder: "1.0" })}
+                  {FB({ k: "DESKTOP_FAILSAFE", label: "failsafe", help: "Abort by moving the mouse to a corner (PyAutoGUI style)" })}
                 </div>
                 <div className="divider" />
-                {FB({ k: "DESKTOP_VISION_ENABLED", label: "启用视觉", help: "用于屏幕理解/定位" })}
+                {FB({ k: "DESKTOP_VISION_ENABLED", label: "Enable Vision", help: "For screen understanding / element location" })}
                 <div className="grid3" style={{ marginTop: 10 }}>
                   {FT({ k: "DESKTOP_CLICK_DELAY", label: "click_delay", placeholder: "0.1" })}
                   {FT({ k: "DESKTOP_TYPE_INTERVAL", label: "type_interval", placeholder: "0.03" })}
@@ -3544,36 +3544,36 @@ function MainApp() {
                 { value: "large", label: "large (~1.5GB)" },
               ], placeholder: "base" })}
               {FS({ k: "WHISPER_LANGUAGE", label: "WHISPER_LANGUAGE", options: [
-                { value: "zh", label: "中文 (zh)" },
+                { value: "zh", label: "Chinese (zh)" },
                 { value: "en", label: "English (en)" },
-                { value: "auto", label: "Auto (自动检测)" },
+                { value: "auto", label: "Auto (auto-detect)" },
               ] })}
-              {FT({ k: "GITHUB_TOKEN", label: "GITHUB_TOKEN", placeholder: "", type: "password", help: "用于搜索/下载技能" })}
+              {FT({ k: "GITHUB_TOKEN", label: "GITHUB_TOKEN", placeholder: "", type: "password", help: "Used to search / download skills" })}
               {FT({ k: "DATABASE_PATH", label: "DATABASE_PATH", placeholder: "data/agent.db" })}
             </div>
           </div>
 
           <div className="card">
             <div className="cardTitle" style={{ fontSize: 14, marginBottom: 6 }}>
-              灵魂与意志（核心配置）
+              Soul & Will (Core Config)
             </div>
             <div className="cardHint">
-              这些是系统内置能力的开关与参数。<b>内置项默认启用</b>（你随时可以关闭）。建议先用默认值跑通，再按需调优。
+              These are switches and parameters for built-in capabilities. <b>Built-in items are enabled by default</b> (you can disable them any time). We suggest running with defaults first, then tuning as needed.
             </div>
             <div className="divider" />
 
             <details open>
-              <summary style={{ cursor: "pointer", fontWeight: 800, padding: "8px 0" }}>基础</summary>
+              <summary style={{ cursor: "pointer", fontWeight: 800, padding: "8px 0" }}>Basics</summary>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
-                {FT({ k: "AGENT_NAME", label: "Agent 名称", placeholder: "OpenAkita" })}
-                {FT({ k: "MAX_ITERATIONS", label: "最大迭代次数", placeholder: "300" })}
+                {FT({ k: "AGENT_NAME", label: "Agent Name", placeholder: "OpenAkita" })}
+                {FT({ k: "MAX_ITERATIONS", label: "Max Iterations", placeholder: "300" })}
                 {FS({ k: "THINKING_MODE", label: t("config.agentThinking"), options: [
                   { value: "auto", label: t("config.agentThinkingAuto") },
                   { value: "always", label: t("config.agentThinkingAlways") },
                   { value: "never", label: t("config.agentThinkingNever") },
                 ] })}
-                {FT({ k: "DATABASE_PATH", label: "数据库路径", placeholder: "data/agent.db" })}
-                {FS({ k: "LOG_LEVEL", label: "日志级别", options: [
+                {FT({ k: "DATABASE_PATH", label: "Database Path", placeholder: "data/agent.db" })}
+                {FS({ k: "LOG_LEVEL", label: "Log Level", options: [
                   { value: "DEBUG", label: "DEBUG" },
                   { value: "INFO", label: "INFO" },
                   { value: "WARNING", label: "WARNING" },
@@ -3584,35 +3584,35 @@ function MainApp() {
 
             <div className="divider" />
             <details>
-              <summary style={{ cursor: "pointer", fontWeight: 800, padding: "8px 0" }}>日志高级</summary>
+              <summary style={{ cursor: "pointer", fontWeight: 800, padding: "8px 0" }}>Logging (Advanced)</summary>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
-                {FT({ k: "LOG_DIR", label: "日志目录", placeholder: "logs" })}
-                {FT({ k: "LOG_FILE_PREFIX", label: "日志文件前缀", placeholder: "openakita" })}
-                {FT({ k: "LOG_MAX_SIZE_MB", label: "单文件最大 MB", placeholder: "10" })}
-                {FT({ k: "LOG_BACKUP_COUNT", label: "备份文件数", placeholder: "30" })}
-                {FT({ k: "LOG_RETENTION_DAYS", label: "保留天数", placeholder: "30" })}
-                {FT({ k: "LOG_FORMAT", label: "日志格式", placeholder: "%(asctime)s - %(name)s - %(levelname)s - %(message)s" })}
-                {FB({ k: "LOG_TO_CONSOLE", label: "输出到控制台", help: "默认 true" })}
-                {FB({ k: "LOG_TO_FILE", label: "输出到文件", help: "默认 true" })}
+                {FT({ k: "LOG_DIR", label: "Log Directory", placeholder: "logs" })}
+                {FT({ k: "LOG_FILE_PREFIX", label: "Log File Prefix", placeholder: "openakita" })}
+                {FT({ k: "LOG_MAX_SIZE_MB", label: "Max File Size (MB)", placeholder: "10" })}
+                {FT({ k: "LOG_BACKUP_COUNT", label: "Backup Count", placeholder: "30" })}
+                {FT({ k: "LOG_RETENTION_DAYS", label: "Retention (days)", placeholder: "30" })}
+                {FT({ k: "LOG_FORMAT", label: "Log Format", placeholder: "%(asctime)s - %(name)s - %(levelname)s - %(message)s" })}
+                {FB({ k: "LOG_TO_CONSOLE", label: "Log to Console", help: "Default true" })}
+                {FB({ k: "LOG_TO_FILE", label: "Log to File", help: "Default true" })}
               </div>
             </details>
 
             <div className="divider" />
             <details>
-              <summary style={{ cursor: "pointer", fontWeight: 800, padding: "8px 0" }}>会话</summary>
+              <summary style={{ cursor: "pointer", fontWeight: 800, padding: "8px 0" }}>Session</summary>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
-                {FT({ k: "SESSION_TIMEOUT_MINUTES", label: "会话超时（分钟）", placeholder: "30" })}
-                {FT({ k: "SESSION_MAX_HISTORY", label: "会话最大历史条数", placeholder: "50" })}
-                {FT({ k: "SESSION_STORAGE_PATH", label: "会话存储路径", placeholder: "data/sessions" })}
+                {FT({ k: "SESSION_TIMEOUT_MINUTES", label: "Session Timeout (minutes)", placeholder: "30" })}
+                {FT({ k: "SESSION_MAX_HISTORY", label: "Session Max History", placeholder: "50" })}
+                {FT({ k: "SESSION_STORAGE_PATH", label: "Session Storage Path", placeholder: "data/sessions" })}
               </div>
             </details>
 
             <div className="divider" />
             <details open>
-              <summary style={{ cursor: "pointer", fontWeight: 800, padding: "8px 0" }}>调度器</summary>
+              <summary style={{ cursor: "pointer", fontWeight: 800, padding: "8px 0" }}>Scheduler</summary>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
-                {FT({ k: "SCHEDULER_TIMEZONE", label: "时区", placeholder: "Asia/Shanghai" })}
-                {FT({ k: "SCHEDULER_TASK_TIMEOUT", label: "任务超时（秒）", placeholder: "600" })}
+                {FT({ k: "SCHEDULER_TIMEZONE", label: "Timezone", placeholder: "Asia/Shanghai" })}
+                {FT({ k: "SCHEDULER_TASK_TIMEOUT", label: "Task Timeout (seconds)", placeholder: "600" })}
               </div>
             </details>
 
@@ -3621,10 +3621,10 @@ function MainApp() {
           <div className="btnRow" style={{ gap: 8 }}>
             <button
               className="btnPrimary"
-              onClick={() => renderIntegrationsSave(keysCore, "已写入工作区 .env（工具/IM/MCP/桌面/高级配置）")}
+              onClick={() => renderIntegrationsSave(keysCore, "Workspace .env written (Tools / IM / MCP / Desktop / Advanced)")}
               disabled={!currentWorkspaceId || !!busy}
             >
-              一键写入工作区 .env（全覆盖）
+              Write workspace .env (overwrite all)
             </button>
             <button className="btnApplyRestart"
               onClick={() => applyAndRestart(keysCore)}
@@ -3713,45 +3713,45 @@ function MainApp() {
       if (obLogPath) {
         const configLines: string[] = [];
         configLines.push("");
-        configLines.push("=== LLM 配置 ===");
+        configLines.push("=== LLM Configuration ===");
         if (savedEndpoints.length === 0) {
-          configLines.push("  (无)");
+          configLines.push("  (none)");
         } else {
           for (const e of savedEndpoints) {
-            configLines.push(`  - ${e.name}: base_url=${(e as any).base_url || ""}, model=${(e as any).model || ""}, api_key_env=${(e as any).api_key_env || "(无)"}`);
+            configLines.push(`  - ${e.name}: base_url=${(e as any).base_url || ""}, model=${(e as any).model || ""}, api_key_env=${(e as any).api_key_env || "(none)"}`);
           }
         }
         configLines.push("");
-        configLines.push("=== IM 配置（仅键名，不记录密钥值）===");
+        configLines.push("=== IM Configuration (keys only; values not recorded) ===");
         const imKeys = getAutoSaveKeysForStep("im");
         for (const k of imKeys) {
           const set = Object.prototype.hasOwnProperty.call(envDraft, k) && envDraft[k];
-          configLines.push(`  - ${k}: ${set ? "(已设置)" : "(未设置)"}`);
+          configLines.push(`  - ${k}: ${set ? "(set)" : "(unset)"}`);
         }
         configLines.push("");
-        configLines.push("=== 流程日志 ===");
+        configLines.push("=== Flow Log ===");
         invoke("append_onboarding_log_lines", { logPath: obLogPath, lines: configLines }).catch(() => {});
       }
     } catch {
     }
 
     const taskDefs: SetupTask[] = [
-      { id: "workspace", label: "准备工作区", status: "pending" },
+      { id: "workspace", label: "Preparing workspace", status: "pending" },
     ];
-    taskDefs.push({ id: "backend-check", label: "检查后端环境", status: "pending" });
+    taskDefs.push({ id: "backend-check", label: "Checking backend environment", status: "pending" });
     const cliCommands: string[] = [];
     if (obCliOpenakita) cliCommands.push("openakita");
     if (obCliOa) cliCommands.push("oa");
     if (cliCommands.length > 0) {
-      taskDefs.push({ id: "cli", label: `注册 CLI 命令 (${cliCommands.join(", ")})`, status: "pending" });
+      taskDefs.push({ id: "cli", label: `Register CLI commands (${cliCommands.join(", ")})`, status: "pending" });
     }
     if (obAutostart) {
       taskDefs.push({ id: "autostart", label: t("onboarding.autostart.taskLabel"), status: "pending" });
     }
-    taskDefs.push({ id: "service-start", label: "启动后端服务", status: "pending" });
-    taskDefs.push({ id: "http-wait", label: "等待 HTTP 服务就绪", status: "pending" });
-    taskDefs.push({ id: "llm-config", label: "保存 LLM 配置", status: savedEndpoints.length > 0 ? "pending" : "skipped" });
-    taskDefs.push({ id: "env-save", label: "保存环境变量", status: "pending" });
+    taskDefs.push({ id: "service-start", label: "Starting backend service", status: "pending" });
+    taskDefs.push({ id: "http-wait", label: "Waiting for HTTP service", status: "pending" });
+    taskDefs.push({ id: "llm-config", label: "Saving LLM configuration", status: savedEndpoints.length > 0 ? "pending" : "skipped" });
+    taskDefs.push({ id: "env-save", label: "Saving environment variables", status: "pending" });
     setObTasks(taskDefs);
 
     const log = (msg: string) => {
@@ -3765,7 +3765,7 @@ function MainApp() {
       }
     };
     const logTask = (label: string, status: string, detail?: string) => {
-      const msg = detail ? `[任务] ${label}: ${status} - ${detail}` : `[任务] ${label}: ${status}`;
+      const msg = detail ? `[task] ${label}: ${status} - ${detail}` : `[task] ${label}: ${status}`;
       const now = new Date();
       const ts = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
       const line = `[${ts}] ${msg}`;
@@ -3778,7 +3778,7 @@ function MainApp() {
     try {
       // ── STEP: workspace ──
       updateTask("workspace", { status: "running" });
-      logTask("准备工作区", "running");
+      logTask("Preparing workspace", "running");
       let activeWsId = currentWorkspaceId;
       log(t("onboarding.progress.creatingWorkspace"));
       if (!activeWsId || !workspaces.length) {
@@ -3798,12 +3798,12 @@ function MainApp() {
         log(t("onboarding.progress.workspaceExists"));
       }
       updateTask("workspace", { status: "done" });
-      logTask("准备工作区", "done");
+      logTask("Preparing workspace", "done");
 
       // ── STEP: llm-config ──
       if (savedEndpoints.length > 0) {
         updateTask("llm-config", { status: "running" });
-        logTask("保存 LLM 配置", "running");
+        logTask("Saving LLM configuration", "running");
         const llmData = { endpoints: savedEndpoints, settings: {} };
         await invoke("workspace_write_file", {
           workspaceId: activeWsId,
@@ -3811,13 +3811,13 @@ function MainApp() {
           content: JSON.stringify(llmData, null, 2),
         });
         log(t("onboarding.progress.llmConfigSaved"));
-        updateTask("llm-config", { status: "done", detail: `${savedEndpoints.length} 个端点` });
-        logTask("保存 LLM 配置", "done", `${savedEndpoints.length} 个端点`);
+        updateTask("llm-config", { status: "done", detail: `${savedEndpoints.length} endpoints` });
+        logTask("Saving LLM configuration", "done", `${savedEndpoints.length} endpoints`);
       }
 
       // ── STEP: backend-check ──
       updateTask("backend-check", { status: "running" });
-      logTask("检查后端环境", "running");
+      logTask("Checking backend environment", "running");
       try {
         const effectiveVenv = venvDir || (info ? joinPath(info.openakitaRootDir, "venv") : "");
         const backendInfo = await invoke<{
@@ -3828,40 +3828,40 @@ function MainApp() {
           venvChecked: string;
         }>("check_backend_availability", { venvDir: effectiveVenv });
         if (!backendInfo.bundled && !backendInfo.venvReady) {
-          log("未找到可用后端，尝试自动创建 venv 并安装 openakita...");
-          logTask("检查后端环境", "running", "创建 venv...");
-          updateTask("backend-check", { detail: "创建 venv..." });
+          log("No backend available — attempting to auto-create venv and install openakita...");
+          logTask("Checking backend environment", "running", "Creating venv...");
+          updateTask("backend-check", { detail: "Creating venv..." });
           const detectedPy = await invoke<Array<{ command: string[]; version: string }>>("detect_python");
           if (detectedPy.length > 0) {
             await invoke<string>("create_venv", { pythonCommand: detectedPy[0].command, venvDir: effectiveVenv });
-            updateTask("backend-check", { detail: "安装 openakita..." });
-            logTask("检查后端环境", "running", "安装 openakita...");
+            updateTask("backend-check", { detail: "Installing openakita..." });
+            logTask("Checking backend environment", "running", "Installing openakita...");
             await invoke<string>("pip_install", { venvDir: effectiveVenv, packageSpec: "openakita" });
-            log("[OK] 已自动安装后端环境");
+            log("[OK] Backend environment installed automatically");
           } else {
-            log("[!] 未检测到 Python 3.11+，无法自动创建后端环境");
-            log(`  已检查路径: bundled=${backendInfo.bundledChecked} venv=${backendInfo.venvChecked}`);
-            updateTask("backend-check", { status: "error", detail: "未找到 Python 3.11+" });
-            logTask("检查后端环境", "error", "未找到 Python 3.11+");
+            log("[!] Python 3.11+ not detected — cannot auto-create backend environment");
+            log(`  Checked paths: bundled=${backendInfo.bundledChecked} venv=${backendInfo.venvChecked}`);
+            updateTask("backend-check", { status: "error", detail: "Python 3.11+ not found" });
+            logTask("Checking backend environment", "error", "Python 3.11+ not found");
           }
         } else {
-          log(backendInfo.bundled ? "[OK] 使用内置后端" : "[OK] 使用 venv 后端");
+          log(backendInfo.bundled ? "[OK] Using bundled backend" : "[OK] Using venv backend");
         }
         if (!hasErr) {
           updateTask("backend-check", { status: "done" });
-          logTask("检查后端环境", "done");
+          logTask("Checking backend environment", "done");
         }
       } catch (e) {
-        log(`[!] 后端环境检查失败: ${String(e)}`);
+        log(`[!] Backend environment check failed: ${String(e)}`);
         updateTask("backend-check", { status: "error", detail: String(e).slice(0, 120) });
-        logTask("检查后端环境", "error", String(e));
+        logTask("Checking backend environment", "error", String(e));
       }
 
       // ── STEP: cli ──
       if (cliCommands.length > 0) {
         updateTask("cli", { status: "running" });
-        logTask(`注册 CLI 命令 (${cliCommands.join(", ")})`, "running");
-        log("注册 CLI 命令...");
+        logTask(`Registering CLI commands (${cliCommands.join(", ")})`, "running");
+        log("Registering CLI commands...");
         try {
           const result = await invoke<string>("register_cli", {
             commands: cliCommands,
@@ -3869,11 +3869,11 @@ function MainApp() {
           });
           log(`[OK] ${result}`);
           updateTask("cli", { status: "done" });
-          logTask(`注册 CLI 命令 (${cliCommands.join(", ")})`, "done", result);
+          logTask(`Registering CLI commands (${cliCommands.join(", ")})`, "done", result);
         } catch (e) {
-          log(`[!] CLI 命令注册失败: ${String(e)}`);
+          log(`[!] CLI command registration failed: ${String(e)}`);
           updateTask("cli", { status: "error", detail: String(e) });
-          logTask(`注册 CLI 命令 (${cliCommands.join(", ")})`, "error", String(e));
+          logTask(`Registering CLI commands (${cliCommands.join(", ")})`, "error", String(e));
         }
       }
 
@@ -3898,68 +3898,68 @@ function MainApp() {
       // The early-start in ob-welcome may have already launched the backend.
       // Probe first to avoid a redundant start (which is harmless but slow).
       updateTask("service-start", { status: "running" });
-      logTask("启动后端服务", "running");
+      logTask("Starting backend service", "running");
       const effectiveVenv = venvDir || (info ? joinPath(info.openakitaRootDir, "venv") : "");
       let httpReady = false;
       try {
         const earlyProbe = await fetch("http://127.0.0.1:18900/api/health", { signal: AbortSignal.timeout(3000) }).then(r => r.ok).catch(() => false);
         if (earlyProbe) {
-          log("[OK] 后端已在运行（由 ob-welcome 提前启动）");
+          log("[OK] Backend already running (started early in ob-welcome)");
           setServiceStatus({ running: true, pid: null, pidFile: "" });
           setDataMode("remote");
           httpReady = true;
-          updateTask("service-start", { status: "done", detail: "已在运行" });
-          logTask("启动后端服务", "done", "已在运行");
-          updateTask("http-wait", { status: "done", detail: "已就绪" });
-          logTask("等待 HTTP 服务就绪", "done", "已就绪");
+          updateTask("service-start", { status: "done", detail: "Already running" });
+          logTask("Starting backend service", "done", "Already running");
+          updateTask("http-wait", { status: "done", detail: "Ready" });
+          logTask("Waiting for HTTP service", "done", "Ready");
         } else {
           log(t("onboarding.progress.startingService"));
         await invoke("openakita_service_start", { venvDir: effectiveVenv, workspaceId: activeWsId });
         log(t("onboarding.progress.serviceStarted"));
         updateTask("service-start", { status: "done" });
-        logTask("启动后端服务", "done");
+        logTask("Starting backend service", "done");
 
         // ── STEP: http-wait ──
         let httpReady = false;
         updateTask("http-wait", { status: "running" });
-        logTask("等待 HTTP 服务就绪", "running");
-        log("等待 HTTP 服务就绪...");
+        logTask("Waiting for HTTP service", "running");
+        log("Waiting for HTTP service...");
         for (let i = 0; i < 20; i++) {
           await new Promise(r => setTimeout(r, 2000));
-          updateTask("http-wait", { detail: `已等待 ${(i + 1) * 2}s...` });
+          updateTask("http-wait", { detail: `Waited ${(i + 1) * 2}s...` });
           if (i > 0 && obLogPath) {
             const now = new Date();
             const ts = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
-            invoke("append_onboarding_log", { logPath: obLogPath, line: `[${ts}] [任务] 等待 HTTP 服务就绪: 已等待 ${(i + 1) * 2}s...` }).catch(() => {});
+            invoke("append_onboarding_log", { logPath: obLogPath, line: `[${ts}] [task] Waiting for HTTP service: waited ${(i + 1) * 2}s...` }).catch(() => {});
           }
           try {
             const res = await fetch("http://127.0.0.1:18900/api/health", { signal: AbortSignal.timeout(3000) });
             if (res.ok) {
-              log("[OK] HTTP 服务已就绪");
+              log("[OK] HTTP service ready");
               setServiceStatus({ running: true, pid: null, pidFile: "" });
               httpReady = true;
               updateTask("http-wait", { status: "done", detail: `${(i + 1) * 2}s` });
-              logTask("等待 HTTP 服务就绪", "done", `${(i + 1) * 2}s`);
+              logTask("Waiting for HTTP service", "done", `${(i + 1) * 2}s`);
               break;
             }
           } catch { /* not ready yet */ }
-          if (i % 5 === 4) log(`仍在等待 HTTP 服务启动... (${(i + 1) * 2}s)`);
+          if (i % 5 === 4) log(`Still waiting for HTTP service... (${(i + 1) * 2}s)`);
         }
         if (!httpReady) {
-          log("[!] HTTP 服务尚未就绪，可进入主页面后手动刷新");
-          updateTask("http-wait", { status: "error", detail: "超时" });
-          logTask("等待 HTTP 服务就绪", "error", "超时");
+          log("[!] HTTP service not ready — you can enter the main page and refresh manually");
+          updateTask("http-wait", { status: "error", detail: "Timeout" });
+          logTask("Waiting for HTTP service", "error", "Timeout");
           }
         }
       } catch (e) {
         const errStr = String(e);
         log(t("onboarding.progress.serviceStartFailed", { error: errStr }));
         updateTask("service-start", { status: "error", detail: errStr.slice(0, 120) });
-        logTask("启动后端服务", "error", errStr.slice(0, 200));
+        logTask("Starting backend service", "error", errStr.slice(0, 200));
         updateTask("http-wait", { status: "skipped" });
-        logTask("等待 HTTP 服务就绪", "skipped", "服务启动失败");
+        logTask("Waiting for HTTP service", "skipped", "Service start failed");
         if (errStr.length > 200) {
-          log('--- 详细错误信息 ---');
+          log('--- Detailed error ---');
           log(errStr);
         }
         hasErr = true;
@@ -3968,7 +3968,7 @@ function MainApp() {
       // ── STEP: llm-config (via HTTP API, after backend is ready) ──
       if (savedEndpoints.length > 0) {
         updateTask("llm-config", { status: "running" });
-        logTask("保存 LLM 配置", "running");
+        logTask("Saving LLM configuration", "running");
         if (httpReady) {
           try {
             const base = httpApiBase();
@@ -4009,16 +4009,16 @@ function MainApp() {
               });
             }
             log(t("onboarding.progress.llmConfigSaved"));
-            updateTask("llm-config", { status: "done", detail: `${savedEndpoints.length + savedCompilerEndpoints.length + savedSttEndpoints.length} 个端点` });
-            logTask("保存 LLM 配置", "done", `${savedEndpoints.length + savedCompilerEndpoints.length + savedSttEndpoints.length} 个端点`);
+            updateTask("llm-config", { status: "done", detail: `${savedEndpoints.length + savedCompilerEndpoints.length + savedSttEndpoints.length} endpoints` });
+            logTask("Saving LLM configuration", "done", `${savedEndpoints.length + savedCompilerEndpoints.length + savedSttEndpoints.length} endpoints`);
           } catch (e) {
-            log(`[!] LLM 配置保存失败: ${String(e)}`);
+            log(`[!] Failed to save LLM configuration: ${String(e)}`);
             updateTask("llm-config", { status: "error", detail: String(e).slice(0, 120) });
-            logTask("保存 LLM 配置", "error", String(e));
+            logTask("Saving LLM configuration", "error", String(e));
             hasErr = true;
           }
         } else {
-          log("[!] HTTP 服务未就绪，使用 Tauri 直接写入 LLM 配置");
+          log("[!] HTTP service not ready — writing LLM configuration via Tauri directly");
           try {
             const llmData = { endpoints: savedEndpoints, compiler_endpoints: savedCompilerEndpoints, stt_endpoints: savedSttEndpoints, settings: {} };
             await invoke("workspace_write_file", {
@@ -4027,12 +4027,12 @@ function MainApp() {
               content: JSON.stringify(llmData, null, 2),
             });
             log(t("onboarding.progress.llmConfigSaved"));
-            updateTask("llm-config", { status: "done", detail: `${savedEndpoints.length} 个端点 (Tauri)` });
-            logTask("保存 LLM 配置", "done", `${savedEndpoints.length} 个端点 (Tauri 回退)`);
+            updateTask("llm-config", { status: "done", detail: `${savedEndpoints.length} endpoints (Tauri)` });
+            logTask("Saving LLM configuration", "done", `${savedEndpoints.length} endpoints (Tauri fallback)`);
           } catch (e) {
-            log(`[!] LLM 配置保存失败: ${String(e)}`);
+            log(`[!] Failed to save LLM configuration: ${String(e)}`);
             updateTask("llm-config", { status: "error", detail: String(e).slice(0, 120) });
-            logTask("保存 LLM 配置", "error", String(e));
+            logTask("Saving LLM configuration", "error", String(e));
             hasErr = true;
           }
         }
@@ -4040,7 +4040,7 @@ function MainApp() {
 
       // ── STEP: env-save (IM and other non-LLM env vars) ──
       updateTask("env-save", { status: "running" });
-      logTask("保存环境变量", "running");
+      logTask("Saving environment variables", "running");
       try {
         const imKeys = getAutoSaveKeysForStep("im");
         const entries: Record<string, string> = {};
@@ -4068,14 +4068,14 @@ function MainApp() {
             const tauriEntries = Object.entries(entries).map(([key, value]) => ({ key, value }));
             await invoke("workspace_update_env", { workspaceId: activeWsId, entries: tauriEntries });
           }
-          log(t("onboarding.progress.envSaved") || "[OK] 环境变量已保存");
+          log(t("onboarding.progress.envSaved") || "[OK] Environment variables saved");
         }
-        updateTask("env-save", { status: "done", detail: `${Object.keys(entries).length} 项` });
-        logTask("保存环境变量", "done", `${Object.keys(entries).length} 项`);
+        updateTask("env-save", { status: "done", detail: `${Object.keys(entries).length} items` });
+        logTask("Saving environment variables", "done", `${Object.keys(entries).length} items`);
       } catch (e) {
-        log(`[!] 保存环境变量失败: ${String(e)}`);
+        log(`[!] Failed to save environment variables: ${String(e)}`);
         updateTask("env-save", { status: "error", detail: String(e) });
-        logTask("保存环境变量", "error", String(e));
+        logTask("Saving environment variables", "error", String(e));
         hasErr = true;
       }
 
@@ -4085,7 +4085,7 @@ function MainApp() {
       hasErr = true;
     } finally {
       if (obLogPath) {
-        log(t("onboarding.installLogSaved", { path: obLogPath }) || `安装日志已保存至: ${obLogPath}`);
+        log(t("onboarding.installLogSaved", { path: obLogPath }) || `Installation log saved to: ${obLogPath}`);
       }
       setObHasErrors(hasErr);
       setObInstalling(false);
@@ -4100,11 +4100,11 @@ function MainApp() {
     const obCurrentIdx = obCurrentIdxRaw >= 0 ? obCurrentIdxRaw : obStepDots.length - 1;
 
     const obStepLabels: Record<string, string> = {
-      "ob-welcome": t("onboarding.step.welcome", "欢迎"),
-      "ob-agreement": t("onboarding.step.agreement", "协议"),
-      "ob-llm": t("onboarding.step.llm", "模型"),
-      "ob-im": t("onboarding.step.im", "通讯"),
-      "ob-cli": t("onboarding.step.cli", "完成"),
+      "ob-welcome": t("onboarding.step.welcome", "Welcome"),
+      "ob-agreement": t("onboarding.step.agreement", "Agreement"),
+      "ob-llm": t("onboarding.step.llm", "Models"),
+      "ob-im": t("onboarding.step.im", "Channels"),
+      "ob-cli": t("onboarding.step.cli", "Finish"),
     };
 
     const stepIndicator = (
@@ -4116,7 +4116,7 @@ function MainApp() {
               className="text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-0.5 rounded"
               style={{ cursor: "pointer", background: "transparent", border: "none" }}
             >
-              ← {t("common.back", "返回")}
+              ← {t("common.back", "Back")}
             </button>
           )}
         {obStepDots.map((s, i) => (
@@ -4154,16 +4154,16 @@ function MainApp() {
                 <>
                   {obEnvCheck.conflicts.length > 0 && (
                     <Card className={`w-full border text-left text-[13px] ${
-                      obEnvCheck.conflicts.some(c => c.includes("失败") || c.includes("进程"))
+                      obEnvCheck.conflicts.some(c => c.toLowerCase().includes("fail") || c.toLowerCase().includes("process"))
                         ? "border-amber-300 bg-amber-50/60 dark:border-amber-500/40 dark:bg-amber-950/30"
                         : "border-emerald-300 bg-emerald-50/60 dark:border-emerald-500/40 dark:bg-emerald-950/30"
                     }`}>
                       <CardContent className="py-3 px-4 space-y-2">
                         <div className="flex items-center gap-2 font-semibold">
-                          {obEnvCheck.conflicts.some(c => c.includes("失败") || c.includes("进程"))
+                          {obEnvCheck.conflicts.some(c => c.toLowerCase().includes("fail") || c.toLowerCase().includes("process"))
                             ? <AlertTriangle className="size-4 text-amber-500 shrink-0" />
                             : <CheckCircle2 className="size-4 text-emerald-500 shrink-0" />}
-                          {obEnvCheck.conflicts.some(c => c.includes("失败") || c.includes("进程"))
+                          {obEnvCheck.conflicts.some(c => c.toLowerCase().includes("fail") || c.toLowerCase().includes("process"))
                             ? t("onboarding.welcome.envWarning")
                             : t("onboarding.welcome.envCleaned")}
                         </div>
@@ -4171,17 +4171,17 @@ function MainApp() {
                           {obEnvCheck.conflicts.map((c, i) => <li key={i}>{c}</li>)}
                         </ul>
                         <p className="text-xs text-muted-foreground">
-                          检查路径: {obEnvCheck.openakitaRoot ?? "(未知)"}
+                          Checked path: {obEnvCheck.openakitaRoot ?? "(unknown)"}
                         </p>
                         <Button variant="secondary" size="sm" onClick={() => obLoadEnvCheck()}>
-                          重新检测环境
+                          Re-check environment
                         </Button>
                       </CardContent>
                     </Card>
                   )}
                   {obEnvCheck.conflicts.length === 0 && (
                     <p className="text-xs text-muted-foreground/75">
-                      检查路径: {obEnvCheck.openakitaRoot ?? "(未知)"}
+                      Checked path: {obEnvCheck.openakitaRoot ?? "(unknown)"}
                     </p>
                   )}
                 </>
@@ -4622,7 +4622,7 @@ function MainApp() {
                 )}
                 {obDetailLog.map((line, i) => (
                   <div key={i} style={{
-                    color: line.includes("[!]") || line.includes("失败") ? "#fbbf24"
+                    color: line.includes("[!]") || line.toLowerCase().includes("fail") ? "#fbbf24"
                          : line.includes("[OK]") ? "#4ade80"
                          : line.includes("---") ? "#64748b"
                          : "#cbd5e1",
@@ -4729,7 +4729,7 @@ function MainApp() {
     if (view === "skills") {
       return disabledViews.includes("skills") ? (
         <div className="card" style={{ opacity: 0.5, textAlign: "center", padding: 40 }}>
-          <p style={{ color: "#94a3b8", fontSize: 15 }}>此模块已禁用，请在「工具与技能」配置中启用</p>
+          <p style={{ color: "#94a3b8", fontSize: 15 }}>This module is disabled. Enable it in "Tools &amp; Skills" settings.</p>
         </div>
       ) : (
         <SkillManager
@@ -4749,7 +4749,7 @@ function MainApp() {
     if (view === "im") {
       return disabledViews.includes("im") ? (
         <div className="card" style={{ opacity: 0.5, textAlign: "center", padding: 40 }}>
-          <p style={{ color: "#94a3b8", fontSize: 15 }}>此模块已禁用，请在「配置 → IM 通道」中启用</p>
+          <p style={{ color: "#94a3b8", fontSize: 15 }}>This module is disabled. Enable it in "Configuration → IM Channels".</p>
         </div>
       ) : (
         <IMView serviceRunning={serviceStatus?.running ?? false} apiBaseUrl={apiBaseUrl} />
@@ -4768,7 +4768,7 @@ function MainApp() {
     if (view === "mcp") {
       return disabledViews.includes("mcp") ? (
         <div className="card" style={{ opacity: 0.5, textAlign: "center", padding: 40 }}>
-          <p style={{ color: "#94a3b8", fontSize: 15 }}>此模块已禁用，请在「工具与技能」配置中启用</p>
+          <p style={{ color: "#94a3b8", fontSize: 15 }}>This module is disabled. Enable it in "Tools &amp; Skills" settings.</p>
         </div>
       ) : (
             <MCPView
@@ -4786,7 +4786,7 @@ function MainApp() {
     if (view === "scheduler") {
       return disabledViews.includes("scheduler") ? (
         <div className="card" style={{ opacity: 0.5, textAlign: "center", padding: 40 }}>
-          <p style={{ color: "#94a3b8", fontSize: 15 }}>此模块已禁用，请在「灵魂与意志」配置中启用</p>
+          <p style={{ color: "#94a3b8", fontSize: 15 }}>This module is disabled. Enable it in "Soul &amp; Will" settings.</p>
         </div>
       ) : (
         <SchedulerView serviceRunning={serviceStatus?.running ?? false} apiBaseUrl={apiBaseUrl} />
@@ -4795,7 +4795,7 @@ function MainApp() {
     if (view === "memory") {
       return disabledViews.includes("memory") ? (
         <div className="card" style={{ opacity: 0.5, textAlign: "center", padding: 40 }}>
-          <p style={{ color: "#94a3b8", fontSize: 15 }}>此模块已禁用，请在「灵魂与意志」配置中启用</p>
+          <p style={{ color: "#94a3b8", fontSize: 15 }}>This module is disabled. Enable it in "Soul &amp; Will" settings.</p>
         </div>
       ) : (
         <MemoryView serviceRunning={serviceStatus?.running ?? false} apiBaseUrl={apiBaseUrl} />
@@ -5004,7 +5004,7 @@ function MainApp() {
           fontSize: 13, fontWeight: 600,
           display: "flex", alignItems: "center", justifyContent: "center", gap: 12,
         }}>
-          <span>{t("preview.banner", { defaultValue: "预览模式 — 连接服务器后可使用完整功能" })}</span>
+          <span>{t("preview.banner", { defaultValue: "Preview mode — connect to a server to unlock the full experience" })}</span>
           <button
             onClick={() => { setPreviewMode(false); setWebAuthed(false); }}
             style={{
@@ -5013,7 +5013,7 @@ function MainApp() {
               fontWeight: 600, cursor: "pointer",
             }}
           >
-            {t("preview.connect", { defaultValue: "去连接" })}
+            {t("preview.connect", { defaultValue: "Connect" })}
           </button>
         </div>
       )}
@@ -5071,7 +5071,7 @@ function MainApp() {
           onCreateWorkspace={async (id, name) => {
             try {
               if (IS_WEB) {
-                notifyError("工作区管理暂不支持 Web 模式，请在桌面端操作");
+                notifyError("Workspace management is not supported in web mode. Please use the desktop app.");
                 return;
               }
               await invoke("create_workspace", { id, name, setCurrent: true });
@@ -5133,22 +5133,22 @@ function MainApp() {
           }}>
             <span style={{ flex: 1 }}>
               {isMobile
-                ? t("web.passwordBannerShort", { defaultValue: "访问密码为自动生成，建议设置自定义密码。" })
-                : t("web.passwordBanner", { defaultValue: "当前 Web 访问密码为系统自动生成，建议前往设置页面配置自定义密码以保障远程访问安全。" })}
+                ? t("web.passwordBannerShort", { defaultValue: "Access password is auto-generated. Set a custom one for better security." })
+                : t("web.passwordBanner", { defaultValue: "Your web access password is auto-generated. Visit the settings page to set a custom one and keep remote access secure." })}
             </span>
             <button className="btnSmall" style={{ whiteSpace: "nowrap", fontWeight: 500, fontSize: isMobile ? 11 : undefined, padding: isMobile ? "2px 8px" : undefined }} onClick={() => {
               setView("wizard");
               setStepId("advanced");
               setShowPwBanner(false);
               localStorage.setItem("openakita_pw_banner_dismissed", "1");
-            }}>{t("web.passwordBannerAction", { defaultValue: "去设置" })}</button>
+            }}>{t("web.passwordBannerAction", { defaultValue: "Go to settings" })}</button>
             <button style={{
               background: "none", border: "none", cursor: "pointer", padding: 2,
               color: "var(--warning-text, #92400e)", fontSize: 16, lineHeight: 1, opacity: 0.6,
             }} onClick={() => {
               setShowPwBanner(false);
               localStorage.setItem("openakita_pw_banner_dismissed", "1");
-            }} title={t("common.close", { defaultValue: "关闭" })}>×</button>
+            }} title={t("common.close", { defaultValue: "Close" })}>×</button>
           </div>
         )}
 
@@ -5162,7 +5162,7 @@ function MainApp() {
               onStartService={async () => {
                 const effectiveWsId = currentWorkspaceId || workspaces[0]?.id || null;
                 if (!effectiveWsId) {
-                  notifyError("未找到工作区（请先创建/选择一个工作区）");
+                  notifyError("No workspace found. Create or select a workspace first.");
                   return;
                 }
                 await startLocalServiceWithConflictCheck(effectiveWsId);

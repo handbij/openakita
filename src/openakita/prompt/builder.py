@@ -167,8 +167,13 @@ def resolve_tier(context_window: int) -> PromptTier:
 # _ALWAYS_ON_RULES: 所有 profile/tier 都注入 (~350 token)
 _ALWAYS_ON_RULES = """\
 ## Language rule (highest priority)
-- **Always reply in the same language the user is currently using.** If the user writes in Chinese, reply in Chinese; if they write in English, reply in English.
-- Do not switch reply language on your own when the user has not switched.
+- Explicit user reply-language preferences are authoritative. If the latest user message,
+  user profile, or memory says replies should be in English, all visible replies, error
+  messages, and status text must be in English even when the user writes in another
+  language.
+- Session language and the language of the current user message are fallbacks only when
+  no explicit reply-language preference exists.
+- Do not switch reply language on your own when the user has not explicitly requested it.
 
 ## Questioning guidelines (highest priority)
 
@@ -1148,8 +1153,12 @@ def _build_session_metadata_section(
             lang_name = _lang_names.get(lang, lang)
             lines.append(f"- **Session language**: {lang_name}")
             lines.append(
-                f"  - All replies, error messages, and status text should be in **{lang_name}**, "
-                f"unless the user explicitly switches language in a message."
+                f"  - Use **{lang_name}** only as the default when there is no explicit "
+                "user reply-language preference."
+            )
+            lines.append(
+                "  - If the user profile, memory, or latest message says replies should be "
+                "in English, that preference overrides the session language."
             )
 
         _channel_display = {

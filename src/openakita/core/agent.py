@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from ..prompt.builder import PromptProfile
     from ..sessions import Session
 
 from ..config import settings
@@ -2193,9 +2194,9 @@ class Agent:
                     "message_count": len(session.context.messages) if session.context else 0,
                     "has_sub_agents": bool(sub_records),
                     "sub_agent_count": len(sub_records),
-                    "language": getattr(session_config, "language", "zh")
+                    "language": getattr(session_config, "language", "en")
                     if session_config
-                    else "zh",
+                    else "en",
                 }
             except Exception:
                 pass
@@ -2217,7 +2218,7 @@ class Agent:
                 _skip_catalogs = True
 
         from ..prompt.budget import estimate_tokens
-        from ..prompt.builder import PromptProfile, PromptTier, resolve_tier
+        from ..prompt.builder import resolve_tier
 
         _user_input_tokens = estimate_tokens(task_description) if task_description else 0
         _prompt_profile = self._resolve_prompt_profile(intent, session_type)
@@ -2277,26 +2278,34 @@ class Agent:
         if self._is_sub_agent_call:
             return (
                 "\n\n---\n"
-                "## 🔒 子 Agent 工作模式\n"
-                "你当前是被主 Agent 委派的**子 Agent**，专注完成被分配的任务即可。\n"
-                "**禁止**使用 delegate_to_agent、delegate_parallel、create_agent、"
-                "spawn_agent 等委派工具。不要创建或委派其他 Agent。\n"
-                "直接用你自己的专业工具（如 web_search、browser、read_file 等）完成任务。\n"
+                "## Sub-Agent Work Mode\n"
+                "You are currently a **sub-agent** delegated by the main Agent. Focus only "
+                "on the assigned task.\n"
+                "**Do not** use delegation tools such as delegate_to_agent, "
+                "delegate_parallel, create_agent, or spawn_agent. Do not create or "
+                "delegate to other Agents.\n"
+                "Use your own specialist tools, such as web_search, browser, and "
+                "read_file, to complete the task directly.\n"
                 "\n"
-                "### 数据结论零伪造原则（必须遵守）\n"
-                "- 若任务要求数值/统计/模拟/计算结果，必须通过 run_shell 执行 python "
-                "或调用对应工具获得，不得凭经验估算。\n"
-                "- 任何没有工具输出佐证的数字、百分比、均值、标准差、概率一律视为违规。\n"
-                "- 无法获得真实数据时，明确返回：\"无法执行：<具体原因>，建议 <替代方案>\"，"
-                "禁止编造数据占位。\n"
+                "### No Fabricated Data Conclusions\n"
+                "- If the task requires numeric, statistical, simulation, or calculation "
+                "results, obtain them by running Python via run_shell or by calling the "
+                "appropriate tool. Do not estimate from experience.\n"
+                "- Any number, percentage, mean, standard deviation, or probability without "
+                "tool-output evidence is invalid.\n"
+                "- If real data cannot be obtained, return exactly: "
+                "\"Cannot execute: <specific reason>. Recommended alternative: "
+                "<alternative>.\" Do not invent placeholder data.\n"
             )
 
         profile = self._agent_profile
         if profile:
-            identity_section = f"你是「{profile.name}」({profile.icon})，{profile.description}。"
+            identity_section = (
+                f"You are \"{profile.name}\" ({profile.icon}), {profile.description}."
+            )
             my_id = profile.id
         else:
-            identity_section = "你是默认通用助手。"
+            identity_section = "You are the default general assistant."
             my_id = "default"
 
         # Roster — compact format (no skill lists to save tokens)
@@ -2316,40 +2325,46 @@ class Agent:
                 for p in store.list_all(include_ephemeral=False):
                     if p.id == my_id or p.id in preset_ids:
                         continue
-                    agents_lines.append(f"  - {p.icon} **{p.name}** (`{p.id}`) — {p.description}")
+                    agents_lines.append(
+                        f"  - {p.icon} **{p.name}** (`{p.id}`) — {p.description}"
+                    )
         except Exception:
             pass
 
-        roster = "\n".join(agents_lines) if agents_lines else "  （暂无其他可用 Agent）"
+        roster = "\n".join(agents_lines) if agents_lines else "  (No other Agents available)"
 
         # Skills list omitted from prompt to save tokens; use list_skills tool to discover
 
         return f"""
 
-## 多Agent协作
+## Multi-Agent Collaboration
 
 {identity_section}
-你有一支 Agent 团队，优先委派给专业 Agent，自己只处理简单通用问答。
+You have an Agent team. Prefer delegating to specialist Agents; handle only simple
+general Q&A yourself.
 
-### Agent 团队
+### Agent Team
 
 {roster}
 
-### 委派优先级（从高到低）
+### Delegation Priority
 
-1. `delegate_to_agent(agent_id, message, reason)` — 首选，直接委派
-2. `spawn_agent(inherit_from, message, ...)` — 需要定制或并行副本时
-3. `delegate_parallel(tasks=[...])` — 多个独立任务同时执行
-4. `create_agent(...)` — 最后手段，系统中完全没有相关 Agent 时才用
+1. `delegate_to_agent(agent_id, message, reason)` - preferred direct delegation
+2. `spawn_agent(inherit_from, message, ...)` - when customization or a parallel copy is needed
+3. `delegate_parallel(tasks=[...])` - run multiple independent tasks at the same time
+4. `create_agent(...)` - last resort, only when no relevant Agent exists
 
-### 规则
+### Rules
 
-- 专业对口：文档→office-doc，代码→code-assistant，浏览→browser-agent，数据→data-analyst
-- 独立任务用 `delegate_parallel` 并行，有依赖的串行
-- message 必须包含充分上下文，让目标 Agent 独立完成
-- 结果返回后整合并用你自己的语气回复用户
-- 委派深度上限 5 层，每会话最多 5 个动态 Agent
-- 对话历史中的 [子Agent工作总结] 和 [执行摘要] 是已完成的事实，不要重复执行"""
+- Match specialties: documents -> office-doc, code -> code-assistant,
+  browsing -> browser-agent, data -> data-analyst
+- Use `delegate_parallel` for independent tasks; run dependent tasks serially
+- The message must include enough context for the target Agent to complete the task
+  independently
+- After results return, integrate them and reply to the user in your own voice
+- Maximum delegation depth is 5; each session may have at most 5 dynamic Agents
+- Conversation-history summaries such as [Sub-Agent Work Summary] and
+  [Execution Summary] are completed facts; do not repeat the work"""
 
     def _generate_tools_text(self) -> str:
         """
@@ -5538,7 +5553,7 @@ class Agent:
                         farewell_text = block.text.strip()
                         break
                 logger.info(f"[StopTask][BgFarewell] LLM farewell 完成: {farewell_text[:100]}")
-            except (asyncio.TimeoutError, TimeoutError):
+            except TimeoutError:
                 logger.warning("[StopTask][BgFarewell] LLM farewell 超时 (5s)")
             except Exception as e:
                 logger.warning(f"[StopTask][BgFarewell] LLM farewell 失败: {e}")

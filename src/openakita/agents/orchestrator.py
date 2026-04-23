@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from openakita.agents.task_queue import TaskQueue
+from openakita.core.timeout_utils import check_progress_timeout
 
 if TYPE_CHECKING:
     from openakita.channels import MessageGateway
@@ -667,20 +668,6 @@ class AgentOrchestrator:
                 await asyncio.sleep(CHECK_INTERVAL)
                 elapsed = time.monotonic() - start
 
-                if hard_timeout > 0 and elapsed >= hard_timeout:
-                    logger.warning(
-                        f"[Orchestrator] Agent {agent_profile_id} hit hard cap "
-                        f"({hard_timeout}s configured in settings.hard_timeout_seconds), "
-                        f"killing. Set hard_timeout_seconds=0 to disable."
-                    )
-                    task.cancel()
-                    try:
-                        await task
-                    except (asyncio.CancelledError, Exception):
-                        pass
-                    self._update_sub_state(state_key, "timeout", elapsed)
-                    raise TimeoutError()
-
                 fp = self._get_progress_fingerprint(agent, session.id, session)
                 if fp != last_fingerprint:
                     last_fingerprint = fp
@@ -734,14 +721,28 @@ class AgentOrchestrator:
                     state_key, "running", self._sub_agent_states[state_key]
                 )
 
-                if idle_s >= idle_timeout:
-                    logger.warning(
-                        f"[Orchestrator] Agent {agent_profile_id} idle for "
-                        f"{idle_s:.0f}s with no progress "
-                        f"(last fingerprint: iter={last_fingerprint[0]}, "
-                        f"status={last_fingerprint[1]}, tools={last_fingerprint[2]}). "
-                        f"Killing. Adjust settings.progress_timeout_seconds to change threshold."
-                    )
+                timed_out, reason = await check_progress_timeout(
+                    last_progress_timestamp=last_progress_time,
+                    session_id=f"{agent_profile_id}:{session.id}",
+                    timeout_seconds=int(idle_timeout),
+                    hard_timeout_seconds=int(hard_timeout),
+                    start_time=start,
+                )
+                if timed_out:
+                    if reason == "hard_timeout":
+                        logger.warning(
+                            f"[Orchestrator] Agent {agent_profile_id} hit hard cap "
+                            f"({hard_timeout}s configured in settings.hard_timeout_seconds), "
+                            f"killing. Set hard_timeout_seconds=0 to disable."
+                        )
+                    else:
+                        logger.warning(
+                            f"[Orchestrator] Agent {agent_profile_id} idle for "
+                            f"{idle_s:.0f}s with no progress "
+                            f"(last fingerprint: iter={last_fingerprint[0]}, "
+                            f"status={last_fingerprint[1]}, tools={last_fingerprint[2]}). "
+                            f"Killing. Adjust settings.progress_timeout_seconds to change threshold."
+                        )
                     task.cancel()
                     try:
                         await task

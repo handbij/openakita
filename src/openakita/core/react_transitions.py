@@ -47,6 +47,7 @@ class ReActLoopState:
     last_output_hash: str = ""
     max_output_recovery_limit: int = 2
     continuation_nudge_max: int = 3
+    accumulated_text_parts: list[str] = field(default_factory=list)
 
     @property
     def can_recover_max_output(self) -> bool:
@@ -55,6 +56,14 @@ class ReActLoopState:
     @property
     def can_nudge_continuation(self) -> bool:
         return self.continuation_nudge_count < self.continuation_nudge_max
+
+    def reset_text_accumulation(self) -> str:
+        """Pop accumulated text fragments and return them joined."""
+        if not self.accumulated_text_parts:
+            return ""
+        joined = "".join(self.accumulated_text_parts)
+        self.accumulated_text_parts = []
+        return joined
 
 
 @dataclass

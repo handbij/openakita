@@ -1103,7 +1103,7 @@ fn check_environment() -> EnvironmentCheck {
 
     let mut conflicts = Vec::new();
     if !running.is_empty() {
-        conflicts.push(format!("检测到 {} 个正在运行的 OpenAkita 进程", running.len()));
+        conflicts.push(format!("Detected {} running OpenAkita process(es)", running.len()));
     }
 
     EnvironmentCheck {

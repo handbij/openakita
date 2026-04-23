@@ -15,6 +15,7 @@ tools/handlers/opencli.py — those are one-shot Popen.communicate calls.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -56,6 +57,12 @@ _CLI_ENV_ALLOW_PREFIXES = ("LC_", "XDG_")
 
 _CLI_ENV_VAR_RE = re.compile(r"\$\{(\w+)\}")
 _FALLBACK_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Default asyncio StreamReader buffer is 64 KiB; a single NDJSON line from
+# Claude Code / Codex / Goose easily exceeds that when it embeds a large tool
+# result (file read, grep, plan echo). 64 MiB is generous for any realistic
+# CLI event while still capping a runaway child process.
+_CLI_STDOUT_BUFFER_LIMIT = 64 * 1024 * 1024
 
 
 def _copy_safe_base_env() -> dict[str, str]:
@@ -150,6 +157,7 @@ async def stream_cli_subprocess(
         stderr=asyncio.subprocess.PIPE,
         cwd=str(cwd) if cwd else None,
         env={**env} if env else None,
+        limit=_CLI_STDOUT_BUFFER_LIMIT,
     )
     on_spawn(proc)
     assert proc.stdout is not None
@@ -166,7 +174,18 @@ async def stream_cli_subprocess(
             read_task.cancel()
             return
         cancel_task.cancel()
-        line = await read_task
+        try:
+            line = await read_task
+        except ValueError as exc:
+            logger.error(
+                "stream_cli_subprocess: stdout line exceeded %d-byte buffer; "
+                "terminating stream. Detail: %s",
+                _CLI_STDOUT_BUFFER_LIMIT,
+                exc,
+            )
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+            return
         if not line:
             return
         yield line

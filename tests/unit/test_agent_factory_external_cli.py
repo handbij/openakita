@@ -171,6 +171,36 @@ async def test_pool_skips_brain_sharing_for_external_cli(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_external_cli_agent_excluded_from_parent_brain_lookup(monkeypatch):
+    """Regression: ExternalCliAgents must set ``_agent_profile`` so the pool's
+    ``_find_parent_brain`` filter (which keys off ``_agent_profile.type``)
+    excludes them. Without this, a native sibling in the same session inherits
+    the ExternalCliAgent's ``_NullBrain`` and crashes with
+    ``AttributeError: '_NullBrain' object has no attribute 'get_fallback_model'``.
+    """
+    from openakita.agents import cli_providers
+    from openakita.agents.factory import _PoolEntry
+
+    monkeypatch.setitem(
+        cli_providers.PROVIDERS, CliProviderId.CLAUDE_CODE, MagicMock()
+    )
+
+    factory = AgentFactory()
+    pool = AgentInstancePool(factory=factory)
+
+    external = await factory.create(_make_cli_profile(id="claude-code-pair"))
+    assert isinstance(external, ExternalCliAgent)
+    assert getattr(external, "_agent_profile", None) is not None
+    assert external._agent_profile.type == AgentType.EXTERNAL_CLI
+
+    pool._pool["sess-1::claude-code-pair"] = _PoolEntry(
+        external, "claude-code-pair", "sess-1", 0
+    )
+
+    assert pool._find_parent_brain("sess-1") is None
+
+
+@pytest.mark.asyncio
 async def test_pool_caches_external_cli_by_session_profile_key(monkeypatch):
     from openakita.agents import cli_providers
     monkeypatch.setitem(

@@ -53,6 +53,33 @@ async def test_stream_cli_subprocess_yields_lines_from_echo(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_stream_cli_subprocess_handles_large_lines(tmp_path):
+    """A single stdout line >64 KiB must not trip the default readline limit.
+
+    Regression guard: default asyncio StreamReader buffer is 64 KiB, which
+    Claude Code / Codex routinely exceed with embedded tool results.
+    """
+    cancelled = asyncio.Event()
+    payload_size = 200 * 1024
+    script = (
+        f"python3 -c \"import sys; sys.stdout.write('x' * {payload_size} + chr(10))\""
+    )
+
+    lines = []
+    async for line in stream_cli_subprocess(
+        ["sh", "-c", script],
+        env={},
+        cwd=tmp_path,
+        cancelled=cancelled,
+        on_spawn=lambda _: None,
+    ):
+        lines.append(line)
+
+    assert len(lines) == 1
+    assert len(lines[0].rstrip(b"\n")) == payload_size
+
+
+@pytest.mark.asyncio
 async def test_stream_cli_subprocess_honors_cancellation(tmp_path):
     cancelled = asyncio.Event()
     lines = []

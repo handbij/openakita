@@ -38,7 +38,7 @@ class SessionConfig:
 
     max_history: int = 100  # max number of history messages
     timeout_minutes: int = 30  # timeout (minutes)
-    language: str = "zh"  # language
+    language: str = "en"  # language
     model: str | None = None  # override the default model
     custom_prompt: str | None = None  # custom system prompt
     auto_summarize: bool = True  # whether to auto-summarize long conversations
@@ -550,7 +550,7 @@ class Session:
             config=SessionConfig(
                 max_history=config_data.get("max_history", 100),
                 timeout_minutes=config_data.get("timeout_minutes", 30),
-                language=config_data.get("language", "zh"),
+                language=config_data.get("language", "en"),
                 model=config_data.get("model"),
                 custom_prompt=config_data.get("custom_prompt"),
                 auto_summarize=config_data.get("auto_summarize", True),

@@ -8,7 +8,7 @@ from pathlib import Path
 
 os.environ.setdefault("OPENAKITA", "1")
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
@@ -57,6 +57,41 @@ class Settings(BaseSettings):
         description="Whether to auto-fix during self-check (set to false for analysis-only without repairs)",
     )
 
+    # === Nightly self-improvement hook ===
+    # Optional workflow that turns recurring self-check findings into review-
+    # ready plans and subagent-driven implementation runs. Disabled by default
+    # so no code is ever mutated without explicit opt-in.
+    self_improvement_enabled: bool = Field(
+        default=False,
+        description=(
+            "Enable the nightly self-improvement orchestrator. When False, "
+            "self-check reports are saved but no improvement run is queued."
+        ),
+    )
+    self_improvement_runner: str = Field(
+        default="hybrid",
+        description=(
+            "Runner strategy for self-improvement: 'hybrid' (external CLI "
+            "agent first, native fallback), 'cli' (external only, fail if "
+            "unavailable), or 'native' (native subagents only)."
+        ),
+    )
+    self_improvement_requires_approval: bool = Field(
+        default=True,
+        description=(
+            "Block improvement runs on human approval between plan proposal "
+            "and implementation. Leave True to avoid surprise code changes."
+        ),
+    )
+    self_improvement_max_parallel_reviewers: int = Field(
+        default=5,
+        ge=1,
+        description=(
+            "Cap on parallel reviewer subagents during the code review phase "
+            "(minimum 1, defaults to 5)."
+        ),
+    )
+
     # === Task timeout strategy ===
     # Goal: avoid hangs rather than limiting long tasks. Prefer "no-progress timeout".
     # - progress_timeout_seconds: if no progress (LLM return / tool completion / iteration advance) for this duration, consider it hung.
@@ -68,6 +103,28 @@ class Settings(BaseSettings):
     hard_timeout_seconds: int = Field(
         default=0,
         description="Hard timeout cap (seconds, 0=disabled). Only as a final safety net against infinite tasks",
+    )
+
+    # === ReAct-native task continuity ===
+    # Hard caps on corrective actions inside the ReAct loop. Each cap is
+    # enforced by the shared transition helpers so run() and reason_stream()
+    # behave the same way.
+    continuation_nudge_max: int = Field(
+        default=3,
+        ge=1,
+        description=(
+            "Max number of continuation nudges the ReAct loop may issue when the "
+            "model declares completion prematurely (minimum 1; bigger values let "
+            "the loop push harder but also risk chatter)."
+        ),
+    )
+    max_output_recovery_limit: int = Field(
+        default=2,
+        ge=1,
+        description=(
+            "Max number of times a FINAL_ANSWER truncated by max_tokens is "
+            "resumed within a single ReAct turn before we give up (minimum 1)."
+        ),
     )
 
     # === ForceToolCall (tool guardrail) ===
@@ -685,6 +742,49 @@ class Settings(BaseSettings):
         default=10800,
         description="Hard cap on the max runtime of a single command (seconds); 0 or negative means no limit (default 10800=3 hours)",
     )
+
+    @field_validator("continuation_nudge_max")
+    @classmethod
+    def _validate_continuation_nudge_max(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("continuation_nudge_max must be >= 1")
+        return v
+
+    @field_validator("max_output_recovery_limit")
+    @classmethod
+    def _validate_max_output_recovery_limit(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("max_output_recovery_limit must be >= 1")
+        return v
+
+    @field_validator("progress_timeout_seconds")
+    @classmethod
+    def _validate_progress_timeout_seconds(cls, v: int) -> int:
+        if v < 30:
+            raise ValueError(
+                "progress_timeout_seconds must be >= 30 (set much higher in "
+                "production; values below 30s guarantee false positives)"
+            )
+        return v
+
+    @field_validator("hard_timeout_seconds")
+    @classmethod
+    def _validate_hard_timeout_seconds(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError(
+                "hard_timeout_seconds must be >= 0 (0 disables the hard cap)"
+            )
+        return v
+
+    @field_validator("self_improvement_runner")
+    @classmethod
+    def _validate_self_improvement_runner(cls, v: str) -> str:
+        allowed = {"hybrid", "cli", "native"}
+        if v not in allowed:
+            raise ValueError(
+                f"self_improvement_runner must be one of {sorted(allowed)}; got {v!r}"
+            )
+        return v
 
     @model_validator(mode="after")
     def _enforce_min_max_iterations(self) -> "Settings":

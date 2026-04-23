@@ -497,7 +497,7 @@ def compile_soul(content: str) -> str:
 
 
 def compile_agent_core(content: str) -> str:
-    return _compile_with_rules(content, _COMPILE_PROMPTS["agent_core"])
+    return _compile_with_rules(content, {"target": "agent_core", "max_tokens": 300})
 
 
 def compile_agent_tooling(content: str) -> str:
@@ -505,7 +505,7 @@ def compile_agent_tooling(content: str) -> str:
 
 
 def compile_user(content: str) -> str:
-    return _compile_with_rules(content, _COMPILE_PROMPTS["user"])
+    return _compile_with_rules(content, {"target": "user", "max_tokens": 120})
 
 
 def compile_persona(content: str) -> str:

@@ -37,6 +37,7 @@ from .context_manager import ContextManager
 from .context_manager import _CancelledError as _CtxCancelledError
 from .errors import UserCancelledError
 from .resource_budget import BudgetAction, ResourceBudget, create_budget_from_settings
+from .react_transitions import ReActLoopState
 from .response_handler import (
     ResponseHandler,
     clean_llm_response,
@@ -45,6 +46,10 @@ from .response_handler import (
     strip_thinking_tags,
 )
 from .supervisor import RuntimeSupervisor
+from .transition_helpers import (
+    build_max_tokens_continuation_prompt,
+    is_in_progress_promise as _module_is_in_progress_promise,
+)
 
 # 不产出"最终交付物"的管理类工具集合 —— 用于：
 #   1) ``tools_executed_in_task`` 标记（仅这些工具被调用 → 视为本轮无实质执行）
@@ -920,6 +925,10 @@ class ReasoningEngine:
         _tool_call_counter: dict[str, int] = {}
         _MAX_SAME_TOOL_PER_TASK = 5
 
+        # ReAct loop state — tracks max_output recovery + continuation nudge
+        # counters, shared with reason_stream() via _handle_max_tokens_recovery.
+        loop_state = self._init_loop_state()
+
         def _build_effective_system_prompt() -> str:
             """动态追加活跃 Plan"""
             try:
@@ -1322,36 +1331,20 @@ class ReasoningEngine:
                     f'[ReAct] Iter {iteration + 1} — FINAL_ANSWER: "{(decision.text_content or "").replace(chr(10), " ")}"'
                 )
 
-                # FINAL_ANSWER 被 max_tokens 截断时自动续接（最多 2 次）
-                if (
-                    decision.stop_reason == "max_tokens"
-                    and getattr(state, "_text_continuation_count", 0) < 2
+                # FINAL_ANSWER 被 max_tokens 截断时自动续接 — 共享 helper
+                if self._handle_max_tokens_recovery(
+                    loop_state=loop_state,
+                    decision=decision,
+                    working_messages=working_messages,
+                    source_tag="ReAct",
                 ):
-                    state._text_continuation_count = getattr(state, "_text_continuation_count", 0) + 1
-                    if not hasattr(state, "_accumulated_text_parts"):
-                        state._accumulated_text_parts = []
-                    state._accumulated_text_parts.append(decision.text_content or "")
-                    logger.info(
-                        f"[ReAct] FINAL_ANSWER truncated by max_tokens, "
-                        f"auto-continuation #{state._text_continuation_count}"
-                    )
-                    working_messages.append({
-                        "role": "assistant",
-                        "content": decision.assistant_content or [{"type": "text", "text": decision.text_content or ""}],
-                        **({"reasoning_content": decision.thinking_content} if decision.thinking_content else {}),
-                    })
-                    working_messages.append({
-                        "role": "user",
-                        "content": "你的回答被截断了。请直接从断点处继续输出，不要重复已说过的内容，不要道歉。",
-                    })
                     react_trace.append(_iter_trace)
                     continue
 
                 # 如果之前有续接，拼接完整文本
-                if hasattr(state, "_accumulated_text_parts") and state._accumulated_text_parts:
-                    state._accumulated_text_parts.append(decision.text_content or "")
-                    decision.text_content = "".join(state._accumulated_text_parts)
-                    del state._accumulated_text_parts
+                if loop_state.accumulated_text_parts:
+                    loop_state.accumulated_text_parts.append(decision.text_content or "")
+                    decision.text_content = loop_state.reset_text_accumulation()
 
                 consecutive_tool_rounds = 0
 
@@ -2330,6 +2323,9 @@ class ReasoningEngine:
             _tool_call_counter: dict[str, int] = {}
             _MAX_SAME_TOOL_PER_TASK = 5
 
+            # ReAct loop state — shared semantics with run() via helper methods.
+            loop_state = self._init_loop_state()
+
             def _make_tool_sig(tc: dict) -> str:
                 nonlocal _last_browser_url
                 name = tc.get("name", "")
@@ -2861,27 +2857,20 @@ class ReasoningEngine:
 
                 # ==================== FINAL_ANSWER ====================
                 if decision.type == DecisionType.FINAL_ANSWER:
-                    # FINAL_ANSWER 被 max_tokens 截断时自动续接（最多 2 次）
-                    if (
-                        decision.stop_reason == "max_tokens"
-                        and getattr(state, "_text_continuation_count", 0) < 2
+                    # FINAL_ANSWER 被 max_tokens 截断时自动续接 — 共享 helper
+                    if self._handle_max_tokens_recovery(
+                        loop_state=loop_state,
+                        decision=decision,
+                        working_messages=working_messages,
+                        source_tag="ReAct-Stream",
                     ):
-                        state._text_continuation_count = getattr(state, "_text_continuation_count", 0) + 1
-                        logger.info(
-                            f"[ReAct-Stream] FINAL_ANSWER truncated by max_tokens, "
-                            f"auto-continuation #{state._text_continuation_count}"
-                        )
-                        working_messages.append({
-                            "role": "assistant",
-                            "content": decision.assistant_content or [{"type": "text", "text": decision.text_content or ""}],
-                            **({"reasoning_content": decision.thinking_content} if decision.thinking_content else {}),
-                        })
-                        working_messages.append({
-                            "role": "user",
-                            "content": "你的回答被截断了。请直接从断点处继续输出，不要重复已说过的内容，不要道歉。",
-                        })
                         react_trace.append(_iter_trace)
                         continue
+
+                    # 如果之前有续接，拼接完整文本
+                    if loop_state.accumulated_text_parts:
+                        loop_state.accumulated_text_parts.append(decision.text_content or "")
+                        decision.text_content = loop_state.reset_text_accumulation()
 
                     consecutive_tool_rounds = 0
 
@@ -4957,6 +4946,90 @@ class ReasoningEngine:
 
         return None
 
+    # ==================== ReAct transition helpers (shared) ====================
+
+    def _init_loop_state(self) -> ReActLoopState:
+        """Build a fresh ReActLoopState seeded from current settings.
+
+        Called once per task execution. Limits are captured at construction
+        time so mid-task settings changes do not surprise the active loop.
+        """
+        return ReActLoopState(
+            max_output_recovery_limit=settings.max_output_recovery_limit,
+            continuation_nudge_max=settings.continuation_nudge_max,
+        )
+
+    def _handle_max_tokens_recovery(
+        self,
+        *,
+        loop_state: ReActLoopState,
+        decision: "Decision",
+        working_messages: list[dict],
+        source_tag: str,
+    ) -> bool:
+        """Resume a FINAL_ANSWER truncated by max_tokens.
+
+        Returns ``True`` when a continuation message was injected and the
+        caller should ``continue`` the outer loop; ``False`` when no
+        recovery was possible (limit reached, repeated output, or the
+        decision was not a truncated FINAL_ANSWER).
+        """
+        if decision.stop_reason != "max_tokens":
+            return False
+
+        text = decision.text_content or ""
+        text_hash = hashlib.sha256(text.encode()).hexdigest()[:16]
+        if text.strip() and loop_state.last_output_hash == text_hash:
+            logger.warning(
+                "[%s] max_tokens recovery aborted — identical output hash %s, "
+                "treating as stuck.",
+                source_tag, text_hash,
+            )
+            return False
+
+        if not loop_state.can_recover_max_output:
+            logger.info(
+                "[%s] max_tokens recovery limit reached "
+                "(count=%d, limit=%d). Accepting truncated answer as-is.",
+                source_tag,
+                loop_state.max_output_recovery_count,
+                loop_state.max_output_recovery_limit,
+            )
+            return False
+
+        loop_state.max_output_recovery_count += 1
+        loop_state.last_output_hash = text_hash
+        loop_state.accumulated_text_parts.append(text)
+
+        logger.info(
+            "[%s] FINAL_ANSWER truncated by max_tokens, auto-continuation "
+            "#%d/%d",
+            source_tag,
+            loop_state.max_output_recovery_count,
+            loop_state.max_output_recovery_limit,
+        )
+
+        working_messages.append({
+            "role": "assistant",
+            "content": decision.assistant_content or [
+                {"type": "text", "text": text}
+            ],
+            **(
+                {"reasoning_content": decision.thinking_content}
+                if decision.thinking_content
+                else {}
+            ),
+        })
+        working_messages.append({
+            "role": "user",
+            "content": build_max_tokens_continuation_prompt(
+                attempt=loop_state.max_output_recovery_count,
+                limit=loop_state.max_output_recovery_limit,
+                cutoff_hint=text,
+            ),
+        })
+        return True
+
     # ==================== 最终答案处理 ====================
 
     async def _handle_final_answer(
@@ -5960,26 +6033,13 @@ class ReasoningEngine:
 
     @staticmethod
     def _is_in_progress_promise(text: str) -> bool:
-        """检测响应是否为'进行中承诺'——模型声称正在执行但实际未调用工具。
+        """Thin wrapper delegating to ``transition_helpers.is_in_progress_promise``.
 
-        典型特征：响应很短，包含"正在生成"、"稍等"等进度描述，
-        但没有任何实际的执行结果或完整内容。
+        Kept as a method for backward compatibility with call sites that
+        expect ``self._is_in_progress_promise``; the authoritative logic
+        lives in ``core.transition_helpers``.
         """
-        import re
-
-        _text = (text or "").strip()
-        if len(_text) > 500:
-            return False
-        promise_patterns = [
-            r"正在.*(?:生成|创建|制作|处理|执行|准备)",
-            r"(?:生成|创建|制作|处理).*中",
-            r"稍等",
-            r"马上.*(?:生成|创建|完成)",
-            r"请.*(?:稍候|等待|等一下)",
-            r"立即.*(?:开始|为你|帮你)",
-            r"文[件档].*(?:生成|创建)中",
-        ]
-        return any(re.search(pat, _text) for pat in promise_patterns)
+        return _module_is_in_progress_promise(text)
 
     @staticmethod
     def _is_confirmation_response(text: str) -> bool:

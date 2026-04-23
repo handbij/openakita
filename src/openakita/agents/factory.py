@@ -244,6 +244,11 @@ class AgentFactory:
             mcp_servers_filtered=mcp_servers_filtered,
             limiter=self._external_cli_limiter,
         )
+        # _find_parent_brain keys off _agent_profile.type to exclude EXTERNAL_CLI
+        # siblings from brain sharing. Without this attribute, the filter treats
+        # the agent as a native parent and leaks _NullBrain into the next native
+        # sibling in the same session.
+        agent._agent_profile = profile
 
         if profile.permission_rules:
             agent._permission_rules = list(profile.permission_rules)

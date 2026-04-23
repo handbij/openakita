@@ -10,6 +10,7 @@ Features:
 - Generate daily reports
 """
 
+import asyncio
 import json
 import logging
 import tempfile
@@ -25,6 +26,10 @@ from ..tools.shell import ShellTool
 from .log_analyzer import ErrorPattern, LogAnalyzer
 
 logger = logging.getLogger(__name__)
+
+# Module-level strong-ref set for background self-improvement tasks so they
+# are not garbage-collected while the nightly hook is running (per asyncio docs).
+_SELF_IMPROVEMENT_TASKS: set[asyncio.Task[Any]] = set()
 
 
 @dataclass
@@ -763,7 +768,46 @@ Rules:
         # Save report
         self._save_daily_report(report)
 
+        # Optional: queue nightly self-improvement run (gated by settings,
+        # default disabled). Uses the standard strong-ref pattern so the
+        # fire-and-forget task is not GC'd mid-flight.
+        if settings.self_improvement_enabled and self._has_actionable_findings(report):
+            try:
+                from .self_improvement import SelfImprovementOrchestrator
+
+                orchestrator = SelfImprovementOrchestrator(brain=self.brain)
+                task = asyncio.create_task(orchestrator.run_from_report(report))
+                _SELF_IMPROVEMENT_TASKS.add(task)
+                task.add_done_callback(_SELF_IMPROVEMENT_TASKS.discard)
+                logger.info(
+                    "[SelfImprovement] Queued improvement run for report %s",
+                    report.date,
+                )
+            except Exception:
+                logger.exception(
+                    "[SelfImprovement] Failed to queue improvement run"
+                )
+
         return report
+
+    @staticmethod
+    def _has_actionable_findings(report: "DailyReport") -> bool:
+        """True when a report has at least one issue worth acting on.
+
+        Keeps the nightly hook quiet when the daily run produced a clean
+        report; the orchestrator would otherwise churn every night.
+        """
+        if report.core_error_patterns:
+            return True
+        if any(not r.success for r in report.fix_records):
+            return True
+        retrospect = report.retrospect_summary or {}
+        if retrospect.get("common_issues"):
+            return True
+        insights = report.memory_insights or {}
+        if insights.get("optimization_suggestions"):
+            return True
+        return False
 
     def _build_retrospect_summary_for_llm(self, retrospect_summary: dict) -> str:
         """

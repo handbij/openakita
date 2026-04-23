@@ -1,9 +1,6 @@
 """L2 Component Tests: Prompt compilation and system prompt building."""
 
-import pytest
-from pathlib import Path
-
-from openakita.prompt.budget import BudgetConfig, BudgetResult, estimate_tokens
+from openakita.prompt.budget import BudgetConfig
 
 
 class TestPromptCompileFunctions:
@@ -89,3 +86,44 @@ class TestBuildSystemPrompt:
             budget_config=budget,
         )
         assert isinstance(prompt, str)
+
+    def test_language_rule_prefers_explicit_user_preference(self, tmp_path):
+        from openakita.prompt.builder import build_system_prompt
+
+        identity_dir = tmp_path / "identity"
+        identity_dir.mkdir()
+        (identity_dir / "SOUL.md").write_text(
+            "# Soul\nAlways respond in English unless explicitly asked otherwise.",
+            encoding="utf-8",
+        )
+        (identity_dir / "USER.md").write_text(
+            "# User Profile\n\n- The user requires AI text replies to always be in English.",
+            encoding="utf-8",
+        )
+
+        prompt = build_system_prompt(
+            identity_dir=identity_dir,
+            tools_enabled=False,
+            session_context={"language": "zh"},
+        )
+
+        assert "If the user writes in Chinese, reply in Chinese" not in prompt
+        assert "Use **Chinese** only as the default" in prompt
+        assert "replies should be in English" in prompt
+        assert "overrides the session language" in prompt
+
+    def test_model_prompt_defers_to_language_policy(self, tmp_path):
+        from openakita.prompt.builder import build_system_prompt
+
+        identity_dir = tmp_path / "identity"
+        identity_dir.mkdir()
+        (identity_dir / "SOUL.md").write_text("# Soul\nI am OpenAkita.", encoding="utf-8")
+
+        prompt = build_system_prompt(
+            identity_dir=identity_dir,
+            tools_enabled=False,
+            model_id="gpt-4",
+        )
+
+        assert "Always respond in the same language" not in prompt
+        assert "Follow the system prompt language policy" in prompt

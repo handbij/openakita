@@ -1,7 +1,6 @@
 """L1 Unit Tests: Session state machine, message management."""
 
-import pytest
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from openakita.sessions.session import Session, SessionConfig, SessionContext, SessionState
 
@@ -68,6 +67,22 @@ class TestSessionConfig:
     def test_default_config(self):
         config = SessionConfig()
         assert isinstance(config, SessionConfig)
+        assert config.language == "en"
+
+    def test_from_dict_defaults_language_to_english(self):
+        data = {
+            "id": "s1",
+            "channel": "cli",
+            "chat_id": "c1",
+            "user_id": "u1",
+            "created_at": datetime.now().isoformat(),
+            "last_active": datetime.now().isoformat(),
+            "config": {},
+        }
+
+        session = Session.from_dict(data)
+
+        assert session.config.language == "en"
 
 
 class TestSessionTimestamps:

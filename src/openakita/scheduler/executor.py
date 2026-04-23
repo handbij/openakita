@@ -14,6 +14,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from ..core.timeout_utils import run_with_progress_polling
 from .task import ScheduledTask
 
 logger = logging.getLogger(__name__)
@@ -393,8 +394,31 @@ Reply with only NO_ACTION or NEEDS_ACTION, nothing else."""
                         f"(default: {self.timeout_seconds}s)"
                     )
             try:
-                result = await asyncio.wait_for(
-                    self._run_agent(agent, prompt), timeout=task_timeout
+                from ..config import settings
+
+                progress_timeout = int(
+                    getattr(settings, "progress_timeout_seconds", 0) or task_timeout
+                )
+
+                def _progress_signature() -> tuple[int, str, int]:
+                    try:
+                        re_engine = getattr(agent, "reasoning_engine", None)
+                        if re_engine is None:
+                            return (0, "", 0)
+                        iter_count = getattr(re_engine, "_iteration_count", 0) or 0
+                        status = getattr(re_engine, "_last_status", "") or ""
+                        tools_exec = getattr(re_engine, "_tools_executed_count", 0) or 0
+                        return (iter_count, status, tools_exec)
+                    except Exception:
+                        return (0, "", 0)
+
+                run_task = asyncio.create_task(self._run_agent(agent, prompt))
+                result = await run_with_progress_polling(
+                    run_task,
+                    progress_timeout_seconds=progress_timeout,
+                    hard_timeout_seconds=task_timeout,
+                    get_progress_signature=_progress_signature,
+                    session_id=f"scheduler:{task.id}",
                 )
             except (asyncio.TimeoutError, TimeoutError):
                 timeout_display = (

@@ -8,13 +8,14 @@ ReAct remains the authoritative loop; RalphLoop (ralph.py) is standalone legacy.
 """
 
 from __future__ import annotations
+
 import hashlib
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class ReActTransitionReason(str, Enum):
+class ReActTransitionReason(StrEnum):
     """Why the ReAct loop is transitioning to the next state."""
     CANCELLATION = "cancellation"
     BUDGET_PAUSE = "budget_pause"
@@ -26,7 +27,7 @@ class ReActTransitionReason(str, Enum):
     BLOCKED = "blocked"
 
 
-class ReActTerminalStatus(str, Enum):
+class ReActTerminalStatus(StrEnum):
     """Final status when the ReAct loop exits."""
     COMPLETED = "completed"
     BLOCKED = "blocked"

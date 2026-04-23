@@ -45,11 +45,11 @@ export const PetView: React.FC = () => {
     if (e.buttons === 1) invoke("start_dragging").catch(() => {});
   }, []);
 
-  let statusText = "空闲打盹";
-  if (petState === "thinking") statusText = "思考中...";
-  else if (petState === "tool_execution") statusText = `执行: ${toolName}`;
-  else if (petState === "completed") statusText = "完成！";
-  else if (petState === "error") statusText = "出错了";
+  let statusText = "Idle";
+  if (petState === "thinking") statusText = "Thinking...";
+  else if (petState === "tool_execution") statusText = `Running: ${toolName}`;
+  else if (petState === "completed") statusText = "Done!";
+  else if (petState === "error") statusText = "Error";
 
   return (
     <div className="pet-root" onMouseDown={handleDrag} data-tauri-drag-region>

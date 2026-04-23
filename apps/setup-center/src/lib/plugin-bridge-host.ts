@@ -237,7 +237,7 @@ export class PluginBridgeHost {
     const { title } = (msg.payload || {}) as { title?: string };
     try {
       const { openFileDialog } = await import("../platform");
-      const selected = await openFileDialog({ directory: true, title: title || "选择文件夹" });
+      const selected = await openFileDialog({ directory: true, title: title || "Select folder" });
       this.post({ type: "bridge:pick-folder-ack", requestId: msg.requestId, payload: { ok: true, path: selected } });
     } catch (e) {
       this.post({ type: "bridge:pick-folder-ack", requestId: msg.requestId, payload: { ok: false, error: String(e) } });

@@ -80,7 +80,7 @@ export function FloatingPlanBar({ plan }: { plan: ChatTodo }) {
       {!expanded && allDone && (
         <div className="floatingTodoActive floatingTodoDone">
           <span className="floatingTodoActiveIcon"><IconCheck size={12} /></span>
-          <span className="floatingTodoActiveText">{t("chat.allDone", "全部完成")}</span>
+          <span className="floatingTodoActiveText">{t("chat.allDone", "All done")}</span>
         </div>
       )}
 

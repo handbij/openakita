@@ -93,7 +93,7 @@ export function LightboxOverlay({ lightbox, onClose, downloadFile: dlFile, showI
           </button>
         )}
         <button
-          title={t("chat.downloadImage", "保存图片")}
+          title={t("chat.downloadImage", "Save image")}
           style={lbBtnStyle}
           onClick={async (e) => {
             e.stopPropagation();
@@ -101,7 +101,7 @@ export function LightboxOverlay({ lightbox, onClose, downloadFile: dlFile, showI
               const saved = await dlFile(lightbox.downloadUrl, lightbox.name || `image-${Date.now()}.png`);
               await showFolder(saved);
             } catch (err) {
-              logger.error("Chat", "图片下载失败", { error: String(err) });
+              logger.error("Chat", "Image download failed", { error: String(err) });
             }
           }}
         >

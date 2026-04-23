@@ -180,7 +180,7 @@ export async function saveAttachment(opts: {
 
   if (IS_TAURI) {
     const dest = await saveFileDialog({
-      title: "保存附件",
+      title: "Save attachment",
       defaultPath: filename,
     });
     if (!dest) return;

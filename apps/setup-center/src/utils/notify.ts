@@ -9,7 +9,7 @@ export function notifyError(msg: string) {
   toast.error(msg, {
     duration: 8000,
     action: {
-      label: "复制",
+      label: "Copy",
       onClick: () => copyToClipboard(msg),
     },
   });

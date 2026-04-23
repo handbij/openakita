@@ -40,7 +40,7 @@ export function useAttachments({
         _uploadId: uploadId,
       };
       if (att.type === "video" && file.size > 7 * 1024 * 1024) {
-        notifyError(`视频文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，桌面端最大支持 7MB（base64 编码后需 < 10MB）`);
+        notifyError(`Video file too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Desktop supports up to 7MB (must be < 10MB after base64 encoding).`);
         continue;
       }
       if (att.type === "image" || att.type === "video") {
@@ -51,7 +51,7 @@ export function useAttachments({
           setPendingAttachments((prev) => [...prev, att]);
         };
         reader.onerror = () => {
-          notifyError(`文件读取失败: ${file.name}`);
+          notifyError(`Failed to read file: ${file.name}`);
         };
         reader.readAsDataURL(file);
       } else {
@@ -64,7 +64,7 @@ export function useAttachments({
             );
           })
           .catch(() => {
-            notifyError(`文件上传失败: ${file.name}`);
+            notifyError(`File upload failed: ${file.name}`);
             setPendingAttachments((prev) =>
               prev.filter((a) => a._uploadId !== uploadId || a.url));
           });
@@ -94,7 +94,7 @@ export function useAttachments({
         reader.onload = () => {
           setPendingAttachments((prev) => [...prev, {
             type: "image",
-            name: `粘贴图片-${Date.now()}.png`,
+            name: `pasted-image-${Date.now()}.png`,
             previewUrl: reader.result as string,
             url: reader.result as string,
             size: file.size,
@@ -138,13 +138,13 @@ export function useAttachments({
             const base64Len = commaIdx >= 0 ? dataUrl.length - commaIdx - 1 : dataUrl.length;
             const estimatedSize = base64Len * 3 / 4;
             if (estimatedSize > FILE_MAX_SIZE) {
-              notifyError(`文件过大 (${(estimatedSize / 1024 / 1024).toFixed(1)}MB)，最大支持 50MB`);
+              notifyError(`File too large (${(estimatedSize / 1024 / 1024).toFixed(1)}MB). Maximum is 50MB.`);
               return;
             }
             if (isVideo) {
               const VIDEO_MAX_SIZE = 7 * 1024 * 1024;
               if (estimatedSize > VIDEO_MAX_SIZE) {
-                notifyError(`视频文件过大 (${(estimatedSize / 1024 / 1024).toFixed(1)}MB)，最大支持 7MB（base64 编码后需 < 10MB）`);
+                notifyError(`Video file too large (${(estimatedSize / 1024 / 1024).toFixed(1)}MB). Maximum is 7MB (must be < 10MB after base64 encoding).`);
                 return;
               }
             }
@@ -157,7 +157,7 @@ export function useAttachments({
             }]);
           })
           .catch((err) => {
-            notifyError(`文件读取失败: ${name}`);
+            notifyError(`Failed to read file: ${name}`);
             logger.error("Chat", "DragDrop read_file_base64 failed", { name, error: String(err) });
           });
       }

@@ -143,14 +143,14 @@ export function AgentSystemView(props: AgentSystemViewProps) {
       const review = data?.review ?? data;
       if (review && typeof review.deleted === "number") {
         toast.success(
-          `LLM 审查完成：删除 ${review.deleted}，更新 ${review.updated}，合并 ${review.merged}，保留 ${review.kept}` +
-          (review.errors > 0 ? `，错误 ${review.errors}` : "")
+          `LLM review complete: deleted ${review.deleted}, updated ${review.updated}, merged ${review.merged}, kept ${review.kept}` +
+          (review.errors > 0 ? `, errors ${review.errors}` : "")
         );
       } else {
-        toast.error("审查完成，但返回数据格式异常");
+        toast.error("Review complete, but returned data format is invalid");
       }
     } catch (e: any) {
-      toast.error(e.message || "审查请求失败");
+      toast.error(e.message || "Review request failed");
     } finally {
       setReviewing(false);
     }

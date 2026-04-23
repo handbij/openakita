@@ -103,7 +103,7 @@ export function useVersionCheck() {
     try {
       await relaunchApp();
     } catch {
-      setUpdateProgress({ status: "error", error: "请手动重启应用以完成更新" });
+      setUpdateProgress({ status: "error", error: "Please restart the app to complete the update" });
     }
   }, []);
 

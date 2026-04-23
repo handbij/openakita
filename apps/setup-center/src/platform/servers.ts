@@ -101,9 +101,9 @@ export async function testConnection(
   } catch (e: any) {
     const msg = e?.message || String(e);
     if (msg.includes("abort") || msg.includes("timeout")) {
-      return { ok: false, error: "连接超时" };
+      return { ok: false, error: "Connection timeout" };
     }
-    return { ok: false, error: "无法连接服务器" };
+    return { ok: false, error: "Unable to connect to server" };
   }
 }
 

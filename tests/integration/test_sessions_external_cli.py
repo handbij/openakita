@@ -14,7 +14,7 @@ from openakita.api.routes.sessions import router as sessions_router
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch):
     app = FastAPI()
-    app.include_router(sessions_router, prefix="/api/sessions")
+    app.include_router(sessions_router)
     # _claude_cwd_hash("/tmp/project") == "tmp-project" (lstrip("/") + replace("/","-"))
     claude_root = tmp_path / ".claude" / "projects" / "tmp-project"
     claude_root.mkdir(parents=True)

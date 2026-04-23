@@ -305,7 +305,7 @@ class AgentProfile:
         the CLI fields added in this plan — are carried over through one helper,
         with *overrides* replacing specific fields after the copy.
 
-        Enforces `ephemeral=True` and `inherit_from=base.id` regardless of overrides.
+        Enforces clone identity, type, freshness, and inheritance regardless of overrides.
         """
         from copy import deepcopy
 
@@ -313,13 +313,21 @@ class AgentProfile:
         data.pop("origin", None)
         data.pop("namespace", None)
         data.pop("definition_id", None)
-        data.update({
-            "id": id,
-            "ephemeral": True,
-            "inherit_from": base.id,
-        })
         for k, v in overrides.items():
             data[k] = v
+        data.pop("created_at", None)
+        data.update(
+            {
+                "id": id,
+                "type": (
+                    AgentType.EXTERNAL_CLI.value
+                    if base.type == AgentType.EXTERNAL_CLI
+                    else AgentType.DYNAMIC.value
+                ),
+                "ephemeral": True,
+                "inherit_from": base.id,
+            }
+        )
         # Deep-copy list/dict fields so the ephemeral can mutate without touching base
         for k, v in list(data.items()):
             if isinstance(v, list | dict):

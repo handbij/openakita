@@ -412,7 +412,7 @@ def _safe_provider(raw: str) -> CliProviderId | None:
         return None
 
 
-@router.get("/external-cli/detected")
+@router.get("/api/sessions/external-cli/detected")
 async def get_external_cli_detected():
     probed = await discover_all()
     return [
@@ -436,7 +436,7 @@ def _claude_cwd_hash(cwd: str) -> str:
     return slug
 
 
-@router.get("/external-cli/{provider}")
+@router.get("/api/sessions/external-cli/{provider}")
 async def list_external_cli_sessions(
     provider: str,
     cwd: str = "",
@@ -470,7 +470,7 @@ async def list_external_cli_sessions(
     return {"sessions": entries}
 
 
-@router.get("/external-cli/{provider}/{session_id}/messages")
+@router.get("/api/sessions/external-cli/{provider}/{session_id}/messages")
 async def stream_external_cli_messages(
     provider: str,
     session_id: str,

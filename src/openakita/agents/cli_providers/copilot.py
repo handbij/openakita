@@ -10,11 +10,11 @@ Message delivery: Copilot expects the prompt on stdin (`--input-file -`).
 Our helper writes the message to stdin after spawn. In tests that rely on
 fake binaries (sh -c), set env COPILOT_SUPPRESS_STDIN=1 to skip the write.
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -92,7 +92,9 @@ class CopilotAdapter:
 
     async def run(self, request, argv, env, *, on_spawn):
         acc = _TurnAccumulator()
+        stderr_buffer: list[bytes] = []
         proc_ref: dict[str, asyncio.subprocess.Process] = {}
+        progress_cancelled = False
 
         def track(proc):
             proc_ref["p"] = proc
@@ -109,14 +111,39 @@ class CopilotAdapter:
             except Exception as exc:
                 logger.debug("copilot: stdin write failed: %s", exc)
 
+        async def emit_progress(kind: str, **payload) -> None:
+            nonlocal progress_cancelled
+            cb = request.on_progress
+            if cb is None:
+                return
+            try:
+                await cb(kind, **payload)
+            except asyncio.CancelledError:
+                progress_cancelled = True
+                raise
+            except Exception:
+                logger.debug("progress callback failed", exc_info=True)
+
         try:
             async for line in stream_cli_subprocess(
-                argv, env, request.cwd, request.cancelled, on_spawn=track,
+                argv,
+                env,
+                request.cwd,
+                request.cancelled,
+                on_spawn=track,
+                on_stderr=stderr_buffer.append,
             ):
                 stripped = _strip_ansi(line.decode("utf-8", "replace")).rstrip("\n").strip()
                 if stripped:
                     acc.apply(stripped)
+                    m = TOOL_MARKER_RE.match(stripped)
+                    if m:
+                        await emit_progress("tool_use", tool_name=m.group(1).strip())
+                    elif not SESSION_MARKER_RE.match(stripped):
+                        await emit_progress("assistant_text", text=stripped)
         except asyncio.CancelledError:
+            if progress_cancelled:
+                raise
             return _cancelled_result(acc)
 
         if request.cancelled.is_set():
@@ -124,21 +151,18 @@ class CopilotAdapter:
 
         proc = proc_ref.get("p")
         exit_code = 0
-        stderr_text = ""
         if proc is not None:
             try:
                 exit_code = await asyncio.wait_for(proc.wait(), timeout=2.0)
             except TimeoutError:
                 exit_code = -1
-            if proc.stderr is not None:
-                try:
-                    stderr_text = (await proc.stderr.read()).decode("utf-8", "replace")
-                except Exception:
-                    logger.debug("stderr read failed", exc_info=True)
+        stderr_text = b"".join(stderr_buffer).decode("utf-8", "replace")
 
         if exit_code != 0:
             err_type = classify_cli_error(
-                exit_code=exit_code, stderr=stderr_text, exception=None,
+                exit_code=exit_code,
+                stderr=stderr_text,
+                exception=None,
             )
             return ProviderRunResult(
                 final_text=" ".join(acc.text_parts),

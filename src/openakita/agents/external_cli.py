@@ -13,6 +13,7 @@ Does NOT own:
 - Argv building / stream parsing — those belong to `ProviderAdapter` (plan 08).
 - Subprocess lifecycle — that belongs to `SubprocessRunner` (plan 07).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -117,13 +118,29 @@ class ExternalCliAgent:
     ) -> Any:
         """One CLI turn. Returns a DelegationResult-shaped dict (real type is
         imported by callers; we avoid the import here to keep the module cycle-free)."""
-        outcome = await self._run_one_turn(message, session=session, images=image_paths)
+        outcome = await self._run_one_turn(
+            message,
+            session=session,
+            images=image_paths,
+            cwd_override=None,
+        )
         return self._build_delegation_result(outcome)
 
-    async def execute_task_from_message(self, message: str) -> Any:
+    async def execute_task_from_message(
+        self,
+        message: str,
+        *,
+        cwd: str | Path | None = None,
+    ) -> Any:
         """Non-interactive path (scheduler). Same code path as chat_with_session
         but with `session=None` so the adapter skips SSE emission."""
-        outcome = await self._run_one_turn(message, session=None, images=())
+        cwd_override = Path(cwd) if cwd is not None else None
+        outcome = await self._run_one_turn(
+            message,
+            session=None,
+            images=(),
+            cwd_override=cwd_override,
+        )
         return {
             "success": outcome.exit_reason == ExitReason.COMPLETED,
             "data": outcome.text,
@@ -148,12 +165,48 @@ class ExternalCliAgent:
 
     # ---- Internals ------------------------------------------------------
 
+    async def _handle_progress(
+        self,
+        kind: str,
+        *,
+        text: str = "",
+        tool_name: str | None = None,
+    ) -> None:
+        task = self.agent_state.current_task
+        if task is None:
+            return
+        if self._cancelled.is_set() or task.cancelled or task.is_terminal:
+            return
+        if kind == "tool_use" and tool_name:
+            if task.status != TaskStatus.ACTING:
+                try:
+                    task.transition(TaskStatus.ACTING)
+                except ValueError:
+                    logger.debug(
+                        "ignoring external CLI tool progress for task status %s",
+                        task.status.value,
+                    )
+                    return
+            task.record_tool_execution([tool_name])
+            return
+        if kind == "assistant_text" and text:
+            if task.status != TaskStatus.REASONING:
+                try:
+                    task.transition(TaskStatus.REASONING)
+                except ValueError:
+                    logger.debug(
+                        "ignoring external CLI assistant progress for task status %s",
+                        task.status.value,
+                    )
+            return
+
     async def _run_one_turn(
         self,
         message: str,
         *,
         session: Any | None,
         images: tuple[Path, ...],
+        cwd_override: Path | None = None,
     ) -> _TurnOutcome:
         self._cancelled.clear()
         start = time.monotonic()
@@ -168,7 +221,7 @@ class ExternalCliAgent:
         task.iteration = self._turn
 
         prompt, system_extra = self._compose_prompt(message)
-        cwd = Path(getattr(session, "cwd", None) or Path.cwd())
+        cwd = cwd_override or Path(getattr(session, "cwd", None) or Path.cwd())
 
         text = ""
         tools_used: list[str] = []
@@ -187,15 +240,76 @@ class ExternalCliAgent:
                 system_prompt_extra=system_extra,
                 images=tuple(images),
                 mcp_servers=self._mcp_servers,
+                on_progress=self._handle_progress,
             )
             result: ProviderRunResult = await self._runner.run(request)
-            self.last_session_id = result.session_id or self.last_session_id
             text, tools_used, artifacts = (
                 result.final_text,
                 list(result.tools_used),
                 list(result.artifacts),
             )
-            task.record_tool_execution(tools_used)
+            if (
+                result.exit_reason == ExitReason.CANCELLED
+                or self._cancelled.is_set()
+                or task.cancelled
+                or task.status == TaskStatus.CANCELLED
+            ):
+                exit_reason = ExitReason.CANCELLED
+                error = result.error_message
+                task.cancel("external CLI turn cancelled")
+                await self.cancel()
+                return _TurnOutcome(
+                    text=text,
+                    tools_used=tools_used,
+                    artifacts=artifacts,
+                    elapsed_s=time.monotonic() - start,
+                    exit_reason=exit_reason,
+                    error=error,
+                )
+            recorded_tools = list(task.tools_executed)
+            unrecorded_tools = []
+            for tool_name in tools_used:
+                if tool_name in recorded_tools:
+                    recorded_tools.remove(tool_name)
+                else:
+                    unrecorded_tools.append(tool_name)
+            task.record_tool_execution(unrecorded_tools)
+            if task.status == TaskStatus.ACTING:
+                try:
+                    task.transition(TaskStatus.OBSERVING)
+                    task.transition(TaskStatus.REASONING)
+                except ValueError:
+                    logger.debug(
+                        "leaving external CLI task in status %s after final progress normalization",
+                        task.status.value,
+                    )
+            if self._cancelled.is_set() or task.cancelled or task.status == TaskStatus.CANCELLED:
+                exit_reason = ExitReason.CANCELLED
+                error = result.error_message
+                task.cancel("external CLI turn cancelled")
+                await self.cancel()
+                return _TurnOutcome(
+                    text=text,
+                    tools_used=tools_used,
+                    artifacts=artifacts,
+                    elapsed_s=time.monotonic() - start,
+                    exit_reason=exit_reason,
+                    error=error,
+                )
+            if task.is_terminal:
+                exit_reason = (
+                    ExitReason.ERROR if task.status == TaskStatus.FAILED else ExitReason.COMPLETED
+                )
+                error = result.error_message
+                return _TurnOutcome(
+                    text=text,
+                    tools_used=tools_used,
+                    artifacts=artifacts,
+                    elapsed_s=time.monotonic() - start,
+                    exit_reason=exit_reason,
+                    error=error,
+                )
+            self.last_session_id = result.session_id or self.last_session_id
             if result.errored:
                 exit_reason = ExitReason.ERROR
                 error = result.error_message
@@ -205,6 +319,7 @@ class ExternalCliAgent:
         except asyncio.CancelledError:
             exit_reason = ExitReason.CANCELLED
             task.cancel("external CLI turn cancelled")
+            await self.cancel()
             raise
 
         return _TurnOutcome(

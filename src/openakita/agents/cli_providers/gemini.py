@@ -6,12 +6,12 @@ Gemini CLI's non-interactive mode emits a single JSON object on stdout:
 No stream-of-events shape — the adapter buffers bytes until EOF and parses
 once. Resume: `--resume <id>`. Write mode: `--yolo` to auto-accept tool calls.
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-import os
 from pathlib import Path
 
 from openakita.agents.cli_detector import CliProviderId
@@ -60,15 +60,32 @@ class GeminiAdapter:
 
     async def run(self, request, argv, env, *, on_spawn):
         buf = bytearray()
+        stderr_buffer: list[bytes] = []
         proc_ref: dict[str, asyncio.subprocess.Process] = {}
 
         def track(proc):
             proc_ref["p"] = proc
             on_spawn(proc)
 
+        async def emit_progress(kind: str, **payload) -> None:
+            cb = request.on_progress
+            if cb is None:
+                return
+            try:
+                await cb(kind, **payload)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.debug("progress callback failed", exc_info=True)
+
         try:
             async for line in stream_cli_subprocess(
-                argv, env, request.cwd, request.cancelled, on_spawn=track,
+                argv,
+                env,
+                request.cwd,
+                request.cancelled,
+                on_spawn=track,
+                on_stderr=stderr_buffer.append,
             ):
                 buf.extend(line)
         except asyncio.CancelledError:
@@ -79,17 +96,12 @@ class GeminiAdapter:
 
         proc = proc_ref.get("p")
         exit_code = 0
-        stderr_text = ""
         if proc is not None:
             try:
                 exit_code = await asyncio.wait_for(proc.wait(), timeout=2.0)
             except TimeoutError:
                 exit_code = -1
-            if proc.stderr is not None:
-                try:
-                    stderr_text = (await proc.stderr.read()).decode("utf-8", "replace")
-                except Exception:
-                    logger.debug("stderr read failed", exc_info=True)
+        stderr_text = b"".join(stderr_buffer).decode("utf-8", "replace")
 
         try:
             obj = json.loads(bytes(buf))
@@ -107,9 +119,17 @@ class GeminiAdapter:
         errored = bool(obj.get("error")) or exit_code != 0
         error_message = str(obj.get("error")) if obj.get("error") else None
 
+        if final_text:
+            await emit_progress("assistant_text", text=final_text)
+        for tool_name in tools_used:
+            if tool_name:
+                await emit_progress("tool_use", tool_name=tool_name)
+
         if errored:
             err_type = classify_cli_error(
-                exit_code=exit_code, stderr=stderr_text, exception=None,
+                exit_code=exit_code,
+                stderr=stderr_text,
+                exception=None,
             )
             return ProviderRunResult(
                 final_text=final_text,

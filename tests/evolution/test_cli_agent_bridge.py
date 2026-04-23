@@ -1,85 +1,89 @@
 """Tests for :mod:`openakita.evolution.cli_agent_bridge`.
 
-Covers:
-- ``resolve_binary`` maps agent keys to PATH binaries
-- Unsupported agent type is reported cleanly
-- Missing binary produces ``(False, "not_found")``
-- Successful subprocess with exit 0 returns ``(True, stdout)``
-- Non-zero exit returns stdout+stderr and success=False
-- Hard timeout produces ``(False, "timed_out")`` and kills the process
+Covers the self-improvement bridge's public call shape while asserting the
+implementation goes through configured external CLI agent profiles instead of
+raw subprocess spawning.
 """
 
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from openakita.agents.profile import AgentProfile, AgentType, ProfileStore
 from openakita.evolution import cli_agent_bridge
-from openakita.evolution.cli_agent_bridge import resolve_binary, run_external_cli_agent
+from openakita.evolution.cli_agent_bridge import resolve_profile_id, run_external_cli_agent
 
 
-class _FakeProcess:
+class _AgentStub:
     def __init__(
         self,
-        stdout: bytes = b"",
-        stderr: bytes = b"",
-        returncode: int = 0,
+        result: Any,
         *,
-        communicate_delay: float = 0.0,
-        raise_on_communicate: Exception | None = None,
+        delay_s: float = 0.0,
+        execute_error: BaseException | None = None,
     ) -> None:
-        self._stdout = stdout
-        self._stderr = stderr
-        self.returncode = returncode
-        self._communicate_delay = communicate_delay
-        self._raise = raise_on_communicate
-        self.killed = False
+        self._result = result
+        self._delay_s = delay_s
+        self._execute_error = execute_error
+        self.messages: list[str] = []
+        self.cwd: str | None = None
+        self.cancel = AsyncMock()
+        self.shutdown = AsyncMock()
 
-    async def communicate(self) -> tuple[bytes, bytes]:
-        if self._raise is not None:
-            raise self._raise
-        if self._communicate_delay:
-            await asyncio.sleep(self._communicate_delay)
-        return self._stdout, self._stderr
-
-    def kill(self) -> None:
-        self.killed = True
-
-    async def wait(self) -> int:
-        return self.returncode
+    async def execute_task_from_message(self, message: str, *, cwd: str | None = None) -> Any:
+        self.messages.append(message)
+        self.cwd = cwd
+        if self._delay_s:
+            await asyncio.sleep(self._delay_s)
+        if self._execute_error is not None:
+            raise self._execute_error
+        return self._result
 
 
-def _fake_factory(process: _FakeProcess) -> Any:
-    async def _factory(*args: Any, **kwargs: Any) -> _FakeProcess:
-        _factory.calls.append((args, kwargs))  # type: ignore[attr-defined]
-        return process
-
-    _factory.calls = []  # type: ignore[attr-defined]
-    return _factory
-
-
-# ── resolve_binary ──
-
-
-def test_resolve_binary_unknown_key() -> None:
-    assert resolve_binary("not-a-real-agent") is None
-
-
-def test_resolve_binary_uses_shutil_which(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        cli_agent_bridge.shutil,
-        "which",
-        lambda binary: f"/usr/local/bin/{binary}",
+def _store_with_profile(tmp_path, profile_id: str = "claude-code-pair") -> ProfileStore:
+    store = ProfileStore(tmp_path / "agents")
+    store.save(
+        AgentProfile(
+            id=profile_id,
+            name="External CLI",
+            type=AgentType.EXTERNAL_CLI,
+            cli_provider_id="claude_code",
+        )
     )
-    assert resolve_binary("claude-code") == "/usr/local/bin/claude"
-    assert resolve_binary("codex") == "/usr/local/bin/codex"
-    assert resolve_binary("goose") == "/usr/local/bin/goose"
+    return store
 
 
-# ── run_external_cli_agent ──
+def _patch_factory(monkeypatch: pytest.MonkeyPatch, agent: _AgentStub) -> MagicMock:
+    factory = MagicMock()
+    factory.create = AsyncMock(return_value=agent)
+    monkeypatch.setattr(cli_agent_bridge, "AgentFactory", lambda: factory)
+    return factory
+
+
+def _patch_failing_factory(monkeypatch: pytest.MonkeyPatch, exc: Exception) -> MagicMock:
+    factory = MagicMock()
+    factory.create = AsyncMock(side_effect=exc)
+    monkeypatch.setattr(cli_agent_bridge, "AgentFactory", lambda: factory)
+    return factory
+
+
+def test_resolve_profile_id_unknown_key() -> None:
+    assert resolve_profile_id("not-a-real-agent") is None
+
+
+def test_resolve_profile_id_known_keys() -> None:
+    assert resolve_profile_id("claude-code") == "claude-code-pair"
+    assert resolve_profile_id("codex") == "codex-writer"
+    assert resolve_profile_id("goose") == "local-goose"
+
+
+def test_profile_keys_set() -> None:
+    assert set(cli_agent_bridge._AGENT_PROFILE.keys()) == {"claude-code", "codex", "goose"}
 
 
 @pytest.mark.asyncio
@@ -94,149 +98,295 @@ async def test_unsupported_agent_reports_cleanly() -> None:
 
 
 @pytest.mark.asyncio
-async def test_missing_binary_returns_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli_agent_bridge.shutil, "which", lambda _b: None)
+async def test_missing_profile_returns_not_found(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    store = ProfileStore(tmp_path / "agents")
+    monkeypatch.setattr(cli_agent_bridge, "get_profile_store", lambda: store)
+
     success, output = await run_external_cli_agent(
         agent_type="claude-code",
         task_description="whatever",
         working_directory="/tmp",
     )
+
     assert success is False
     assert output == "not_found"
 
 
 @pytest.mark.asyncio
-async def test_successful_run_returns_stdout(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli_agent_bridge.shutil, "which", lambda _b: "/usr/bin/claude")
-    factory = _fake_factory(_FakeProcess(stdout=b"finished", returncode=0))
+async def test_successful_dict_result_returns_data(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store = _store_with_profile(tmp_path)
+    monkeypatch.setattr(cli_agent_bridge, "get_profile_store", lambda: store)
+    agent = _AgentStub({"success": True, "data": "finished", "error": None})
+    factory = _patch_factory(monkeypatch, agent)
+
     success, output = await run_external_cli_agent(
         agent_type="claude-code",
         task_description="describe",
-        working_directory="/tmp",
-        subprocess_factory=factory,
+        working_directory="/tmp/project",
     )
+
     assert success is True
     assert output == "finished"
-    assert factory.calls, "subprocess factory should be invoked"
-    args, kwargs = factory.calls[0]
-    assert args[0] == "/usr/bin/claude"
-    assert args[-1] == "describe"
-    assert kwargs["cwd"] == "/tmp"
+    assert agent.messages == ["describe"]
+    assert agent.cwd == "/tmp/project"
+    factory.create.assert_awaited_once_with(store.get("claude-code-pair"))
+    agent.shutdown.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_extra_args_are_passed_through(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli_agent_bridge.shutil, "which", lambda _b: "/usr/bin/claude")
-    factory = _fake_factory(_FakeProcess(stdout=b"", returncode=0))
+async def test_shutdown_error_after_success_does_not_replace_result(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store = _store_with_profile(tmp_path)
+    monkeypatch.setattr(cli_agent_bridge, "get_profile_store", lambda: store)
+    agent = _AgentStub({"success": True, "data": "finished", "error": None})
+    agent.shutdown = AsyncMock(side_effect=RuntimeError("shutdown boom"))
+    _patch_factory(monkeypatch, agent)
+
+    success, output = await run_external_cli_agent(
+        agent_type="claude-code",
+        task_description="describe",
+        working_directory="/tmp/project",
+    )
+
+    assert success is True
+    assert output == "finished"
+    agent.shutdown.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_factory_create_error_returns_diagnostic(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store = _store_with_profile(tmp_path)
+    monkeypatch.setattr(cli_agent_bridge, "get_profile_store", lambda: store)
+    factory = _patch_failing_factory(monkeypatch, ValueError("missing provider"))
+
+    success, output = await run_external_cli_agent(
+        agent_type="claude-code",
+        task_description="task",
+        working_directory="/tmp",
+    )
+
+    assert success is False
+    assert output == "create_error:ValueError:missing provider"
+    factory.create.assert_awaited_once_with(store.get("claude-code-pair"))
+
+
+@pytest.mark.asyncio
+async def test_failed_dict_result_returns_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store = _store_with_profile(tmp_path)
+    monkeypatch.setattr(cli_agent_bridge, "get_profile_store", lambda: store)
+    agent = _AgentStub({"success": False, "data": "", "error": "boom"})
+    _patch_factory(monkeypatch, agent)
+
+    success, output = await run_external_cli_agent(
+        agent_type="claude-code",
+        task_description="task",
+        working_directory="/tmp",
+    )
+
+    assert success is False
+    assert output == "boom"
+    agent.shutdown.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_error_returns_diagnostic_and_shuts_down(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store = _store_with_profile(tmp_path)
+    monkeypatch.setattr(cli_agent_bridge, "get_profile_store", lambda: store)
+    agent = _AgentStub(None, execute_error=RuntimeError("boom"))
+    _patch_factory(monkeypatch, agent)
+
+    success, output = await run_external_cli_agent(
+        agent_type="claude-code",
+        task_description="task",
+        working_directory="/tmp",
+    )
+
+    assert success is False
+    assert output == "execute_error:RuntimeError:boom"
+    agent.shutdown.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_error_after_execute_error_does_not_replace_result(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store = _store_with_profile(tmp_path)
+    monkeypatch.setattr(cli_agent_bridge, "get_profile_store", lambda: store)
+    agent = _AgentStub(None, execute_error=RuntimeError("boom"))
+    agent.shutdown = AsyncMock(side_effect=RuntimeError("shutdown boom"))
+    _patch_factory(monkeypatch, agent)
+
+    success, output = await run_external_cli_agent(
+        agent_type="claude-code",
+        task_description="task",
+        working_directory="/tmp",
+    )
+
+    assert success is False
+    assert output == "execute_error:RuntimeError:boom"
+    agent.shutdown.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_cancelled_error_propagates_and_attempts_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store = _store_with_profile(tmp_path)
+    monkeypatch.setattr(cli_agent_bridge, "get_profile_store", lambda: store)
+    agent = _AgentStub(None, execute_error=asyncio.CancelledError())
+    _patch_factory(monkeypatch, agent)
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_external_cli_agent(
+            agent_type="claude-code",
+            task_description="task",
+            working_directory="/tmp",
+        )
+
+    agent.shutdown.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_failed_dict_result_returns_data_when_error_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store = _store_with_profile(tmp_path)
+    monkeypatch.setattr(cli_agent_bridge, "get_profile_store", lambda: store)
+    agent = _AgentStub({"success": False, "data": "useful output", "error": None})
+    _patch_factory(monkeypatch, agent)
+
+    success, output = await run_external_cli_agent(
+        agent_type="claude-code",
+        task_description="task",
+        working_directory="/tmp",
+    )
+
+    assert success is False
+    assert output == "useful output"
+    agent.shutdown.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_object_result_shape_is_supported(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store = _store_with_profile(tmp_path)
+    monkeypatch.setattr(cli_agent_bridge, "get_profile_store", lambda: store)
+    agent = _AgentStub(SimpleNamespace(success=True, data="object-data", error=None))
+    _patch_factory(monkeypatch, agent)
+
+    success, output = await run_external_cli_agent(
+        agent_type="claude-code",
+        task_description="task",
+        working_directory="/tmp",
+    )
+
+    assert success is True
+    assert output == "object-data"
+
+
+@pytest.mark.asyncio
+async def test_failed_object_result_returns_data_when_error_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store = _store_with_profile(tmp_path)
+    monkeypatch.setattr(cli_agent_bridge, "get_profile_store", lambda: store)
+    agent = _AgentStub(SimpleNamespace(success=False, data="object diagnostic", error=None))
+    _patch_factory(monkeypatch, agent)
+
+    success, output = await run_external_cli_agent(
+        agent_type="claude-code",
+        task_description="task",
+        working_directory="/tmp",
+    )
+
+    assert success is False
+    assert output == "object diagnostic"
+    agent.shutdown.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_extra_args_are_folded_into_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store = _store_with_profile(tmp_path)
+    monkeypatch.setattr(cli_agent_bridge, "get_profile_store", lambda: store)
+    agent = _AgentStub({"success": True, "data": "", "error": None})
+    _patch_factory(monkeypatch, agent)
+
     await run_external_cli_agent(
         agent_type="claude-code",
         task_description="task",
         working_directory="/tmp",
         extra_args=["--yes", "-p"],
-        subprocess_factory=factory,
     )
-    args, _ = factory.calls[0]
-    assert list(args) == ["/usr/bin/claude", "--yes", "-p", "task"]
+
+    assert agent.messages == ["--yes -p\n\ntask"]
 
 
 @pytest.mark.asyncio
-async def test_non_zero_exit_reports_failure_with_output(
+async def test_timeout_cancels_and_shuts_down_agent(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
 ) -> None:
-    monkeypatch.setattr(cli_agent_bridge.shutil, "which", lambda _b: "/usr/bin/claude")
-    factory = _fake_factory(
-        _FakeProcess(stdout=b"out", stderr=b"boom", returncode=2)
-    )
-    success, output = await run_external_cli_agent(
-        agent_type="claude-code",
-        task_description="task",
-        working_directory="/tmp",
-        subprocess_factory=factory,
-    )
-    assert success is False
-    assert "out" in output
-    assert "boom" in output
+    store = _store_with_profile(tmp_path)
+    monkeypatch.setattr(cli_agent_bridge, "get_profile_store", lambda: store)
+    agent = _AgentStub({"success": True, "data": "", "error": None}, delay_s=1.0)
+    _patch_factory(monkeypatch, agent)
 
-
-@pytest.mark.asyncio
-async def test_launch_error_is_caught(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli_agent_bridge.shutil, "which", lambda _b: "/usr/bin/claude")
-
-    async def broken_factory(*_args: Any, **_kwargs: Any) -> None:
-        raise FileNotFoundError("missing exec")
-
-    success, output = await run_external_cli_agent(
-        agent_type="claude-code",
-        task_description="task",
-        working_directory="/tmp",
-        subprocess_factory=broken_factory,
-    )
-    assert success is False
-    assert output == "not_found"
-
-
-@pytest.mark.asyncio
-async def test_timeout_kills_process(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli_agent_bridge.shutil, "which", lambda _b: "/usr/bin/claude")
-    slow = _FakeProcess(stdout=b"", returncode=0, communicate_delay=1.0)
-    factory = _fake_factory(slow)
     success, output = await run_external_cli_agent(
         agent_type="claude-code",
         task_description="slow task",
         working_directory="/tmp",
-        timeout_seconds=1,  # bridge interprets 1s literal, asyncio.wait_for enforces it
-        subprocess_factory=factory,
+        timeout_seconds=0.01,
     )
-    # Either the wait_for triggered timed_out, or we exited normally very fast.
-    # The test's job is to ensure no crash and deterministic output shape.
-    assert isinstance(success, bool)
-    assert isinstance(output, str)
+
+    assert success is False
+    assert output == "timed_out"
+    agent.cancel.assert_awaited_once()
+    agent.shutdown.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_env_is_merged_with_parent(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("EXISTING_VAR", "parent_value")
-    monkeypatch.setattr(cli_agent_bridge.shutil, "which", lambda _b: "/usr/bin/claude")
-    factory = _fake_factory(_FakeProcess(stdout=b"", returncode=0))
-    await run_external_cli_agent(
+async def test_env_and_subprocess_factory_are_ignored_for_compatibility(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store = _store_with_profile(tmp_path)
+    monkeypatch.setattr(cli_agent_bridge, "get_profile_store", lambda: store)
+    agent = _AgentStub({"success": True, "data": "ok", "error": None})
+    _patch_factory(monkeypatch, agent)
+
+    async def broken_factory(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("raw subprocess factory should not be called")
+
+    success, output = await run_external_cli_agent(
         agent_type="claude-code",
-        task_description="t",
+        task_description="task",
         working_directory="/tmp",
         env={"CUSTOM": "v"},
-        subprocess_factory=factory,
+        subprocess_factory=broken_factory,
     )
-    _, kwargs = factory.calls[0]
-    env = kwargs["env"]
-    assert env.get("CUSTOM") == "v"
-    assert env.get("EXISTING_VAR") == "parent_value"
 
-
-def test_resolve_binary_keys_set() -> None:
-    # Sanity: protect the mapping from silent drift.
-    assert set(cli_agent_bridge._AGENT_BINARY.keys()) == {"claude-code", "codex", "goose"}
-
-
-# ── MagicMock compatibility shim check — ensures factory callable is exercised ──
-
-
-@pytest.mark.asyncio
-async def test_subprocess_factory_receives_stdout_stderr_pipes(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(cli_agent_bridge.shutil, "which", lambda _b: "/usr/bin/claude")
-    factory = _fake_factory(_FakeProcess(stdout=b"x", returncode=0))
-    await run_external_cli_agent(
-        agent_type="claude-code",
-        task_description="t",
-        working_directory="/tmp",
-        subprocess_factory=factory,
-    )
-    _, kwargs = factory.calls[0]
-    # Pipes must be requested to harvest output.
-    assert kwargs["stdout"] == asyncio.subprocess.PIPE
-    assert kwargs["stderr"] == asyncio.subprocess.PIPE
-
-
-def test_magic_mock_used_only_in_this_module() -> None:
-    # Keep the import used so ruff doesn't trim it; useful for future fixture work.
-    assert isinstance(MagicMock(), MagicMock)
+    assert success is True
+    assert output == "ok"

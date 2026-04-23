@@ -94,12 +94,25 @@ class PlaybookRun:
     def _stopping(self) -> bool:
         return self.state == PlaybookState.STOPPING
 
+    def _worktree_project_root(self) -> Path:
+        root = Path(self.cfg.worktree.project_root) if self.cfg.worktree.project_root else Path.cwd()
+        return root.resolve()
+
     def _effective_path(self, doc: PlaybookDocumentSpec, loop_iter: int) -> str:
         """Original path when reset_on_completion is False; otherwise a
         Runs/{task_id}-loop{n}/{name} working copy (Maestro's audit-trail pattern).
         Working copies are never mutated after creation — they're copied once per
         (doc, loop_iter) and then edited in place by the agent."""
         src = Path(doc.filename)
+        if self.wt_info is not None:
+            project_root = self._worktree_project_root()
+            source_path = src if src.is_absolute() else project_root / src
+            resolved = source_path.resolve()
+            try:
+                relative = resolved.relative_to(project_root)
+            except ValueError:
+                raise ValueError(f"playbook document outside project_root: {src}") from None
+            src = self.wt_info.path / relative
         if not doc.reset_on_completion:
             return str(src)
         runs_dir = src.parent / _RUNS_DIRNAME / f"{self.task.task_id}-loop{loop_iter}"
@@ -111,6 +124,27 @@ class PlaybookRun:
 
     def _reset_docs(self) -> list[PlaybookDocumentSpec]:
         return [d for d in self.cfg.documents if d.reset_on_completion]
+
+    @staticmethod
+    def _unchecked_task_lines(content: str) -> list[str]:
+        return [
+            line
+            for line in content.splitlines()
+            if count_checkboxes(line).unchecked > 0
+        ]
+
+    def _build_doc_prompt(self, doc: PlaybookDocumentSpec, path: Path, content: str) -> str:
+        counts = count_checkboxes(content)
+        unchecked = self._unchecked_task_lines(content)
+        unchecked_block = "\n".join(unchecked[:50]) or "(none)"
+        return (
+            f"{self.cfg.prompt}\n\n"
+            f"Active playbook file: {path}\n"
+            f"Checkboxes: checked={counts.checked}, unchecked={counts.unchecked}\n\n"
+            f"Unchecked tasks:\n{unchecked_block}\n\n"
+            "Edit only the active playbook file unless the task explicitly requires code changes. "
+            "Mark completed checklist items by changing [ ] to [x]."
+        )
 
     def _refresh_doc_snapshot(self, doc: PlaybookDocumentSpec, path: Path,
                               counts=None) -> None:
@@ -157,7 +191,8 @@ class PlaybookRun:
                 if self._stopping:
                     return any_progress
                 before = counts.checked
-                await agent.execute_task_from_message(self.cfg.prompt)
+                prompt = self._build_doc_prompt(doc, path, content)
+                await agent.execute_task_from_message(prompt)
                 content = path.read_text()
                 counts = count_checkboxes(content)
                 self._refresh_doc_snapshot(doc, path, counts)
@@ -185,7 +220,7 @@ class PlaybookRun:
             return None
         return await create_agent_worktree(
             agent_id=self.run_id,
-            project_root=wt.project_root,
+            project_root=self._worktree_project_root(),
         )
 
     async def _broadcast(self, **extra) -> None:
@@ -246,7 +281,10 @@ class PlaybookRun:
             if self.wt_info is not None:
                 keep = self.cfg.worktree.keep_on_failure
                 if succeeded or not keep:
-                    await cleanup_agent_worktree(self.wt_info)
+                    await cleanup_agent_worktree(
+                        self.wt_info,
+                        project_root=self._worktree_project_root(),
+                    )
             if agent is not None and hasattr(agent, "shutdown"):
                 await agent.shutdown()
 

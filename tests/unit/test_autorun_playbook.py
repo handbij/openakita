@@ -451,7 +451,7 @@ async def test_maybe_create_worktree_enabled(make_task, monkeypatch,
 
     wt = await run._maybe_create_worktree()
     assert wt is sentinel
-    captured.assert_awaited_once_with(agent_id=run.run_id, project_root="/abs/repo")
+    captured.assert_awaited_once_with(agent_id=run.run_id, project_root=Path("/abs/repo"))
 
 
 @pytest.mark.asyncio
@@ -503,21 +503,32 @@ async def test_execute_happy_path_single_loop(tmp_path, make_task, monkeypatch,
 @pytest.mark.asyncio
 async def test_execute_cleans_worktree_on_success(tmp_path, make_task, monkeypatch,
                                                   profile_store_mock):
+    from datetime import datetime
+
     from openakita.scheduler import autorun_playbook as ap
     from openakita.scheduler.autorun_playbook import PlaybookRun
+    from openakita.utils.worktree import WorktreeInfo
 
     md = tmp_path / "x.md"
     md.write_text("- [ ] a\n")
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    wt_md = worktree / "x.md"
+    wt_md.write_text("- [ ] a\n")
     task = make_task(documents=[{"filename": str(md)}],
-                     worktree={"enabled": True, "keep_on_failure": True})
+                     worktree={
+                         "enabled": True,
+                         "keep_on_failure": True,
+                         "project_root": str(tmp_path),
+                     })
 
-    agent = _make_flipping_agent(md)
+    agent = _make_flipping_agent(wt_md)
     factory = MagicMock()
     factory.create = AsyncMock(return_value=agent)
     run = PlaybookRun(task, executor=MagicMock(),
                      profile_store=profile_store_mock, agent_factory=factory)
 
-    wt_sentinel = MagicMock(name="WorktreeInfo")
+    wt_sentinel = WorktreeInfo(path=worktree, branch="b", agent_id="a", created_at=datetime.now())
     monkeypatch.setattr(ap, "broadcast_event", AsyncMock())
     monkeypatch.setattr(ap, "create_agent_worktree", AsyncMock(return_value=wt_sentinel))
     cleanup = AsyncMock(return_value=True)
@@ -525,7 +536,7 @@ async def test_execute_cleans_worktree_on_success(tmp_path, make_task, monkeypat
 
     ok, _ = await run.execute()
     assert ok is True
-    cleanup.assert_awaited_once_with(wt_sentinel)
+    cleanup.assert_awaited_once_with(wt_sentinel, project_root=tmp_path.resolve())
 
 
 @pytest.mark.asyncio
@@ -614,3 +625,54 @@ async def test_execute_loop_bounded_by_no_progress(tmp_path, make_task, monkeypa
     ok, msg = await run.execute()
     assert ok is True
     assert msg == "completed 1 loop(s)"
+
+
+@pytest.mark.asyncio
+async def test_run_doc_pass_sends_active_file_and_unchecked_tasks(
+    tmp_path,
+    make_task,
+    profile_store_mock,
+    agent_factory_mock,
+    monkeypatch,
+):
+    from openakita.scheduler import autorun_playbook as ap
+    from openakita.scheduler.autorun_playbook import PlaybookRun
+
+    async def fake_broadcast(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(ap, "broadcast_event", fake_broadcast)
+
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "- [ ] first task\n"
+        "- [x] done task\n"
+        "* [   ] spaced task\n"
+        "- [] compact task\n"
+        "- [ ] second task\n"
+    )
+
+    factory, agent = agent_factory_mock
+    seen_prompts = []
+
+    async def execute(prompt):
+        seen_prompts.append(prompt)
+        plan.write_text("- [x] first task\n- [x] done task\n- [ ] second task\n")
+
+    agent.execute_task_from_message.side_effect = execute
+
+    task = make_task(
+        documents=[{"filename": str(plan), "reset_on_completion": False}],
+        prompt="Do the next unchecked task.",
+    )
+    run = PlaybookRun(task, executor=MagicMock(), profile_store=profile_store_mock, agent_factory=factory)
+
+    await run.execute()
+
+    assert str(plan) in seen_prompts[0]
+    assert "Unchecked tasks:" in seen_prompts[0]
+    assert "- [ ] first task" in seen_prompts[0]
+    assert "* [   ] spaced task" in seen_prompts[0]
+    assert "- [] compact task" in seen_prompts[0]
+    assert "- [ ] second task" in seen_prompts[0]
+    assert "- [x] done task" not in seen_prompts[0]

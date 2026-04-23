@@ -118,13 +118,29 @@ class ExternalCliAgent:
     ) -> Any:
         """One CLI turn. Returns a DelegationResult-shaped dict (real type is
         imported by callers; we avoid the import here to keep the module cycle-free)."""
-        outcome = await self._run_one_turn(message, session=session, images=image_paths)
+        outcome = await self._run_one_turn(
+            message,
+            session=session,
+            images=image_paths,
+            cwd_override=None,
+        )
         return self._build_delegation_result(outcome)
 
-    async def execute_task_from_message(self, message: str) -> Any:
+    async def execute_task_from_message(
+        self,
+        message: str,
+        *,
+        cwd: str | Path | None = None,
+    ) -> Any:
         """Non-interactive path (scheduler). Same code path as chat_with_session
         but with `session=None` so the adapter skips SSE emission."""
-        outcome = await self._run_one_turn(message, session=None, images=())
+        cwd_override = Path(cwd) if cwd is not None else None
+        outcome = await self._run_one_turn(
+            message,
+            session=None,
+            images=(),
+            cwd_override=cwd_override,
+        )
         return {
             "success": outcome.exit_reason == ExitReason.COMPLETED,
             "data": outcome.text,
@@ -190,6 +206,7 @@ class ExternalCliAgent:
         *,
         session: Any | None,
         images: tuple[Path, ...],
+        cwd_override: Path | None = None,
     ) -> _TurnOutcome:
         self._cancelled.clear()
         start = time.monotonic()
@@ -204,7 +221,7 @@ class ExternalCliAgent:
         task.iteration = self._turn
 
         prompt, system_extra = self._compose_prompt(message)
-        cwd = Path(getattr(session, "cwd", None) or Path.cwd())
+        cwd = cwd_override or Path(getattr(session, "cwd", None) or Path.cwd())
 
         text = ""
         tools_used: list[str] = []

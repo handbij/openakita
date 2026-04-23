@@ -334,3 +334,33 @@ async def test_run_returns_classified_stderr_on_failure(tmp_path):
     assert result.errored is True
     assert result.error_message is not None
     assert "auth_permanent: codex login required" in result.error_message
+
+
+@pytest.mark.asyncio
+async def test_write_mode_empty_turn_is_error(tmp_path):
+    from openakita.agents.cli_providers import codex
+
+    profile = _make_profile(cli_permission_mode=CliPermissionMode.WRITE)
+    req = _make_request(profile, cwd=tmp_path)
+    argv = ["sh", "-c", "true"]
+
+    result = await codex.PROVIDER.run(req, argv, env={}, on_spawn=lambda _: None)
+
+    assert result.exit_reason == ExitReason.ERROR
+    assert result.errored is True
+    assert result.error_message is not None
+    assert result.error_message.startswith("empty_turn:")
+
+
+@pytest.mark.asyncio
+async def test_plan_mode_empty_turn_stays_completed(tmp_path):
+    from openakita.agents.cli_providers import codex
+
+    profile = _make_profile(cli_permission_mode=CliPermissionMode.PLAN)
+    req = _make_request(profile, cwd=tmp_path)
+    argv = ["sh", "-c", "true"]
+
+    result = await codex.PROVIDER.run(req, argv, env={}, on_spawn=lambda _: None)
+
+    assert result.exit_reason == ExitReason.COMPLETED
+    assert result.errored is False

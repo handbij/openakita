@@ -490,8 +490,29 @@ class CodexAdapter:
                 error_message=acc.error_message or f"{err_type.value}: {stderr_text[:200]}",
             )
 
+        final_text = "".join(acc.text_parts)
+        if (
+            request.profile.cli_permission_mode == CliPermissionMode.WRITE
+            and not final_text.strip()
+            and not acc.tools_used
+        ):
+            return ProviderRunResult(
+                final_text=final_text,
+                tools_used=[],
+                artifacts=[],
+                session_id=acc.session_id,
+                input_tokens=acc.input_tokens,
+                output_tokens=acc.output_tokens,
+                exit_reason=ExitReason.ERROR,
+                errored=True,
+                error_message=(
+                    "empty_turn: Codex exited successfully but produced no assistant "
+                    "output and no tool events; no write was confirmed"
+                ),
+            )
+
         return ProviderRunResult(
-            final_text="".join(acc.text_parts),
+            final_text=final_text,
             tools_used=list(acc.tools_used),
             artifacts=[],
             session_id=acc.session_id,

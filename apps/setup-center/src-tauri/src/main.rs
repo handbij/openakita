@@ -343,7 +343,7 @@ fn start_onboarding_log(date_label: String) -> Result<String, String> {
         .write(true)
         .open(&path)
         .map_err(|e| format!("open onboarding log failed: {e}"))?;
-    let header = format!("OpenAkita 安装配置日志 开始于 {}\n", date_label);
+    let header = format!("OpenAkita setup log started at {}\n", date_label);
     f.write_all(header.as_bytes())
         .map_err(|e| format!("write onboarding log header failed: {e}"))?;
     f.flush().map_err(|e| format!("flush failed: {e}"))?;
@@ -689,8 +689,8 @@ fn find_pip_python() -> Option<PathBuf> {
 #[tauri::command]
 fn check_python_for_pip() -> Result<String, String> {
     match find_pip_python() {
-        Some(p) => Ok(format!("Python 可用: {}", p.display())),
-        None => Err("未找到可用的 Python 解释器".into()),
+        Some(p) => Ok(format!("Python available: {}", p.display())),
+        None => Err("No usable Python interpreter found".into()),
     }
 }
 
@@ -703,8 +703,8 @@ fn module_definitions() -> Vec<(&'static str, &'static str, &'static str, &'stat
     // 其余轻量包(文档处理/图像处理/桌面自动化/IM适配器等)已直接打包进 PyInstaller bundle。
     // browser (playwright + browser-use + langchain-openai) 已内置到 core 包，不再作为外置模块
     vec![
-        ("vector-memory", "向量记忆增强", "让 Akita 拥有长期记忆，能根据语义搜索历史对话。体积较大（约 2.5GB，含 PyTorch），安装耗时较长", &["sentence-transformers", "chromadb", "regex>=2023.6.3"], 2500, "core"),
-        ("whisper", "语音识别", "支持语音消息自动转文字，无需联网即可识别。体积较大（约 2.5GB，含 PyTorch），安装耗时较长", &["openai-whisper", "static-ffmpeg"], 2500, "core"),
+        ("vector-memory", "Vector memory enhancement", "Give Akita long-term memory with semantic search over conversation history. Large download (about 2.5GB including PyTorch); install may take a while.", &["sentence-transformers", "chromadb", "regex>=2023.6.3"], 2500, "core"),
+        ("whisper", "Speech recognition", "Automatically transcribe voice messages; works offline. Large download (about 2.5GB including PyTorch); install may take a while.", &["openai-whisper", "static-ffmpeg"], 2500, "core"),
     ]
 }
 
@@ -734,15 +734,15 @@ fn set_custom_root_dir(path: Option<String>, migrate: bool) -> Result<RootDirInf
     if let Some(ref p) = clean_path {
         let target = PathBuf::from(p);
         if !target.is_absolute() {
-            return Err("请使用绝对路径（如 D:\\MyData\\.openakita 或 /data/openakita）".into());
+            return Err("Please use an absolute path (e.g. D:\\MyData\\.openakita or /data/openakita)".into());
         }
         if target.exists() && !target.is_dir() {
-            return Err("指定的路径已存在但不是目录".into());
+            return Err("The specified path exists but is not a directory".into());
         }
-        fs::create_dir_all(&target).map_err(|e| format!("无法创建目标目录: {e}"))?;
+        fs::create_dir_all(&target).map_err(|e| format!("Could not create target directory: {e}"))?;
         // 验证目录可写
         let test_file = target.join(".openakita_write_test");
-        fs::write(&test_file, "test").map_err(|e| format!("目标目录无写入权限: {e}"))?;
+        fs::write(&test_file, "test").map_err(|e| format!("Target directory is not writable: {e}"))?;
         let _ = fs::remove_file(&test_file);
     }
 
@@ -756,7 +756,7 @@ fn set_custom_root_dir(path: Option<String>, migrate: bool) -> Result<RootDirInf
         if old_root != new_root_path && old_root.exists() {
             if !new_root_path.exists() {
                 fs::create_dir_all(&new_root_path)
-                    .map_err(|e| format!("无法创建目标目录: {e}"))?;
+                    .map_err(|e| format!("Could not create target directory: {e}"))?;
             }
 
             let critical_dirs = ["workspaces"];
@@ -773,7 +773,7 @@ fn set_custom_root_dir(path: Option<String>, migrate: bool) -> Result<RootDirInf
                         if critical_dirs.contains(entry_name) {
                             let _ = fs::remove_dir_all(&dst);
                             return Err(format!(
-                                "关键目录 {} 复制失败，已中止迁移，配置未更改。错误: {}",
+                                "Failed to copy critical directory {}: migration aborted, configuration unchanged. Error: {}",
                                 entry_name, e
                             ));
                         }
@@ -796,7 +796,7 @@ fn set_custom_root_dir(path: Option<String>, migrate: bool) -> Result<RootDirInf
             }
 
             if !new_root_path.exists() || !new_root_path.is_dir() {
-                return Err("迁移完成后目标目录不可访问，未更改配置。请检查磁盘连接后重试。".into());
+                return Err("Target directory is unreachable after migration; configuration unchanged. Check the disk connection and retry.".into());
             }
             Some(old_root)
         } else {
@@ -929,7 +929,7 @@ fn available_space_mb(path: &Path) -> f64 {
 fn preflight_migrate_root(target_path: String) -> Result<MigratePreflightInfo, String> {
     let target = PathBuf::from(target_path.trim());
     if !target.is_absolute() {
-        return Err("请使用绝对路径".into());
+        return Err("Please use an absolute path".into());
     }
 
     let source = openakita_root_dir();
@@ -941,7 +941,7 @@ fn preflight_migrate_root(target_path: String) -> Result<MigratePreflightInfo, S
             target_free_mb: 0.0,
             entries: vec![],
             can_migrate: false,
-            reason: "目标路径与当前路径相同".into(),
+            reason: "Target path is identical to the current path".into(),
         });
     }
 
@@ -990,13 +990,13 @@ fn preflight_migrate_root(target_path: String) -> Result<MigratePreflightInfo, S
     let enough_space = target_free_mb > source_size_mb * 1.1 + 100.0;
 
     let (can_migrate, reason) = if entries.is_empty() {
-        (false, "当前数据目录为空，无需迁移".into())
+        (false, "Current data directory is empty; nothing to migrate".into())
     } else if !enough_space {
-        (false, format!("目标磁盘空间不足（需要 {:.0} MB，可用 {:.0} MB）", source_size_mb * 1.1, target_free_mb))
+        (false, format!("Target disk does not have enough space (need {:.0} MB, available {:.0} MB)", source_size_mb * 1.1, target_free_mb))
     } else if has_conflicts {
-        (true, "目标路径已存在部分数据，已有数据将被跳过".into())
+        (true, "Target path already contains some data; existing items will be skipped".into())
     } else {
-        (true, "可以迁移".into())
+        (true, "Ready to migrate".into())
     };
 
     Ok(MigratePreflightInfo {
@@ -1180,7 +1180,7 @@ fn force_remove_dir(path: &std::path::Path) -> Result<(), String> {
         rd_cmd.args(["/c", "rd", "/s", "/q"]).arg(path);
         apply_no_window(&mut rd_cmd);
         let status = rd_cmd.status()
-            .map_err(|e| format!("执行 rd 命令失败: {e}"))?;
+            .map_err(|e| format!("rd command failed: {e}"))?;
         if status.success() || !path.exists() {
             return Ok(());
         }
@@ -1195,7 +1195,7 @@ fn force_remove_dir(path: &std::path::Path) -> Result<(), String> {
         }
     }
     if path.exists() {
-        Err(format!("无法删除目录: {}", path.display()))
+        Err(format!("Could not delete directory: {}", path.display()))
     } else {
         Ok(())
     }
@@ -1217,10 +1217,10 @@ fn cleanup_old_environment(clean_venv: bool, clean_runtime: bool) -> Result<Stri
                     .map(|mut d| d.any(|e| e.map(|e| e.path().is_dir()).unwrap_or(false)))
                     .unwrap_or(false);
             if has_installed_modules {
-                warnings.push("注意: 清理 venv 后已安装的外置模块（vector-memory 等）可能需要重新安装".to_string());
+                warnings.push("Note: after the venv is cleaned, installed optional modules (vector-memory, etc.) may need to be reinstalled".to_string());
             }
             force_remove_dir(&venv_path)
-                .map_err(|e| format!("清理 venv 失败: {e}"))?;
+                .map_err(|e| format!("Failed to clean venv: {e}"))?;
             cleaned.push("venv");
         }
     }
@@ -1228,15 +1228,15 @@ fn cleanup_old_environment(clean_venv: bool, clean_runtime: bool) -> Result<Stri
         let runtime_path = root.join("runtime");
         if runtime_path.exists() {
             force_remove_dir(&runtime_path)
-                .map_err(|e| format!("清理 runtime 失败: {e}"))?;
+                .map_err(|e| format!("Failed to clean runtime: {e}"))?;
             cleaned.push("runtime");
         }
     }
 
     if cleaned.is_empty() {
-        Ok("无需清理".to_string())
+        Ok("Nothing to clean".to_string())
     } else {
-        let mut msg = format!("已清理: {}", cleaned.join(", "));
+        let mut msg = format!("Cleaned: {}", cleaned.join(", "));
         if !warnings.is_empty() {
             msg.push_str(&format!(" ({})", warnings.join("; ")));
         }
@@ -1282,20 +1282,20 @@ fn factory_reset() -> Result<String, String> {
 
     if !errors.is_empty() {
         return Err(format!(
-            "部分重置失败: {}{}",
+            "Reset partially failed: {}{}",
             errors.join("; "),
-            if !removed.is_empty() { format!(" (已清理: {})", removed.join(", ")) } else { String::new() }
+            if !removed.is_empty() { format!(" (cleaned: {})", removed.join(", ")) } else { String::new() }
         ));
     }
 
     let mut msg = if removed.is_empty() {
-        "无需清理（已是初始状态）".to_string()
+        "Nothing to clean (already at initial state)".to_string()
     } else {
-        format!("已清理: {}", removed.join(", "))
+        format!("Cleaned: {}", removed.join(", "))
     };
 
     if !stopped.is_empty() {
-        msg.push_str(&format!(" (已停止 {} 个进程)", stopped.len()));
+        msg.push_str(&format!(" (stopped {} process(es))", stopped.len()));
     }
 
     Ok(msg)
@@ -2626,10 +2626,10 @@ fn write_crash_log(message: &str, show_dialog: bool) -> PathBuf {
             }
 
             let body = format!(
-                "OpenAkita Desktop 启动失败 (startup failed)\n\n\
+                "OpenAkita Desktop failed to start\n\n\
                  {message}\n\n\
-                 崩溃日志已写入 (crash log): {}\n\
-                 请将此日志发送给开发者以帮助诊断问题。",
+                 Crash log written to: {}\n\
+                 Please send this log to the developers to help diagnose the issue.",
                 crash_path.display()
             );
             let caption = "OpenAkita – Crash";
@@ -3325,7 +3325,7 @@ async fn spawn_blocking_result<R: Send + 'static>(
 ) -> Result<R, String> {
     tauri::async_runtime::spawn_blocking(f)
         .await
-        .map_err(|e| format!("后台任务失败（join error）: {e}"))?
+        .map_err(|e| format!("Background task failed (join error): {e}"))?
 }
 
 /// Strip surrounding quotes and inline comments from a raw .env value.
@@ -3450,7 +3450,7 @@ fn openakita_service_start(venv_dir: String, workspace_id: String) -> Result<Ser
 
     // ── 2. 获取启动锁（防止竞态双启动）──
     if !try_acquire_start_lock(&workspace_id) {
-        return Err("另一个启动操作正在进行中，请稍候".to_string());
+        return Err("Another start operation is already in progress; please wait a moment".to_string());
     }
     struct LockGuard(String);
     impl Drop for LockGuard {
@@ -3469,9 +3469,9 @@ fn openakita_service_start(venv_dir: String, workspace_id: String) -> Result<Ser
         // 端口被占用，等待最多 10 秒（处理 TIME_WAIT 等场景）
         if !wait_for_port_free(effective_port, 10_000) {
             return Err(format!(
-                "端口 {} 已被占用，无法启动后端服务。\n\
-                 可能原因：上次关闭后端口尚未释放、或有其他程序占用该端口。\n\
-                 请稍后重试，或检查是否有其他程序占用端口 {}。",
+                "Port {} is already in use; cannot start the backend service.\n\
+                 Possible causes: the port has not been released since the last shutdown, or another program is using it.\n\
+                 Please retry later, or check whether another program is occupying port {}.",
                 effective_port, effective_port
             ));
         }
@@ -3484,9 +3484,9 @@ fn openakita_service_start(venv_dir: String, workspace_id: String) -> Result<Ser
         let bundled_dir = bundled_backend_dir();
         let bundled_name = if cfg!(windows) { "openakita-server.exe" } else { "openakita-server" };
         return Err(format!(
-            "后端可执行文件不存在: {}\n\
-             已检查路径:\n  - bundled: {}/{}\n  - venv: {}\n\
-             请尝试: 1) 重新安装桌面端  2) 运行 quickstart.sh 创建 venv",
+            "Backend executable not found: {}\n\
+             Checked paths:\n  - bundled: {}/{}\n  - venv: {}\n\
+             Please try: 1) reinstalling the desktop app  2) running quickstart.sh to create the venv",
             backend_exe.to_string_lossy(),
             bundled_dir.display(),
             bundled_name,
@@ -3600,7 +3600,7 @@ fn openakita_service_start(venv_dir: String, workspace_id: String) -> Result<Ser
             })
             .unwrap_or_default();
         return Err(format!(
-            "openakita serve 似乎启动后立即退出（PID={pid}）。\n请查看服务日志：{}\n\n--- log tail ---\n{}",
+            "openakita serve appears to have exited immediately after starting (PID={pid}).\nPlease check the service log: {}\n\n--- log tail ---\n{}",
             log_path.to_string_lossy(),
             tail
         ));
@@ -3836,11 +3836,11 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
-    let open_status = MenuItem::with_id(app, "open_status", "打开状态面板", true, None::<&str>)?;
-    let open_web = MenuItem::with_id(app, "open_web", "打开网页版", true, None::<&str>)?;
-    let show = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
-    let hide = MenuItem::with_id(app, "hide", "隐藏窗口", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "退出（Quit）", true, None::<&str>)?;
+    let open_status = MenuItem::with_id(app, "open_status", "Open Status Panel", true, None::<&str>)?;
+    let open_web = MenuItem::with_id(app, "open_web", "Open Web Version", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
+    let hide = MenuItem::with_id(app, "hide", "Hide Window", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
     let menu = Menu::with_items(app, &[&open_status, &open_web, &show, &hide, &quit])?;
 
@@ -4503,7 +4503,7 @@ fn detect_python() -> Vec<PythonCandidate> {
     if out.is_empty() {
         out.push(PythonCandidate {
             command: vec![],
-            version_text: "未检测到可用的项目内置 Python".to_string(),
+            version_text: "No usable bundled Python detected for this project".to_string(),
             is_usable: false,
         });
     }
@@ -4625,7 +4625,7 @@ fn diagnose_python_env(venv_dir: String) -> PythonDiagnostic {
     if bundled_exe.exists() && internal_dir.exists() {
         contracts.push(PythonContractResult {
             id: "C1_BUNDLED_RUNTIME".into(),
-            title: "内置运行时".into(),
+            title: "Bundled runtime".into(),
             status: "pass".into(),
             code: "RUNTIME_OK".into(),
             evidence: vec![format!("binary: {}", bundled_exe.display())],
@@ -4642,23 +4642,23 @@ fn diagnose_python_env(venv_dir: String) -> PythonDiagnostic {
         }
         contracts.push(PythonContractResult {
             id: "C1_BUNDLED_RUNTIME".into(),
-            title: "内置运行时".into(),
+            title: "Bundled runtime".into(),
             status: "fail".into(),
             code: "RUNTIME_MISSING".into(),
             evidence: missing,
             auto_fix: false,
-            fix_hint: Some("请重装 OpenAkita 以恢复内置运行时".into()),
+            fix_hint: Some("Please reinstall OpenAkita to restore the bundled runtime".into()),
         });
     }
 
     contracts.push(PythonContractResult {
         id: "C0_BACKEND_OFFLINE".into(),
-        title: "后端服务".into(),
+        title: "Backend service".into(),
         status: "warn".into(),
         code: "BACKEND_NOT_RUNNING".into(),
         evidence: vec![format!("port {} unreachable", port)],
         auto_fix: false,
-        fix_hint: Some("启动后端服务后可获得完整诊断信息".into()),
+        fix_hint: Some("Start the backend service to get full diagnostic information".into()),
     });
 
     let failing: Vec<&PythonContractResult> = contracts
@@ -4686,12 +4686,12 @@ fn make_backend_starting_diagnostic(trace_id: String, port: u16, phase: &str) ->
         summary: "healthy".into(),
         contracts: vec![PythonContractResult {
             id: "C0_BACKEND_STARTING".into(),
-            title: "后端服务".into(),
+            title: "Backend service".into(),
             status: "warn".into(),
             code: "BACKEND_STARTING".into(),
             evidence: vec![format!("phase: {}, port {}", phase, port)],
             auto_fix: false,
-            fix_hint: Some("后端正在启动，请稍后再试".into()),
+            fix_hint: Some("The backend is starting; please try again in a moment".into()),
         }],
         environment: PythonEnvironmentSnapshot {
             platform: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
@@ -4709,12 +4709,12 @@ fn make_backend_api_unreachable_diagnostic(trace_id: String, port: u16) -> Pytho
         summary: "healthy".into(),
         contracts: vec![PythonContractResult {
             id: "C0_BACKEND_OFFLINE".into(),
-            title: "后端服务".into(),
+            title: "Backend service".into(),
             status: "warn".into(),
             code: "BACKEND_API_UNREACHABLE".into(),
             evidence: vec![format!("heartbeat ok, port {} API unreachable — retrying may help", port)],
             auto_fix: false,
-            fix_hint: Some("后端进程正在运行但 API 暂时不可达，请稍后重试".into()),
+            fix_hint: Some("The backend process is running but the API is temporarily unreachable; please retry later".into()),
         }],
         environment: PythonEnvironmentSnapshot {
             platform: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
@@ -4836,10 +4836,10 @@ fn parse_diagnostics_json(json: &serde_json::Value) -> Option<PythonDiagnostic> 
 fn export_python_diagnostic_report(venv_dir: String) -> Result<String, String> {
     let diag = diagnose_python_env(venv_dir);
     let report_dir = openakita_root_dir().join("runtime").join("reports");
-    fs::create_dir_all(&report_dir).map_err(|e| format!("创建报告目录失败: {e}"))?;
+    fs::create_dir_all(&report_dir).map_err(|e| format!("Failed to create report directory: {e}"))?;
     let report_path = report_dir.join(format!("python-diagnostic-{}.json", diag.trace_id));
-    let text = serde_json::to_string_pretty(&diag).map_err(|e| format!("序列化报告失败: {e}"))?;
-    fs::write(&report_path, text).map_err(|e| format!("写入报告失败: {e}"))?;
+    let text = serde_json::to_string_pretty(&diag).map_err(|e| format!("Failed to serialize report: {e}"))?;
+    fs::write(&report_path, text).map_err(|e| format!("Failed to write report: {e}"))?;
     Ok(report_path.to_string_lossy().to_string())
 }
 
@@ -4849,7 +4849,7 @@ fn install_bundled_python_sync(
     _log_path: Option<PathBuf>,
 ) -> Result<BundledPythonInstallResult, String> {
     let py = bundled_internal_python_path().ok_or_else(|| {
-        "安装包内置 Python 不可用。请重新安装 OpenAkita 以恢复 resources/openakita-server/_internal".to_string()
+        "Bundled Python is unavailable. Please reinstall OpenAkita to restore resources/openakita-server/_internal".to_string()
     })?;
     let bundled_dir = bundled_backend_dir();
     Ok(BundledPythonInstallResult {
@@ -4879,7 +4879,7 @@ async fn create_venv(python_command: Vec<String>, venv_dir: String) -> Result<St
         }
         let _ = python_command; // API 兼容保留，实际统一使用安装包内置 Python
         let bundled_py = bundled_internal_python_path()
-            .ok_or_else(|| "安装包内置 Python 不可用，请重新安装 OpenAkita".to_string())?;
+            .ok_or_else(|| "Bundled Python is unavailable; please reinstall OpenAkita".to_string())?;
         let mut c = Command::new(&bundled_py);
         apply_no_window(&mut c);
         apply_bundled_python_env(&mut c, &bundled_backend_dir().join("_internal"));
@@ -4912,7 +4912,7 @@ fn resolve_python(venv_dir: &str) -> Result<(PathBuf, Option<String>), String> {
         return Ok((venv_py, None));
     }
     let py = find_pip_python().ok_or_else(|| {
-        "未找到可用 Python 解释器（venv/bundled）。请重新安装 OpenAkita 以恢复内置 Python。".to_string()
+        "No usable Python interpreter found (venv/bundled). Please reinstall OpenAkita to restore the bundled Python.".to_string()
     })?;
     let bundled = bundled_backend_dir();
     let internal_dir = bundled.join("_internal");
@@ -4932,7 +4932,7 @@ fn resolve_python(venv_dir: &str) -> Result<(PathBuf, Option<String>), String> {
             parts.push(dlls);
         }
         let joined = std::env::join_paths(parts)
-            .map_err(|e| format!("构建 bundled PYTHONPATH 失败: {e}"))?;
+            .map_err(|e| format!("Failed to build bundled PYTHONPATH: {e}"))?;
         Some(joined.to_string_lossy().to_string())
     } else {
         None
@@ -5095,7 +5095,7 @@ async fn pip_install(
             .split('/').next().unwrap_or("");
 
         // upgrade pip first (best-effort)
-        emit_stage("升级 pip（best-effort）", 40);
+        emit_stage("Upgrading pip (best-effort)", 40);
         let mut up = Command::new(&py);
         apply_no_window(&mut up);
         strip_harmful_python_env(&mut up);
@@ -5111,7 +5111,7 @@ async fn pip_install(
         }
         let _ = run_streaming(up, "pip upgrade (best-effort)", &mut log, &emit_line);
 
-        emit_stage("安装 openakita（pip）", 70);
+        emit_stage("Installing openakita (pip)", 70);
         let mut c = Command::new(&py);
         apply_no_window(&mut c);
         strip_harmful_python_env(&mut c);
@@ -5136,7 +5136,7 @@ async fn pip_install(
         }
 
         // Post-check: ensure Setup Center bridge exists in the installed package.
-        emit_stage("验证安装", 95);
+        emit_stage("Verifying installation", 95);
         emit_line("\n=== verify ===\n");
         let mut verify = Command::new(&py);
         apply_no_window(&mut verify);
@@ -5155,7 +5155,7 @@ async fn pip_install(
             let stdout = String::from_utf8_lossy(&v.stdout).to_string();
             let stderr = String::from_utf8_lossy(&v.stderr).to_string();
             return Err(format!(
-                "openakita 已安装，但缺少 Setup Center 所需模块（openakita.setup_center.bridge）。\n这通常意味着你安装的 openakita 版本过旧或来源不包含该模块。\nstdout:\n{}\nstderr:\n{}",
+                "openakita is installed, but the Setup Center module (openakita.setup_center.bridge) is missing.\nThis usually means the installed openakita is too old or comes from a source that does not include that module.\nstdout:\n{}\nstderr:\n{}",
                 stdout, stderr
             ));
         }
@@ -5168,7 +5168,7 @@ async fn pip_install(
             log.push_str(&format!("openakita version: {ver}\n"));
             emit_line(&format!("openakita version: {ver}\n"));
         }
-        emit_stage("完成", 100);
+        emit_stage("Done", 100);
 
         Ok(log)
     })
@@ -6410,8 +6410,8 @@ fn cli_backend_exe_path() -> Result<PathBuf, String> {
         venv_py.display(),
     );
     Err(format!(
-        "未找到后端可执行文件（openakita-server 或 venv python）\n\
-         已检查: {} | {}",
+        "Backend executable not found (openakita-server or venv python)\n\
+         Checked: {} | {}",
         exe.display(),
         venv_py.display(),
     ))
@@ -6431,9 +6431,9 @@ fn read_cli_config() -> Option<CliConfig> {
 fn write_cli_config(config: &CliConfig) -> Result<(), String> {
     let path = openakita_root_dir().join("cli.json");
     let content = serde_json::to_string_pretty(config)
-        .map_err(|e| format!("序列化 CLI 配置失败: {e}"))?;
+        .map_err(|e| format!("Failed to serialize CLI config: {e}"))?;
     std::fs::write(&path, content)
-        .map_err(|e| format!("写入 cli.json 失败: {e}"))?;
+        .map_err(|e| format!("Failed to write cli.json: {e}"))?;
     Ok(())
 }
 
@@ -6464,7 +6464,7 @@ fn create_wrapper_script(bin_dir: &Path, cmd_name: &str, backend_exe: &Path) -> 
     let file_path = bin_dir.join(cmd_name);
 
     std::fs::write(&file_path, &content)
-        .map_err(|e| format!("写入 {} 失败: {e}", file_path.display()))?;
+        .map_err(|e| format!("Failed to write {}: {e}", file_path.display()))?;
 
     // macOS / Linux: 设置可执行权限
     #[cfg(not(target_os = "windows"))]
@@ -6472,7 +6472,7 @@ fn create_wrapper_script(bin_dir: &Path, cmd_name: &str, backend_exe: &Path) -> 
         use std::os::unix::fs::PermissionsExt;
         let perms = std::fs::Permissions::from_mode(0o755);
         std::fs::set_permissions(&file_path, perms)
-            .map_err(|e| format!("chmod {} 失败: {e}", file_path.display()))?;
+            .map_err(|e| format!("chmod {} failed: {e}", file_path.display()))?;
     }
 
     Ok(())
@@ -6501,7 +6501,7 @@ fn windows_add_to_path(bin_dir: &Path) -> Result<(), String> {
             let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let key = hkcu
                 .open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE)
-                .map_err(|e| format!("无法打开用户环境变量注册表: {e}"))?;
+                .map_err(|e| format!("Failed to open user environment registry: {e}"))?;
 
     let current_path = read_path_value(&key)?;
 
@@ -6518,7 +6518,7 @@ fn windows_add_to_path(bin_dir: &Path) -> Result<(), String> {
         format!("{};{}", current_path, bin_str)
     };
     if new_path.len() > 2047 {
-        return Err("PATH 环境变量已接近长度限制 (2048)，无法追加".into());
+        return Err("PATH is near the 2048-character length limit; cannot append".into());
     }
 
     write_path_value(&key, &new_path)?;
@@ -6633,7 +6633,7 @@ fn read_path_value(key: &winreg::RegKey) -> Result<String, String> {
     match key.get_raw_value("Path") {
         Ok(raw) => {
             if raw.vtype != RegType::REG_SZ && raw.vtype != RegType::REG_EXPAND_SZ {
-                return Err(format!("PATH 注册表值类型异常: {:?}", raw.vtype));
+                return Err(format!("Unexpected PATH registry value type: {:?}", raw.vtype));
             }
             let wide: Vec<u16> = raw
                 .bytes
@@ -6662,7 +6662,7 @@ fn write_path_value(key: &winreg::RegKey, value: &str) -> Result<(), String> {
             vtype: RegType::REG_EXPAND_SZ,
         },
     )
-    .map_err(|e| format!("写入 PATH 注册表失败: {e}"))
+    .map_err(|e| format!("Failed to write PATH to registry: {e}"))
 }
 
 // ── PATH 操作：macOS / Linux ──
@@ -6678,7 +6678,7 @@ fn unix_add_to_path(bin_dir: &Path) -> Result<(), String> {
     );
 
     // 确定要写入的 shell profile 文件
-    let home = home_dir().ok_or("无法获取 HOME 目录")?;
+    let home = home_dir().ok_or("Could not determine the HOME directory")?;
     let profiles = get_shell_profiles(&home);
 
     for profile in &profiles {
@@ -6708,7 +6708,7 @@ fn unix_add_to_path(bin_dir: &Path) -> Result<(), String> {
             }
             content.push_str(&block);
             std::fs::write(profile, content)
-                .map_err(|e| format!("写入 {} 失败: {e}", profile.display()))?;
+                .map_err(|e| format!("Failed to write {}: {e}", profile.display()))?;
         } else {
             // 追加到文件末尾
             let mut content = existing;
@@ -6717,7 +6717,7 @@ fn unix_add_to_path(bin_dir: &Path) -> Result<(), String> {
             }
             content.push_str(&block);
             std::fs::write(profile, content)
-                .map_err(|e| format!("写入 {} 失败: {e}", profile.display()))?;
+                .map_err(|e| format!("Failed to write {}: {e}", profile.display()))?;
         }
     }
 
@@ -6746,7 +6746,7 @@ fn unix_remove_from_path(_bin_dir: &Path) -> Result<(), String> {
     let marker_start = "# >>> openakita cli >>>";
     let marker_end = "# <<< openakita cli <<<";
 
-    let home = home_dir().ok_or("无法获取 HOME 目录")?;
+    let home = home_dir().ok_or("Could not determine the HOME directory")?;
     let profiles = get_shell_profiles(&home);
 
     for profile in &profiles {
@@ -6840,19 +6840,19 @@ fn get_shell_profiles(home: &Path) -> Vec<PathBuf> {
 #[tauri::command]
 fn register_cli(commands: Vec<String>, add_to_path: bool) -> Result<String, String> {
     if commands.is_empty() {
-        return Err("至少需要选择一个命令名称".into());
+        return Err("At least one command name must be selected".into());
     }
 
     // 验证命令名仅包含合法字符
     for cmd in &commands {
         if !cmd.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-            return Err(format!("命令名 '{}' 包含非法字符", cmd));
+            return Err(format!("Command name '{}' contains invalid characters", cmd));
         }
     }
 
     let bin_dir = cli_bin_dir();
     std::fs::create_dir_all(&bin_dir)
-        .map_err(|e| format!("创建 bin 目录失败: {e}"))?;
+        .map_err(|e| format!("Failed to create bin directory: {e}"))?;
 
     // 获取后端可执行文件路径
     let backend_exe = cli_backend_exe_path()?;
@@ -6887,15 +6887,15 @@ fn register_cli(commands: Vec<String>, add_to_path: bool) -> Result<String, Stri
     write_cli_config(&config)?;
 
     Ok(format!(
-        "CLI 命令已注册: {}{}",
+        "CLI commands registered: {}{}",
         commands.join(", "),
-        if add_to_path { " (已添加到 PATH)" } else { "" }
+        if add_to_path { " (added to PATH)" } else { "" }
     ))
 }
 
 #[tauri::command]
 fn unregister_cli() -> Result<String, String> {
-    let config = read_cli_config().ok_or("未找到 CLI 配置")?;
+    let config = read_cli_config().ok_or("CLI configuration not found")?;
     let bin_dir = PathBuf::from(&config.bin_dir);
 
     // 删除 wrapper 脚本
@@ -6919,7 +6919,7 @@ fn unregister_cli() -> Result<String, String> {
     let config_path = openakita_root_dir().join("cli.json");
     let _ = std::fs::remove_file(&config_path);
 
-    Ok("CLI 命令已注销".into())
+    Ok("CLI commands unregistered".into())
 }
 
 #[tauri::command]

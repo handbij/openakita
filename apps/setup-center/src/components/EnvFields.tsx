@@ -154,7 +154,7 @@ export function FieldCombo({
             {options.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
             ))}
-            <SelectItem value="__custom__">{t("common.custom") || "自定义..."}</SelectItem>
+            <SelectItem value="__custom__">{t("common.custom") || "Custom..."}</SelectItem>
           </SelectContent>
         </Select>
         {(!isPreset || currentVal === "") && (
@@ -162,7 +162,7 @@ export function FieldCombo({
             className="flex-1"
             value={currentVal}
             onChange={(e) => onEnvChange((m) => envSet(m, k, e.target.value))}
-            placeholder={placeholder || t("common.custom") || "自定义输入..."}
+            placeholder={placeholder || t("common.custom") || "Custom input..."}
           />
         )}
       </div>

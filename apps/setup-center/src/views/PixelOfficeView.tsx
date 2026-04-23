@@ -222,7 +222,7 @@ export function PixelOfficeView({
   }, []);
 
   const handleAssignTask = useCallback((nodeId: string) => {
-    const task = prompt(`分配任务给 ${nodeId}：`);
+    const task = prompt(`Assign task to ${nodeId}:`);
     if (!task) return;
     safeFetch(`${apiBaseUrl}/api/orgs/${selectedOrgId}/command`, {
       method: 'POST',
@@ -244,20 +244,20 @@ export function PixelOfficeView({
       <header className="poHeader">
         <div className="poHeaderLeft">
           {isSoloMode ? (
-            <h2 className="poOrgName">个人工作室</h2>
+            <h2 className="poOrgName">Personal Studio</h2>
           ) : selectedOrg ? (
             <>
               <h2 className="poOrgName">{selectedOrg.name || selectedOrg.id}</h2>
-              {orgData && <span className="poNodeCount">{orgData.nodes.length} 节点</span>}
+              {orgData && <span className="poNodeCount">{orgData.nodes.length} nodes</span>}
             </>
           ) : (
-            <h2 className="poOrgName">{t("pixelOffice.title", "像素办公室")}</h2>
+            <h2 className="poOrgName">{t("pixelOffice.title", "Pixel Office")}</h2>
           )}
           <div className="poOrgSwitcher">
             <button
               className="poOrgSwitchBtn"
               onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
-              title={t("pixelOffice.switchMode", "切换模式")}
+              title={t("pixelOffice.switchMode", "Switch mode")}
             >
               <svg width="10" height="6" viewBox="0 0 10 6" fill="currentColor">
                 <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
@@ -271,7 +271,7 @@ export function PixelOfficeView({
                     className={`poOrgDropItem${isSoloMode ? ' active' : ''}`}
                     onClick={() => { setSelectedOrgId(SOLO_ID); setDataVersion(v => v + 1); setOrgDropdownOpen(false); }}
                   >
-                    <IconBot size={14} /> 个人工作室
+                    <IconBot size={14} /> Personal Studio
                   </button>
                   {orgList.length > 0 && <div className="poOrgDropDivider" />}
                   {orgList.map(o => (
@@ -289,7 +289,7 @@ export function PixelOfficeView({
           </div>
         </div>
         <div className="poHeaderRight">
-          {!isSoloMode && !orgData && selectedOrgId && <span className="poHeaderInfo">加载中…</span>}
+          {!isSoloMode && !orgData && selectedOrgId && <span className="poHeaderInfo">Loading...</span>}
         </div>
       </header>
 
@@ -304,7 +304,7 @@ export function PixelOfficeView({
         />
         {!effectiveOrgData && selectedOrgId && (
           <div className="poCanvasOverlay">
-            <div className="poCanvasLoading">加载组织数据…</div>
+            <div className="poCanvasLoading">Loading organization data...</div>
           </div>
         )}
       </div>
@@ -315,7 +315,7 @@ export function PixelOfficeView({
         try { localStorage.setItem('po_panel_open', String(next)); } catch { /* */ }
         return next;
       })}>
-        {panelOpen ? '▼ 收起面板' : '▲ 展开面板'}
+        {panelOpen ? '▼ Collapse panel' : '▲ Expand panel'}
       </button>
 
       {/* Bottom bar */}
@@ -350,8 +350,8 @@ export function PixelOfficeView({
               {agentDetail.config.name}
             </div>
             <div style={{ opacity: 0.7, marginBottom: 4 }}>ID: {agentDetail.nodeId}</div>
-            {agentDetail.config.department && <div style={{ opacity: 0.7, marginBottom: 4 }}>部门: {agentDetail.config.department}</div>}
-            <div style={{ opacity: 0.7, marginBottom: 8 }}>状态: {agentDetail.config.status || 'idle'}</div>
+            {agentDetail.config.department && <div style={{ opacity: 0.7, marginBottom: 4 }}>Department: {agentDetail.config.department}</div>}
+            <div style={{ opacity: 0.7, marginBottom: 8 }}>Status: {agentDetail.config.status || 'idle'}</div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button
                 onClick={() => { handleAssignTask(agentDetail.nodeId); setAgentDetail(null); }}
@@ -360,7 +360,7 @@ export function PixelOfficeView({
                   background: 'var(--brand, #3b82f6)', color: '#fff', fontSize: 12, cursor: 'pointer',
                 }}
               >
-                分配任务
+                Assign Task
               </button>
               <button
                 onClick={() => { EventBus.emit('zoom-to-node', agentDetail.nodeId); setAgentDetail(null); }}
@@ -369,7 +369,7 @@ export function PixelOfficeView({
                   background: 'transparent', color: 'var(--text)', fontSize: 12, cursor: 'pointer',
                 }}
               >
-                聚焦
+                Focus
               </button>
             </div>
           </div>
@@ -388,9 +388,9 @@ export function PixelOfficeView({
             color: 'var(--text, #e0e0e0)', fontSize: 13,
           }}>
             {[
-              { key: 'assign', label: <><IconClipboard size={13} /> 分配任务</>, action: () => handleAssignTask(agentCtxMenu.nodeId) },
-              { key: 'focus', label: <><IconSearch size={13} /> 聚焦</>, action: () => { EventBus.emit('zoom-to-node', agentCtxMenu.nodeId); setAgentCtxMenu(null); } },
-              { key: 'detail', label: <><IconFile size={13} /> 查看详情</>, action: () => { setAgentDetail({ ...agentCtxMenu }); setAgentCtxMenu(null); } },
+              { key: 'assign', label: <><IconClipboard size={13} /> Assign Task</>, action: () => handleAssignTask(agentCtxMenu.nodeId) },
+              { key: 'focus', label: <><IconSearch size={13} /> Focus</>, action: () => { EventBus.emit('zoom-to-node', agentCtxMenu.nodeId); setAgentCtxMenu(null); } },
+              { key: 'detail', label: <><IconFile size={13} /> View Details</>, action: () => { setAgentDetail({ ...agentCtxMenu }); setAgentCtxMenu(null); } },
             ].map((item) => (
               <button
                 key={item.key}

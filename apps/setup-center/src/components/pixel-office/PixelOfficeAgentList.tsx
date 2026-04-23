@@ -10,12 +10,12 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  idle: '空闲',
-  busy: '忙碌',
-  waiting: '等待',
-  error: '错误',
-  offline: '离线',
-  frozen: '冻结',
+  idle: 'Idle',
+  busy: 'Busy',
+  waiting: 'Waiting',
+  error: 'Error',
+  offline: 'Offline',
+  frozen: 'Frozen',
 };
 
 export interface AgentListItem {
@@ -37,9 +37,9 @@ export function PixelOfficeAgentList({
 }) {
   return (
     <div className="poPanel">
-      <div className="poPanelHeader">成员 ({agents.length})</div>
+      <div className="poPanelHeader">Members ({agents.length})</div>
       <div className="poPanelBody">
-        {agents.length === 0 && <div className="poEmpty">暂无成员</div>}
+        {agents.length === 0 && <div className="poEmpty">No members</div>}
         {agents.map(a => (
           <div
             key={a.nodeId}

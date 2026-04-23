@@ -122,7 +122,7 @@ export function Topbar({
           <button
             className="topbarServerBtn"
             onClick={onServerManager}
-            title={t("server.switchServer", { defaultValue: "切换服务器" })}
+            title={t("server.switchServer", { defaultValue: "Switch Server" })}
           >
             {serverName}
           </button>
@@ -249,7 +249,7 @@ export function Topbar({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <span
-                title={t("topbar.copyRemoteUrl", "复制远程访问地址")}
+                title={t("topbar.copyRemoteUrl", "Copy remote access URL")}
                 style={{
                   cursor: "pointer", fontSize: 11, display: "inline-flex", alignItems: "center", gap: 2,
                   color: remoteCopyState === "copied" ? "var(--ok, #10b981)"
@@ -263,9 +263,9 @@ export function Topbar({
               >
                 <IconClipboard size={11} />
                 <span>{
-                  remoteCopyState === "copied" ? t("common.copied", "已复制")
+                  remoteCopyState === "copied" ? t("common.copied", "Copied")
                   : remoteCopyState === "no_ip" ? t("topbar.ipNotFound")
-                  : t("topbar.remoteUrl", "远程地址")
+                  : t("topbar.remoteUrl", "Remote URL")
                 }</span>
               </span>
             </DropdownMenuTrigger>
@@ -370,17 +370,17 @@ export function Topbar({
                       variant="ghost"
                       size="icon-sm"
                       className="focus-visible:ring-0"
-                      title={t("topbar.themeLabel", "主题")}
+                      title={t("topbar.themeLabel", "Theme")}
                     >
                       {themePrefState === "system" ? <IconLaptop size={16} /> : themePrefState === "dark" ? <IconMoon size={16} /> : <IconSun size={16} />}
                     </Button>
                   </DropdownMenuTrigger>
                 </span>
               </TooltipTrigger>
-              <TooltipContent side="bottom">{t("topbar.themeLabel", "主题")}</TooltipContent>
+              <TooltipContent side="bottom">{t("topbar.themeLabel", "Theme")}</TooltipContent>
             </Tooltip>
             <DropdownMenuContent align="end" className="min-w-[140px]">
-              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{t("topbar.themeLabel", "主题")}</DropdownMenuLabel>
+              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{t("topbar.themeLabel", "Theme")}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuRadioGroup value={themePrefState} onValueChange={(v) => onSetTheme(v as Theme)}>
                 <DropdownMenuRadioItem value="system" className="gap-2">
@@ -410,17 +410,17 @@ export function Topbar({
                       variant="ghost"
                       size="icon-sm"
                       className="focus-visible:ring-0"
-                      title={t("topbar.langLabel", "语言")}
+                      title={t("topbar.langLabel", "Language")}
                     >
                       <IconGlobe size={16} />
                     </Button>
                   </DropdownMenuTrigger>
                 </span>
               </TooltipTrigger>
-              <TooltipContent side="bottom">{t("topbar.langLabel", "语言")}</TooltipContent>
+              <TooltipContent side="bottom">{t("topbar.langLabel", "Language")}</TooltipContent>
             </Tooltip>
             <DropdownMenuContent align="end" className="min-w-[140px]">
-              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{t("topbar.langLabel", "语言")}</DropdownMenuLabel>
+              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{t("topbar.langLabel", "Language")}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuRadioGroup value={i18n.language?.startsWith("zh") ? "zh" : "en"} onValueChange={(v) => i18n.changeLanguage(v)}>
                 <DropdownMenuRadioItem value="zh">中文</DropdownMenuRadioItem>

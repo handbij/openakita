@@ -27,7 +27,7 @@ export function ConfirmDialog({ dialog, onClose }: ConfirmDialogProps) {
     <AlertDialog open={!!dialog} onOpenChange={(open) => { if (!open) onClose(); }}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{t("common.confirmTitle", { defaultValue: "确认操作" })}</AlertDialogTitle>
+          <AlertDialogTitle>{t("common.confirmTitle", { defaultValue: "Confirm" })}</AlertDialogTitle>
           <AlertDialogDescription className="whitespace-pre-wrap">
             {snapshot?.message}
           </AlertDialogDescription>

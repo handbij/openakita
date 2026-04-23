@@ -135,7 +135,7 @@ export class OfficeScene extends Phaser.Scene {
     } else {
       const deptMap = new Map<string, string[]>();
       for (const node of this.orgData.nodes) {
-        const dept = node.department || '默认';
+        const dept = node.department || 'Default';
         if (!deptMap.has(dept)) deptMap.set(dept, []);
         deptMap.get(dept)!.push(node.id);
       }

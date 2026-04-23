@@ -59,7 +59,7 @@ export function WebPasswordManager({ apiBase }: { apiBase: string }) {
   const copyGenerated = async () => {
     if (!generatedPw) return;
     const ok = await copyToClipboard(generatedPw);
-    if (ok) toast.success(t("adv.webPasswordCopied", { defaultValue: "密码已复制到剪贴板" }));
+    if (ok) toast.success(t("adv.webPasswordCopied", { defaultValue: "Password copied to clipboard" }));
   };
 
   return (
@@ -72,10 +72,10 @@ export function WebPasswordManager({ apiBase }: { apiBase: string }) {
       )}
       {generatedPw && (
         <div className="flex items-center gap-2 text-sm px-2.5 py-1.5 rounded-md border border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30">
-          <span className="text-green-600 dark:text-green-400 font-medium whitespace-nowrap">{t("adv.webPasswordGenerated", { defaultValue: "新密码" })}:</span>
+          <span className="text-green-600 dark:text-green-400 font-medium whitespace-nowrap">{t("adv.webPasswordGenerated", { defaultValue: "New password" })}:</span>
           <code className="flex-1 px-1.5 py-0.5 bg-muted/40 rounded text-sm tracking-wide select-all break-all">{generatedPw}</code>
           <Button variant="outline" size="xs" onClick={copyGenerated}>
-            {t("common.copy", { defaultValue: "复制" })}
+            {t("common.copy", { defaultValue: "Copy" })}
           </Button>
         </div>
       )}

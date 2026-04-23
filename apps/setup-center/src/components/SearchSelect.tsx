@@ -145,7 +145,7 @@ export function SearchSelect({
               className="inline-flex items-center justify-center size-6 rounded-sm text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => { setSearch(""); onChange(""); setOpen(true); inputRef.current?.focus(); }}
-              title="清空"
+              title="Clear"
             ><XIcon className="size-3.5" /></button>
           )}
           {hasOptions && (
@@ -183,7 +183,7 @@ export function SearchSelect({
             className="p-1"
           >
             {filtered.length === 0 ? (
-              <div className="py-6 text-center text-sm text-muted-foreground">没有匹配项</div>
+              <div className="py-6 text-center text-sm text-muted-foreground">No matches</div>
             ) : (
               filtered.map((opt, idx) => (
                 <div

@@ -417,12 +417,12 @@ export function AdvancedView(props: AdvancedViewProps) {
       <div className="card" style={{ marginTop: 12 }}>
         <h3 style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>{t("adv.networkSecurityTitle")}</h3>
 
-        <Section title={t("adv.webNetworkTitle", { defaultValue: "Web 访问" })}>
+        <Section title={t("adv.webNetworkTitle", { defaultValue: "Web Access" })}>
           <div className="cardHint" style={{ marginBottom: 4 }}>
-            {t("adv.webNetworkHint", { defaultValue: "控制 HTTP API 服务的监听范围和代理设置。修改后需重启后端生效。" })}
+            {t("adv.webNetworkHint", { defaultValue: "Control the listening scope and proxy settings of the HTTP API service. Changes require a backend restart to take effect." })}
           </div>
-          <FieldBool k="API_HOST" label={t("adv.apiHostLabel", { defaultValue: "允许外部访问（局域网/公网）" })}
-            help={t("adv.apiHostHelp", { defaultValue: "开启后监听 0.0.0.0，允许其他设备通过 IP 访问 Web 端。关闭则仅本机可访问。" })}
+          <FieldBool k="API_HOST" label={t("adv.apiHostLabel", { defaultValue: "Allow external access (LAN/Internet)" })}
+            help={t("adv.apiHostHelp", { defaultValue: "When enabled, listens on 0.0.0.0 so other devices can access the Web UI via IP. When disabled, only this machine can access it." })}
             envDraft={{ ...envDraft, API_HOST: (envDraft.API_HOST === "0.0.0.0") ? "true" : "false" }}
             onEnvChange={(fn) => {
               const next = fn({ API_HOST: (envDraft.API_HOST === "0.0.0.0") ? "true" : "false" });
@@ -436,12 +436,12 @@ export function AdvancedView(props: AdvancedViewProps) {
               }
             }}
           />
-          <FieldBool k="TRUST_PROXY" label={t("adv.trustProxyLabel", { defaultValue: "反向代理模式（Nginx/Caddy）" })}
-            help={t("adv.trustProxyHelp", { defaultValue: "通过反向代理部署时必须开启。开启后读取 X-Forwarded-For 获取真实 IP，并关闭本地免密。" })}
+          <FieldBool k="TRUST_PROXY" label={t("adv.trustProxyLabel", { defaultValue: "Reverse proxy mode (Nginx/Caddy)" })}
+            help={t("adv.trustProxyHelp", { defaultValue: "Must be enabled when deploying behind a reverse proxy. When enabled, reads X-Forwarded-For to obtain the real IP and disables local passwordless access." })}
             envDraft={envDraft} onEnvChange={(fn) => setEnvDraft((prev) => fn(prev))}
           />
           <p className="mt-1.5 text-xs text-muted-foreground/70">
-            {t("adv.webNetworkRestartHint", { defaultValue: "保存后需在状态面板重启后端生效" })}
+            {t("adv.webNetworkRestartHint", { defaultValue: "After saving, restart the backend from the status panel for changes to take effect" })}
           </p>
         </Section>
 

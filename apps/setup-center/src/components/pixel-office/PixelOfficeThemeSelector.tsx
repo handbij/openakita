@@ -11,7 +11,7 @@ export function PixelOfficeThemeSelector({
 
   return (
     <div className="poPanel poThemePanel">
-      <div className="poPanelHeader">场景主题</div>
+      <div className="poPanelHeader">Scene Theme</div>
       <div className="poPanelBody poThemeGrid">
         {themes.map(theme => (
           <ThemeCard

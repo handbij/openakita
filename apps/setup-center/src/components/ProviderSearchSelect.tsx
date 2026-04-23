@@ -203,7 +203,7 @@ export function ProviderSearchSelect({
             className="p-1"
           >
             {filtered.length === 0 ? (
-              <div className="py-6 text-center text-sm text-muted-foreground">没有匹配项</div>
+              <div className="py-6 text-center text-sm text-muted-foreground">No matches</div>
             ) : (
               filtered.map((opt, idx) => (
                 <div

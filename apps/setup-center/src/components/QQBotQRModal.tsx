@@ -193,7 +193,7 @@ export function QQBotQRModal({
             } catch (createErr: unknown) {
               if (!mountedRef.current) return;
               const msg = String(createErr);
-              if (msg.includes("cookie") || msg.includes("凭证")) {
+              if (msg.includes("cookie") || msg.includes("credential") || msg.includes("凭证")) {
                 setError(t("qqbot.qrNeedBrowser"));
               } else {
                 setError(msg);

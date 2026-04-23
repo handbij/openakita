@@ -35,9 +35,9 @@ export class ErrorBoundary extends Component<Props, State> {
           fontSize: 13,
           color: "var(--danger, #ef4444)",
         }}>
-          <div style={{ fontWeight: 600, marginBottom: 4 }}>渲染异常</div>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>Render error</div>
           <div style={{ opacity: 0.7, fontSize: 12, wordBreak: "break-word" }}>
-            {this.state.error?.message || "未知错误"}
+            {this.state.error?.message || "Unknown error"}
           </div>
           <button
             onClick={() => this.setState({ hasError: false, error: null })}
@@ -47,7 +47,7 @@ export class ErrorBoundary extends Component<Props, State> {
               background: "transparent", color: "var(--danger, #ef4444)", cursor: "pointer",
             }}
           >
-            重试
+            Retry
           </button>
         </div>
       );

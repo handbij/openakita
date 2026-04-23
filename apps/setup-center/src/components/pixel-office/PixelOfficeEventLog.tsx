@@ -8,18 +8,18 @@ export interface EventLogEntry {
 }
 
 const TYPE_TAG: Record<string, { label: string; color: string }> = {
-  meeting_gather: { label: '开会', color: '#3498db' },
-  meeting_speak: { label: '发言', color: '#2ecc71' },
-  meeting_end: { label: '散会', color: '#95a5a6' },
-  task_delegate: { label: '派发', color: '#e67e22' },
-  task_deliver: { label: '交付', color: '#9b59b6' },
-  task_accept: { label: '通过', color: '#27ae60' },
-  task_reject: { label: '驳回', color: '#e74c3c' },
-  escalation: { label: '上报', color: '#e74c3c' },
-  broadcast: { label: '广播', color: '#f39c12' },
-  message: { label: '消息', color: '#3498db' },
-  status_change: { label: '状态', color: '#95a5a6' },
-  heartbeat: { label: '心跳', color: '#555' },
+  meeting_gather: { label: 'Meeting', color: '#3498db' },
+  meeting_speak: { label: 'Speak', color: '#2ecc71' },
+  meeting_end: { label: 'Adjourn', color: '#95a5a6' },
+  task_delegate: { label: 'Delegate', color: '#e67e22' },
+  task_deliver: { label: 'Deliver', color: '#9b59b6' },
+  task_accept: { label: 'Accept', color: '#27ae60' },
+  task_reject: { label: 'Reject', color: '#e74c3c' },
+  escalation: { label: 'Escalate', color: '#e74c3c' },
+  broadcast: { label: 'Broadcast', color: '#f39c12' },
+  message: { label: 'Message', color: '#3498db' },
+  status_change: { label: 'Status', color: '#95a5a6' },
+  heartbeat: { label: 'Heartbeat', color: '#555' },
 };
 
 function formatTime(ts: number): string {
@@ -38,10 +38,10 @@ export function PixelOfficeEventLog({ entries }: { entries: EventLogEntry[] }) {
 
   return (
     <div className="poPanel">
-      <div className="poPanelHeader">事件日志</div>
+      <div className="poPanelHeader">Event Log</div>
       <div className="poPanelBody" ref={scrollRef}>
         {entries.length === 0 && (
-          <div className="poEmpty">等待组织事件…</div>
+          <div className="poEmpty">Waiting for organization events...</div>
         )}
         {entries.map((e, i) => {
           const tag = TYPE_TAG[e.type] ?? { label: e.type, color: '#888' };

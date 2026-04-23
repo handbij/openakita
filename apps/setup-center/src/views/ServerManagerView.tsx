@@ -45,7 +45,7 @@ export function ServerManagerView({
     const r = await testConnection(url.trim());
     setTesting(false);
     setTestResult(r);
-    if (!r.ok) setError(r.error || t("server.connectFailed", { defaultValue: "连接失败" }));
+    if (!r.ok) setError(r.error || t("server.connectFailed", { defaultValue: "Connection failed" }));
   }, [url, t]);
 
   const handleSave = useCallback(() => {
@@ -141,18 +141,18 @@ export function ServerManagerView({
             <img src={logoUrl} alt="OpenAkita" style={{ width: 48, height: 48, borderRadius: 10, marginBottom: 8 }} />
             <h2 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 600 }}>
               {mode === "edit"
-                ? t("server.editTitle", { defaultValue: "编辑服务器" })
-                : t("server.addTitle", { defaultValue: "连接服务器" })}
+                ? t("server.editTitle", { defaultValue: "Edit Server" })
+                : t("server.addTitle", { defaultValue: "Connect to Server" })}
             </h2>
             <p style={{ margin: 0, fontSize: 13, color: "var(--text3, #64748b)" }}>
-              {t("server.addHint", { defaultValue: "输入桌面端显示的远程访问地址" })}
+              {t("server.addHint", { defaultValue: "Enter the remote access address shown on the desktop app" })}
             </p>
           </div>
 
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder={t("server.namePlaceholder", { defaultValue: "名称（可选），如「家里」" })}
+            placeholder={t("server.namePlaceholder", { defaultValue: "Name (optional), e.g. \"Home\"" })}
             style={inputStyle}
           />
           <input
@@ -177,7 +177,7 @@ export function ServerManagerView({
               background: "rgba(16, 185, 129, 0.1)", color: "var(--ok, #10b981)",
               borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 12,
             }}>
-              {t("server.connected", { defaultValue: "连接成功" })}
+              {t("server.connected", { defaultValue: "Connected successfully" })}
               {testResult.version && ` — v${testResult.version}`}
             </div>
           )}
@@ -189,12 +189,12 @@ export function ServerManagerView({
               style={{ ...btnPrimary, opacity: testing || !url.trim() ? 0.6 : 1, cursor: testing ? "wait" : "pointer" }}
             >
               {testing
-                ? t("server.testing", { defaultValue: "连接中..." })
-                : t("server.testBtn", { defaultValue: "测试连接" })}
+                ? t("server.testing", { defaultValue: "Connecting..." })
+                : t("server.testBtn", { defaultValue: "Test Connection" })}
             </button>
           ) : (
             <button onClick={handleSave} style={btnPrimary}>
-              {t("server.saveConnect", { defaultValue: "保存并连接" })}
+              {t("server.saveConnect", { defaultValue: "Save and Connect" })}
             </button>
           )}
 
@@ -203,12 +203,12 @@ export function ServerManagerView({
               onClick={() => { setMode("list"); setEditId(null); }}
               style={{ ...btnSecondary, marginTop: 10 }}
             >
-              {t("server.backToList", { defaultValue: "返回列表" })}
+              {t("server.backToList", { defaultValue: "Back to List" })}
             </button>
           )}
 
           <p style={{ marginTop: 16, fontSize: 12, color: "var(--text3, #94a3b8)", textAlign: "center" }}>
-            {t("server.copyHint", { defaultValue: "在桌面端顶栏点击「复制远程地址」获取地址" })}
+            {t("server.copyHint", { defaultValue: "On the desktop app top bar, click \"Copy Remote Address\" to get the address" })}
           </p>
         </div>
       </div>
@@ -222,7 +222,7 @@ export function ServerManagerView({
         <div style={{ textAlign: "center", marginBottom: 16 }}>
           <img src={logoUrl} alt="OpenAkita" style={{ width: 48, height: 48, borderRadius: 10, marginBottom: 8 }} />
           <h2 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 600 }}>
-            {t("server.listTitle", { defaultValue: "我的服务器" })}
+            {t("server.listTitle", { defaultValue: "My Servers" })}
           </h2>
         </div>
 
@@ -260,7 +260,7 @@ export function ServerManagerView({
                       background: "none", border: "none", color: "var(--text3, #64748b)",
                       cursor: "pointer", padding: 4, borderRadius: 6, fontSize: 13,
                     }}
-                    title={t("server.edit", { defaultValue: "编辑" })}
+                    title={t("server.edit", { defaultValue: "Edit" })}
                   >
                     <IconEdit size={13} />
                   </button>
@@ -270,7 +270,7 @@ export function ServerManagerView({
                       background: "none", border: "none", color: "var(--danger, #ef4444)",
                       cursor: "pointer", padding: 4, borderRadius: 6, fontSize: 13,
                     }}
-                    title={t("server.delete", { defaultValue: "删除" })}
+                    title={t("server.delete", { defaultValue: "Delete" })}
                   >
                     <IconTrash size={13} />
                   </button>
@@ -281,12 +281,12 @@ export function ServerManagerView({
         </div>
 
         <button onClick={startAdd} style={btnPrimary}>
-          + {t("server.addNew", { defaultValue: "添加服务器" })}
+          + {t("server.addNew", { defaultValue: "Add Server" })}
         </button>
 
         {onDone && (
           <button onClick={onDone} style={{ ...btnSecondary, marginTop: 10 }}>
-            {t("server.done", { defaultValue: "完成" })}
+            {t("server.done", { defaultValue: "Done" })}
           </button>
         )}
       </div>

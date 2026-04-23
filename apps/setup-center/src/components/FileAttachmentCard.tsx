@@ -104,7 +104,7 @@ export function FileAttachmentCard({ file, apiBaseUrl }: FileAttachmentCardProps
             onMouseLeave={e => { e.currentTarget.style.background = "none"; }}
             onClick={() => { setMenuOpen(false); handleDownload(); }}
           >
-            下载文件
+            Download file
           </button>
           {IS_TAURI && (
             <>
@@ -114,7 +114,7 @@ export function FileAttachmentCard({ file, apiBaseUrl }: FileAttachmentCardProps
                 onMouseLeave={e => { e.currentTarget.style.background = "none"; }}
                 onClick={() => { setMenuOpen(false); openFileWithDefault(file.file_path); }}
               >
-                用默认应用打开
+                Open with default app
               </button>
               <button
                 style={{ display: "block", width: "100%", padding: "6px 10px", background: "none", border: "none", cursor: "pointer", textAlign: "left", borderRadius: 4, color: "var(--text)" }}
@@ -122,7 +122,7 @@ export function FileAttachmentCard({ file, apiBaseUrl }: FileAttachmentCardProps
                 onMouseLeave={e => { e.currentTarget.style.background = "none"; }}
                 onClick={() => { setMenuOpen(false); showInFolder(file.file_path); }}
               >
-                在文件管理器中显示
+                Show in file manager
               </button>
             </>
           )}

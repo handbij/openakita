@@ -239,7 +239,7 @@ export function generateLayout(
   rooms.push({
     id: 'public',
     type: 'public',
-    label: '公共区域',
+    label: 'Common Area',
     x: ROOM_PADDING, y: entranceY + specialH,
     w: totalW - ROOM_PADDING * 2, h: HALL_HEIGHT,
     seats: Array.from({ length: 6 }, (_, i) => ({

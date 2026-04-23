@@ -201,9 +201,9 @@ setTimeout(() => hideBoot(true), 8000);
 
     if (isEditable) {
       items.push(
-        { label: "剪切", action: () => document.execCommand("cut"), disabled: !hasSelection },
+        { label: "Cut", action: () => document.execCommand("cut"), disabled: !hasSelection },
         {
-          label: "复制",
+          label: "Copy",
           action: async () => {
             const text = window.getSelection()?.toString() ?? "";
             if (text) await copyToClipboard(text);
@@ -211,7 +211,7 @@ setTimeout(() => hideBoot(true), 8000);
           disabled: !hasSelection,
         },
         {
-          label: "粘贴",
+          label: "Paste",
           action: () => {
             readFromClipboard().then((text) => {
               if (!text) return;
@@ -240,12 +240,12 @@ setTimeout(() => hideBoot(true), 8000);
             }).catch(() => {});
           },
         },
-        { label: "全选", action: () => document.execCommand("selectAll") },
+        { label: "Select All", action: () => document.execCommand("selectAll") },
       );
     } else if (hasSelection) {
       items.push(
         {
-          label: "复制",
+          label: "Copy",
           action: async () => {
             const text = window.getSelection()?.toString() ?? "";
             if (text) await copyToClipboard(text);

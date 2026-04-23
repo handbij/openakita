@@ -85,10 +85,10 @@ export function cancelPreview() {
 }
 
 export const THEME_OPTIONS: { value: Theme; label: string; group: string }[] = [
-  { value: "system", label: "跟随系统", group: "standard" },
-  { value: "light", label: "浅色", group: "standard" },
-  { value: "dark", label: "深色", group: "standard" },
-  { value: "daltonized-light", label: "色盲友好 (浅)", group: "accessibility" },
-  { value: "daltonized-dark", label: "色盲友好 (深)", group: "accessibility" },
-  { value: "high-contrast", label: "高对比度", group: "accessibility" },
+  { value: "system", label: "System", group: "standard" },
+  { value: "light", label: "Light", group: "standard" },
+  { value: "dark", label: "Dark", group: "standard" },
+  { value: "daltonized-light", label: "Color-blind friendly (light)", group: "accessibility" },
+  { value: "daltonized-dark", label: "Color-blind friendly (dark)", group: "accessibility" },
+  { value: "high-contrast", label: "High contrast", group: "accessibility" },
 ];

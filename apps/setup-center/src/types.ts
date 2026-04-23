@@ -375,12 +375,12 @@ export type MarketplaceSkill = {
 // ─── Persona presets ───
 
 export const PERSONA_PRESETS = [
-  { id: "default", name: "默认助手", desc: "专业友好、平衡得体", style: "适合日常使用，万能型角色" },
-  { id: "business", name: "商务顾问", desc: "正式专业、数据驱动", style: "适合工作场景，正式汇报、数据分析" },
-  { id: "tech_expert", name: "技术专家", desc: "简洁精准、代码导向", style: "适合编程开发，技术问答" },
-  { id: "butler", name: "私人管家", desc: "周到细致、礼貌正式", style: "适合生活服务，日程安排、出行规划" },
-  { id: "girlfriend", name: "虚拟女友", desc: "温柔体贴、情感丰富", style: "适合情感陪伴，倾听与关怀" },
-  { id: "boyfriend", name: "虚拟男友", desc: "阳光开朗、幽默风趣", style: "适合情感陪伴，轻松有趣" },
-  { id: "family", name: "家人", desc: "亲切关怀、唠叨温暖", style: "适合家庭场景，长辈式温暖关怀" },
-  { id: "jarvis", name: "贾维斯", desc: "冷静睿智、英式幽默", style: "适合科技极客，像钢铁侠的 AI 管家" },
+  { id: "default", name: "Default Assistant", desc: "Professional, friendly, balanced", style: "Great for everyday use — a general-purpose persona" },
+  { id: "business", name: "Business Consultant", desc: "Formal, professional, data-driven", style: "Suited to work: formal reports and data analysis" },
+  { id: "tech_expert", name: "Tech Expert", desc: "Concise, precise, code-oriented", style: "Suited to programming and technical Q&A" },
+  { id: "butler", name: "Personal Butler", desc: "Thoughtful, meticulous, polite", style: "Suited to lifestyle tasks: scheduling and travel planning" },
+  { id: "girlfriend", name: "Virtual Girlfriend", desc: "Gentle, caring, emotionally warm", style: "Suited to emotional companionship, listening, and care" },
+  { id: "boyfriend", name: "Virtual Boyfriend", desc: "Upbeat, cheerful, humorous", style: "Suited to emotional companionship, easygoing and fun" },
+  { id: "family", name: "Family", desc: "Warm, caring, a bit chatty", style: "Suited to family settings: elder-like warmth and care" },
+  { id: "jarvis", name: "Jarvis", desc: "Calm, wise, British wit", style: "Suited to tech enthusiasts — an Iron Man-style AI butler" },
 ] as const;

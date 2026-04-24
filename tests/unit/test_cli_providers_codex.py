@@ -79,7 +79,7 @@ def test_build_argv_write_mode_adds_skip_checks():
 
 
 def test_build_argv_write_mode_honors_disabled_sandbox_config():
-    """When Codex config disables sandboxing, do not override it with --full-auto."""
+    """When Codex config disables sandboxing, use Codex's noninteractive no-sandbox flag."""
     from openakita.agents.cli_providers import codex
 
     profile = _make_profile(cli_permission_mode=CliPermissionMode.WRITE)
@@ -90,7 +90,7 @@ def test_build_argv_write_mode_honors_disabled_sandbox_config():
     assert "--skip-git-repo-check" in argv
     assert "--full-auto" not in argv
     assert "--sandbox" not in argv
-    assert "--dangerously-bypass-approvals-and-sandbox" not in argv
+    assert "--dangerously-bypass-approvals-and-sandbox" in argv
 
 
 def test_codex_config_detects_danger_full_access_sandbox_mode(tmp_path):

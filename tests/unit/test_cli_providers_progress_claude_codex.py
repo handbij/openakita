@@ -349,6 +349,64 @@ async def test_codex_provider_emits_responses_style_item_events(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_codex_provider_emits_codex_0124_item_completed_events(monkeypatch):
+    from openakita.agents.cli_providers.codex import PROVIDER
+
+    events = []
+
+    async def progress(kind, **payload):
+        events.append((kind, payload))
+
+    async def fake_stream(argv, env, cwd, cancelled, *, on_spawn, on_stderr=None):
+        yield b'{"type":"thread.started","thread_id":"thread-1"}\n'
+        yield b'{"type":"turn.started"}\n'
+        yield (
+            b'{"type":"item.completed","item":{'
+            b'"id":"item_0","type":"agent_message","text":"Starting"}}\n'
+        )
+        yield (
+            b'{"type":"item.started","item":{'
+            b'"id":"item_1","type":"command_execution","command":"test -e result.txt",'
+            b'"status":"in_progress"}}\n'
+        )
+        yield (
+            b'{"type":"item.completed","item":{'
+            b'"id":"item_1","type":"command_execution","command":"test -e result.txt",'
+            b'"aggregated_output":"missing","exit_code":0,"status":"completed"}}\n'
+        )
+        yield (
+            b'{"type":"item.completed","item":{'
+            b'"id":"item_2","type":"file_change",'
+            b'"changes":[{"path":"/tmp/result.txt","kind":"add"}],"status":"completed"}}\n'
+        )
+        yield (
+            b'{"type":"item.completed","item":{'
+            b'"id":"item_3","type":"agent_message","text":"Created `/tmp/result.txt`"}}\n'
+        )
+        yield b'{"type":"turn.completed","usage":{"input_tokens":7,"output_tokens":8}}\n'
+
+    monkeypatch.setattr(
+        "openakita.agents.cli_providers.codex.stream_cli_subprocess",
+        fake_stream,
+    )
+
+    result = await PROVIDER.run(
+        _request(progress),
+        ["codex"],
+        {},
+        on_spawn=lambda proc: None,
+    )
+
+    assert result.final_text == "StartingCreated `/tmp/result.txt`"
+    assert result.tools_used == ["exec_command", "file_change"]
+    assert result.input_tokens == 7
+    assert result.output_tokens == 8
+    assert ("assistant_text", {"text": "Created `/tmp/result.txt`"}) in events
+    assert ("tool_use", {"tool_name": "exec_command"}) in events
+    assert ("tool_use", {"tool_name": "file_change"}) in events
+
+
+@pytest.mark.asyncio
 async def test_codex_provider_maps_turn_aborted_to_error(monkeypatch):
     from openakita.agents.cli_providers.codex import PROVIDER
 

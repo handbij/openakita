@@ -352,6 +352,9 @@ def _parse_usage(obj: dict) -> _StreamEvent:
 
 def _parse_item_event(item: dict) -> list[_StreamEvent]:
     itype = item.get("type") or item.get("kind")
+    if itype == "agent_message":
+        text = _first_text(item.get("message"), item.get("text"), item.get("content"))
+        return [_StreamEvent(kind="assistant_text", text=text)] if text else []
     if itype in ("message", "assistant_message", "output_message"):
         return _parse_message_content(item)
     if itype in ("output_text", "text"):
@@ -366,10 +369,16 @@ def _parse_item_event(item: dict) -> list[_StreamEvent]:
         "tool_call",
         "local_shell_call",
         "mcp_tool_call",
+        "command_execution",
+        "file_change",
     ):
         name = str(item.get("name") or item.get("tool_name") or "")
         if not name and itype == "local_shell_call":
             name = "exec_command"
+        if not name and itype == "command_execution":
+            name = "exec_command"
+        if not name and itype == "file_change":
+            name = "file_change"
         if not name and itype == "mcp_tool_call":
             name = "mcp_tool_call"
         return [_StreamEvent(kind="tool_use", tool_name=name, call_id=_event_id(item))] if name else []
@@ -409,6 +418,9 @@ def _parse_payload(obj: dict) -> list[_StreamEvent]:
             text=str(obj.get("delta", "") or obj.get("text", "")),
         )]
     if etype == "agent_message":
+        direct_text = _first_text(obj.get("message"), obj.get("text"), obj.get("content"))
+        if direct_text:
+            return [_StreamEvent(kind="assistant_text", text=direct_text)]
         return [
             _StreamEvent(kind="assistant_text", text=text)
             for text in _string_parts(obj.get("message"))
@@ -439,6 +451,8 @@ def _parse_payload(obj: dict) -> list[_StreamEvent]:
         if isinstance(item, dict):
             return _parse_item_event(item)
         return []
+    if etype in ("command_execution", "file_change", "local_shell_call", "mcp_tool_call"):
+        return _parse_item_event(obj)
     if str(etype or "").startswith("item."):
         return _parse_item_event(obj)
     if etype in ("exec_command_begin", "exec_command_end"):
@@ -581,9 +595,9 @@ class CodexAdapter:
         if request.profile.cli_permission_mode == CliPermissionMode.WRITE:
             if _codex_config_disables_sandbox(request.profile):
                 logger.info(
-                    "Codex config disables sandbox; omitting --full-auto so config.toml applies"
+                    "Codex config disables sandbox; using noninteractive no-sandbox write mode"
                 )
-                options += ["--skip-git-repo-check"]
+                options += ["--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check"]
             else:
                 options += ["--full-auto", "--skip-git-repo-check"]
             if not request.resume_id:

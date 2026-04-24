@@ -949,7 +949,7 @@ class ReasoningEngine:
         tools_executed_in_task = False
         _supervisor_intervened = False
         _tool_call_counter: dict[str, int] = {}
-        _MAX_SAME_TOOL_PER_TASK = 5
+        _MAX_SAME_TOOL_PER_TASK = 100
 
         # ReAct loop state — tracks max_output recovery + continuation nudge
         # counters, shared with reason_stream() via _handle_max_tokens_recovery.
@@ -2401,7 +2401,7 @@ class ReasoningEngine:
             tools_executed_in_task = False
             _supervisor_intervened = False
             _tool_call_counter: dict[str, int] = {}
-            _MAX_SAME_TOOL_PER_TASK = 5
+            _MAX_SAME_TOOL_PER_TASK = 100
 
             # ReAct loop state — shared semantics with run() via helper methods.
             loop_state = self._init_loop_state()

@@ -1,5 +1,6 @@
-import { useRef, useCallback, useEffect, useLayoutEffect, forwardRef, useImperativeHandle } from "react";
+import { useRef, useCallback, useEffect, useLayoutEffect, forwardRef, useImperativeHandle, useState } from "react";
 import type { ChatMessage, MdModules, ChatDisplayMode } from "../utils/chatTypes";
+import { IconChevronDown } from "../../../icons";
 import { MessageBubble } from "./MessageBubble";
 import { FlatMessageItem } from "./FlatMessageItem";
 
@@ -90,9 +91,11 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   const forceFollowRef = useRef(false);
   const atBottomRef = useRef(true);
   const savedScrollTopRef = useRef<number | null>(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   const emitAtBottomChange = useCallback((atBottom: boolean) => {
     atBottomRef.current = atBottom;
+    setShowScrollToBottom(!atBottom);
     onAtBottomChange?.(atBottom);
   }, [onAtBottomChange]);
 
@@ -175,13 +178,17 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     if (!el) return;
 
     const onScroll = () => {
-      syncAtBottomState();
+      const atBottom = computeAtBottom();
+      if (!atBottom && forceFollowRef.current) {
+        forceFollowRef.current = false;
+      }
+      emitAtBottomChange(atBottom);
     };
 
     el.addEventListener("scroll", onScroll, { passive: true });
     syncAtBottomState();
     return () => el.removeEventListener("scroll", onScroll);
-  }, [syncAtBottomState]);
+  }, [computeAtBottom, syncAtBottomState, emitAtBottomChange]);
 
   useLayoutEffect(() => {
     if (forceFollowRef.current || atBottomRef.current) {
@@ -242,7 +249,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   const Footer = useCallback(() => <div style={{ height: 32 }} />, []);
 
   return (
-    <div ref={containerRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div ref={containerRef} style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div
         ref={scrollerElRef}
         style={{ flex: 1, minHeight: 0, overflowY: "auto", overscrollBehavior: "contain" }}
@@ -262,6 +269,21 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
           <Footer />
         </div>
       </div>
+      {showScrollToBottom && (
+        <button
+          type="button"
+          className="logScrollBtn"
+          aria-label="Scroll to bottom"
+          title="Scroll to bottom"
+          onClick={() => {
+            forceFollowRef.current = isStreaming;
+            scrollToAbsoluteBottom("smooth");
+            emitAtBottomChange(true);
+          }}
+        >
+          <IconChevronDown size={14} />
+        </button>
+      )}
     </div>
   );
 });

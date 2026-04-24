@@ -22,10 +22,12 @@ import logging
 import os
 import re
 import sys
+import tempfile
 import time
 import uuid
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -196,6 +198,85 @@ def _maybe_inline_local_image(att_url: str, att_mime: str) -> str | None:
         return f"data:{mime};base64,{b64}"
     except Exception as exc:
         logger.warning("[InlineImage] failed to inline %s: %s", att_url, exc)
+        return None
+
+
+# ---- Voice attachment URL resolution ----
+async def resolve_attachment_to_local(url: str) -> str | None:
+    """Resolve attachment URL to local file path.
+
+    Handles:
+    - file:// URLs -> return path directly
+    - http(s):// URLs -> download to temp file
+    - data: URIs -> decode to temp file
+    """
+    parsed = urlparse(url)
+
+    if parsed.scheme == "file":
+        local_path = parsed.path
+        if Path(local_path).exists():
+            return local_path
+        return None
+
+    if parsed.scheme in ("http", "https"):
+        import httpx
+
+        ext = Path(parsed.path).suffix or ".wav"
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+
+            with tempfile.NamedTemporaryFile(
+                suffix=ext,
+                delete=False,
+            ) as f:
+                f.write(response.content)
+                return f.name
+
+    if url.startswith("data:"):
+        header, data = url.split(",", 1)
+        content = base64.b64decode(data)
+
+        ext = ".wav"
+        if "audio/mpeg" in header:
+            ext = ".mp3"
+        elif "audio/ogg" in header:
+            ext = ".ogg"
+
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as f:
+            f.write(content)
+            return f.name
+
+    return None
+
+
+async def process_voice_attachment(
+    url: str,
+    handler: "MediaHandler",
+) -> str | None:
+    """Process a voice attachment and return transcript."""
+    from ..channels.types import MediaFile, MediaStatus
+
+    local_path = await resolve_attachment_to_local(url)
+    if not local_path:
+        logger.warning(f"[Agent] Could not resolve voice URL: {url[:50]}...")
+        return None
+
+    media = MediaFile(
+        id=f"voice_{hash(url) % 100000}",
+        filename=Path(local_path).name,
+        local_path=local_path,
+        mime_type="audio/wav",
+        status=MediaStatus.READY,
+    )
+
+    try:
+        transcript = await handler.transcribe_audio(media)
+        logger.info(f"[Agent] Voice transcribed: {len(transcript)} chars")
+        return transcript
+    except Exception as e:
+        logger.error(f"[Agent] Voice transcription failed: {e}")
         return None
 
 

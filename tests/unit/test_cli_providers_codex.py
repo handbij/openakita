@@ -67,7 +67,8 @@ def test_build_argv_write_mode_adds_skip_checks():
     from openakita.agents.cli_providers import codex
 
     profile = _make_profile(cli_permission_mode=CliPermissionMode.WRITE)
-    with patch.object(codex, "_resolve_binary", return_value="/usr/bin/codex"):
+    with patch.object(codex, "_resolve_binary", return_value="/usr/bin/codex"), \
+         patch.object(codex, "_codex_config_disables_sandbox", return_value=False):
         argv = PROVIDERS[CliProviderId.CODEX].build_argv(_make_request(profile))
 
     assert "--skip-git-repo-check" in argv
@@ -75,6 +76,30 @@ def test_build_argv_write_mode_adds_skip_checks():
     assert "--cd" in argv
     assert "--add-dir" not in argv
     assert "--dangerously-bypass-approvals-and-sandbox" not in argv
+
+
+def test_build_argv_write_mode_honors_disabled_sandbox_config():
+    """When Codex config disables sandboxing, do not override it with --full-auto."""
+    from openakita.agents.cli_providers import codex
+
+    profile = _make_profile(cli_permission_mode=CliPermissionMode.WRITE)
+    with patch.object(codex, "_resolve_binary", return_value="/usr/bin/codex"), \
+         patch.object(codex, "_codex_config_disables_sandbox", return_value=True):
+        argv = PROVIDERS[CliProviderId.CODEX].build_argv(_make_request(profile))
+
+    assert "--skip-git-repo-check" in argv
+    assert "--full-auto" not in argv
+    assert "--sandbox" not in argv
+    assert "--dangerously-bypass-approvals-and-sandbox" not in argv
+
+
+def test_codex_config_detects_danger_full_access_sandbox_mode(tmp_path):
+    from openakita.agents.cli_providers import codex
+
+    (tmp_path / "config.toml").write_text('sandbox_mode = "danger-full-access"\n')
+    profile = _make_profile(cli_env={"CODEX_HOME": str(tmp_path)})
+
+    assert codex._codex_config_disables_sandbox(profile) is True
 
 
 def test_build_argv_write_mode_adds_explicit_temp_target_root(tmp_path):

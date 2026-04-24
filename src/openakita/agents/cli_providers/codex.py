@@ -15,8 +15,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import tempfile
+import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -55,6 +57,7 @@ _PROJECT_MARKERS = (
 )
 _UNKNOWN_EVENT_LOG_LIMIT = 20
 _unknown_event_log_count = 0
+_NO_SANDBOX_VALUES = {"danger-full-access", "danger_full_access", "disabled", "false", "none", "off"}
 
 
 def _resolve_binary() -> str | None:
@@ -101,6 +104,44 @@ def _mcp_config_overrides(server_ids: tuple[str, ...]) -> list[str]:
             )
             overrides.extend(["-c", f"{prefix}.env={env_value}"])
     return overrides
+
+
+def _codex_home_from_profile(profile: object | None) -> Path:
+    cli_env = getattr(profile, "cli_env", None) or {}
+    raw = cli_env.get("CODEX_HOME") if isinstance(cli_env, dict) else None
+    if raw:
+        expanded = os.path.expandvars(os.path.expanduser(str(raw)))
+        return Path(expanded)
+    return Path.home() / ".codex"
+
+
+def _value_disables_sandbox(value: object) -> bool:
+    if value is False:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in _NO_SANDBOX_VALUES
+    if isinstance(value, dict):
+        if value.get("enabled") is False:
+            return True
+        mode = value.get("mode") or value.get("sandbox_mode")
+        return _value_disables_sandbox(mode)
+    return False
+
+
+def _codex_config_disables_sandbox(profile: object | None) -> bool:
+    path = _codex_home_from_profile(profile) / "config.toml"
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return False
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        logger.debug("codex config unavailable or invalid at %s: %s", path, exc)
+        return False
+
+    return (
+        _value_disables_sandbox(data.get("sandbox_mode"))
+        or _value_disables_sandbox(data.get("sandbox"))
+    )
 
 
 def _explicit_absolute_paths(text: str) -> list[Path]:
@@ -538,7 +579,13 @@ class CodexAdapter:
         if request.profile.cli_permission_mode == CliPermissionMode.PLAN and not request.resume_id:
             options += ["--sandbox", "read-only"]
         if request.profile.cli_permission_mode == CliPermissionMode.WRITE:
-            options += ["--full-auto", "--skip-git-repo-check"]
+            if _codex_config_disables_sandbox(request.profile):
+                logger.info(
+                    "Codex config disables sandbox; omitting --full-auto so config.toml applies"
+                )
+                options += ["--skip-git-repo-check"]
+            else:
+                options += ["--full-auto", "--skip-git-repo-check"]
             if not request.resume_id:
                 for root in _extra_writable_roots(request):
                     options += ["--add-dir", str(root)]

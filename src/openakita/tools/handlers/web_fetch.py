@@ -30,6 +30,8 @@ class WebFetchHandler:
     async def _web_fetch(self, params: dict) -> str:
         url = params.get("url", "").strip()
         max_length = params.get("max_length", 15000)
+        # Coerce string to int (LLM sometimes sends numeric args as strings)
+        max_length = int(max_length) if isinstance(max_length, str) else max_length
 
         if not url:
             return "❌ web_fetch missing required parameter 'url'."

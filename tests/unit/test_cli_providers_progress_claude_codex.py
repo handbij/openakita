@@ -268,6 +268,87 @@ async def test_codex_provider_emits_current_dialect_progress(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_codex_provider_emits_status_progress_before_semantic_output(monkeypatch):
+    from openakita.agents.cli_providers.codex import PROVIDER
+
+    events = []
+
+    async def progress(kind, **payload):
+        events.append((kind, payload))
+
+    async def fake_stream(argv, env, cwd, cancelled, *, on_spawn, on_stderr=None):
+        yield b'{"type":"session_start","session_id":"codex-sess-1"}\n'
+        yield b'{"type":"task_started","turn_id":"turn-1"}\n'
+        yield b'{"type":"agent_message","message":"Done"}\n'
+        yield b'{"type":"turn_end","usage":{"input_tokens":1,"output_tokens":1}}\n'
+
+    monkeypatch.setattr(
+        "openakita.agents.cli_providers.codex.stream_cli_subprocess",
+        fake_stream,
+    )
+
+    result = await PROVIDER.run(
+        _request(progress),
+        ["codex"],
+        {},
+        on_spawn=lambda proc: None,
+    )
+
+    assert result.exit_reason == ExitReason.COMPLETED
+    assert result.session_id == "turn-1"
+    assert result.final_text == "Done"
+    assert ("assistant_thinking", {"text": "Codex session started."}) in events
+    assert ("assistant_thinking", {"text": "Codex started working."}) in events
+
+
+@pytest.mark.asyncio
+async def test_codex_provider_emits_responses_style_item_events(monkeypatch):
+    from openakita.agents.cli_providers.codex import PROVIDER
+
+    events = []
+
+    async def progress(kind, **payload):
+        events.append((kind, payload))
+
+    async def fake_stream(argv, env, cwd, cancelled, *, on_spawn, on_stderr=None):
+        yield b'{"type":"response.created","response":{"id":"resp_1"}}\n'
+        yield (
+            b'{"type":"response.output_item.added","item":{'
+            b'"type":"reasoning","summary":[{"text":"Inspecting workspace"}]}}\n'
+        )
+        yield (
+            b'{"type":"response.output_item.done","item":{'
+            b'"type":"function_call","call_id":"call_1","name":"exec_command"}}\n'
+        )
+        yield b'{"type":"response.output_text.delta","delta":"Done"}\n'
+        yield (
+            b'{"type":"response.completed","response":{'
+            b'"usage":{"input_tokens":5,"output_tokens":6}}}\n'
+        )
+
+    monkeypatch.setattr(
+        "openakita.agents.cli_providers.codex.stream_cli_subprocess",
+        fake_stream,
+    )
+
+    result = await PROVIDER.run(
+        _request(progress),
+        ["codex"],
+        {},
+        on_spawn=lambda proc: None,
+    )
+
+    assert result.final_text == "Done"
+    assert result.tools_used == ["exec_command"]
+    assert result.input_tokens == 5
+    assert result.output_tokens == 6
+    assert ("assistant_thinking", {"text": "Codex started working."}) in events
+    assert ("assistant_thinking", {"text": "Inspecting workspace"}) in events
+    assert ("assistant_text", {"text": "Done"}) in events
+    assert ("tool_use", {"tool_name": "exec_command"}) in events
+
+
+@pytest.mark.asyncio
 async def test_codex_provider_maps_turn_aborted_to_error(monkeypatch):
     from openakita.agents.cli_providers.codex import PROVIDER
 

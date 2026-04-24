@@ -20,6 +20,7 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from openakita.agents.cli_detector import CliProviderId
 from openakita.agents.cli_providers._common import (
@@ -52,6 +53,8 @@ _PROJECT_MARKERS = (
     "Cargo.toml",
     "go.mod",
 )
+_UNKNOWN_EVENT_LOG_LIMIT = 20
+_unknown_event_log_count = 0
 
 
 def _resolve_binary() -> str | None:
@@ -207,7 +210,7 @@ def _string_parts(value: object) -> list[str]:
     return []
 
 
-def _payload_from_line(line: bytes) -> dict | None:
+def _json_obj_from_line(line: bytes) -> dict | None:
     if not line or not line.strip():
         return None
     try:
@@ -216,11 +219,70 @@ def _payload_from_line(line: bytes) -> dict | None:
         return None
     if not isinstance(obj, dict):
         return None
+    return obj
 
+
+def _payload_from_obj(obj: dict) -> dict:
+    """Return the semantic event payload for wrapper-style Codex JSONL rows."""
     payload = obj.get("payload")
     if isinstance(payload, dict):
         return payload
+
+    msg = obj.get("msg")
+    if isinstance(msg, dict):
+        return msg
+
+    event = obj.get("event")
+    if isinstance(event, dict):
+        return event
+
+    item = obj.get("item")
+    if isinstance(item, dict) and str(obj.get("type", "")).startswith("item."):
+        merged = dict(item)
+        merged["_outer_type"] = obj.get("type")
+        return merged
+
     return obj
+
+
+def _payload_from_line(line: bytes) -> dict | None:
+    obj = _json_obj_from_line(line)
+    if obj is None:
+        return None
+    return _payload_from_obj(obj)
+
+
+def _first_text(*values: object) -> str:
+    for value in values:
+        parts = _string_parts(value)
+        if parts:
+            return "".join(parts)
+    return ""
+
+
+def _event_id(obj: dict) -> str | None:
+    raw = obj.get("call_id") or obj.get("id") or obj.get("item_id")
+    return str(raw) if raw else None
+
+
+def _log_unknown_event(obj: dict) -> None:
+    global _unknown_event_log_count
+    if _unknown_event_log_count >= _UNKNOWN_EVENT_LOG_LIMIT:
+        return
+    _unknown_event_log_count += 1
+    payload = obj.get("payload")
+    item = obj.get("item")
+    shape: dict[str, Any] = {
+        "type": obj.get("type") or obj.get("event"),
+        "keys": sorted(str(k) for k in obj)[:20],
+    }
+    if isinstance(payload, dict):
+        shape["payload_type"] = payload.get("type") or payload.get("event")
+        shape["payload_keys"] = sorted(str(k) for k in payload)[:20]
+    if isinstance(item, dict):
+        shape["item_type"] = item.get("type") or item.get("kind")
+        shape["item_keys"] = sorted(str(k) for k in item)[:20]
+    logger.debug("ignored codex json event shape: %s", shape)
 
 
 def _parse_message_content(obj: dict) -> list[_StreamEvent]:
@@ -235,6 +297,8 @@ def _parse_message_content(obj: dict) -> list[_StreamEvent]:
 
 def _parse_usage(obj: dict) -> _StreamEvent:
     usage = obj.get("usage") or {}
+    if not usage and isinstance(obj.get("response"), dict):
+        usage = obj["response"].get("usage") or {}
     if not usage and isinstance(obj.get("info"), dict):
         info = obj["info"]
         usage = info.get("last_token_usage") or info.get("total_token_usage") or {}
@@ -245,21 +309,63 @@ def _parse_usage(obj: dict) -> _StreamEvent:
     )
 
 
-def _parse_stream_line(line: bytes) -> list[_StreamEvent]:
-    obj = _payload_from_line(line)
-    if obj is None:
-        return []
+def _parse_item_event(item: dict) -> list[_StreamEvent]:
+    itype = item.get("type") or item.get("kind")
+    if itype in ("message", "assistant_message", "output_message"):
+        return _parse_message_content(item)
+    if itype in ("output_text", "text"):
+        text = _first_text(item.get("text"), item.get("content"), item.get("message"))
+        return [_StreamEvent(kind="assistant_text", text=text)] if text else []
+    if itype in ("reasoning", "reasoning_summary", "thinking"):
+        text = _first_text(item.get("summary"), item.get("content"), item.get("text"))
+        return [_StreamEvent(kind="assistant_thinking", text=text)] if text else []
+    if itype in (
+        "function_call",
+        "custom_tool_call",
+        "tool_call",
+        "local_shell_call",
+        "mcp_tool_call",
+    ):
+        name = str(item.get("name") or item.get("tool_name") or "")
+        if not name and itype == "local_shell_call":
+            name = "exec_command"
+        if not name and itype == "mcp_tool_call":
+            name = "mcp_tool_call"
+        return [_StreamEvent(kind="tool_use", tool_name=name, call_id=_event_id(item))] if name else []
+    return []
 
-    etype = obj.get("type") or obj.get("event")
-    if etype in ("session_start", "init"):
-        return [_StreamEvent(kind="init", session_id=obj.get("session_id") or obj.get("id"))]
-    if etype == "task_started":
-        return [_StreamEvent(kind="init", session_id=obj.get("turn_id"))]
+
+def _status_events(text: str, *, session_id: str | None = None) -> list[_StreamEvent]:
+    events: list[_StreamEvent] = []
+    if session_id:
+        events.append(_StreamEvent(kind="init", session_id=session_id))
+    if text:
+        events.append(_StreamEvent(kind="assistant_thinking", text=text))
+    return events
+
+
+def _parse_payload(obj: dict) -> list[_StreamEvent]:
+    etype = obj.get("type") or obj.get("event") or obj.get("_outer_type")
+    if etype in ("session_start", "init", "thread.started", "session.created"):
+        return _status_events(
+            "Codex session started.",
+            session_id=obj.get("session_id") or obj.get("thread_id") or obj.get("id"),
+        )
+    if etype in ("task_started", "turn_started", "turn.started", "response.created"):
+        return _status_events(
+            "Codex started working.",
+            session_id=obj.get("turn_id") or obj.get("session_id") or obj.get("id"),
+        )
 
     if etype in ("assistant_delta", "message_delta"):
         return [_StreamEvent(
             kind="assistant_text",
             text=str(obj.get("text", "") or obj.get("delta", "")),
+        )]
+    if etype in ("agent_message_delta", "response.output_text.delta"):
+        return [_StreamEvent(
+            kind="assistant_text",
+            text=str(obj.get("delta", "") or obj.get("text", "")),
         )]
     if etype == "agent_message":
         return [
@@ -269,45 +375,57 @@ def _parse_stream_line(line: bytes) -> list[_StreamEvent]:
         ]
     if etype == "message":
         return _parse_message_content(obj)
-    if etype == "reasoning":
+    if etype in ("reasoning", "agent_reasoning_delta", "response.reasoning_text.delta"):
         return [
             _StreamEvent(kind="assistant_thinking", text=text)
-            for text in _string_parts(obj.get("summary") or obj.get("content"))
+            for text in _string_parts(
+                obj.get("summary") or obj.get("content") or obj.get("delta") or obj.get("text")
+            )
             if text
         ]
+    if etype in ("response.reasoning_summary_text.delta", "reasoning_summary_delta"):
+        text = str(obj.get("delta", "") or obj.get("text", ""))
+        return [_StreamEvent(kind="assistant_thinking", text=text)] if text else []
 
-    if etype in ("tool_call", "tool_use"):
+    if etype in ("tool_call", "tool_use", "function_call", "custom_tool_call"):
         return [_StreamEvent(
             kind="tool_use",
-            tool_name=str(obj.get("name", "")),
-            call_id=obj.get("call_id"),
+            tool_name=str(obj.get("name", "") or obj.get("tool_name", "") or etype),
+            call_id=_event_id(obj),
         )]
-    if etype in ("function_call", "custom_tool_call"):
-        return [_StreamEvent(
-            kind="tool_use",
-            tool_name=str(obj.get("name", "") or etype),
-            call_id=obj.get("call_id"),
-        )]
-    if etype == "exec_command_end":
+    if etype in ("response.output_item.added", "response.output_item.done"):
+        item = obj.get("item")
+        if isinstance(item, dict):
+            return _parse_item_event(item)
+        return []
+    if str(etype or "").startswith("item."):
+        return _parse_item_event(obj)
+    if etype in ("exec_command_begin", "exec_command_end"):
         return [_StreamEvent(
             kind="tool_use",
             tool_name="exec_command",
-            call_id=obj.get("call_id"),
+            call_id=_event_id(obj),
         )]
-    if etype == "patch_apply_end":
+    if etype in ("patch_apply_begin", "patch_apply_end"):
         return [_StreamEvent(
             kind="tool_use",
             tool_name="apply_patch",
-            call_id=obj.get("call_id"),
+            call_id=_event_id(obj),
+        )]
+    if etype in ("mcp_tool_call_begin", "mcp_tool_call_end"):
+        return [_StreamEvent(
+            kind="tool_use",
+            tool_name=str(obj.get("name") or obj.get("tool_name") or "mcp_tool_call"),
+            call_id=_event_id(obj),
         )]
     if etype == "view_image_tool_call":
         return [_StreamEvent(
             kind="tool_use",
             tool_name="view_image",
-            call_id=obj.get("call_id"),
+            call_id=_event_id(obj),
         )]
 
-    if etype in ("turn_end", "result"):
+    if etype in ("turn_end", "turn.completed", "result", "response.completed"):
         if obj.get("error") or obj.get("is_error"):
             return [_StreamEvent(
                 kind="error",
@@ -329,6 +447,35 @@ def _parse_stream_line(line: bytes) -> list[_StreamEvent]:
             kind="error",
             error_message=str(obj.get("reason") or "turn aborted"),
         )]
+    if etype in ("error", "response.failed"):
+        return [_StreamEvent(
+            kind="error",
+            error_message=str(
+                obj.get("message")
+                or obj.get("error")
+                or obj.get("reason")
+                or "codex error"
+            ),
+        )]
+    return []
+
+
+def _parse_stream_line(line: bytes) -> list[_StreamEvent]:
+    raw = _json_obj_from_line(line)
+    if raw is None:
+        return []
+
+    payload = _payload_from_obj(raw)
+    events = _parse_payload(payload)
+    if events:
+        return events
+
+    if payload is not raw:
+        events = _parse_payload(raw)
+        if events:
+            return events
+
+    _log_unknown_event(raw)
     return []
 
 

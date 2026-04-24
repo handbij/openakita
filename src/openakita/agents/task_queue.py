@@ -5,6 +5,7 @@ Provides async priority-based task scheduling with cancellation support.
 """
 
 import asyncio
+import enum
 import heapq
 import logging
 import time
@@ -25,6 +26,15 @@ class Priority(IntEnum):
     NORMAL = 2
     LOW = 3
     BACKGROUND = 4
+
+
+class TaskStatus(enum.StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    UNKNOWN = "unknown"
 
 
 @dataclass(order=True)
@@ -58,6 +68,7 @@ class TaskQueue:
         self._not_empty = asyncio.Event()
         self._results: dict[str, asyncio.Future] = {}
         self._active: dict[str, asyncio.Task] = {}
+        self._queued_ids: set[str] = set()
         self._max_concurrent = max_concurrent
         self._handler: Callable[[QueuedTask], Awaitable[Any]] | None = None
         self._running = False
@@ -128,6 +139,7 @@ class TaskQueue:
         async with self._lock:
             heapq.heappush(self._heap, task)
             self._results[task.task_id] = asyncio.get_running_loop().create_future()
+            self._queued_ids.add(task.task_id)
             self._total_enqueued += 1
         self._not_empty.set()
         logger.debug(f"[TaskQueue] Enqueued {task.task_id} (priority={priority.name})")
@@ -152,15 +164,70 @@ class TaskQueue:
             return True
         return False
 
-    async def wait_for(self, task_id: str, timeout: float = 120.0) -> Any:
+    async def wait_for(
+        self,
+        task_id: str,
+        timeout: float = 120.0,
+        *,
+        consume: bool = True,
+    ) -> Any:
         """Wait for a task result."""
         fut = self._results.get(task_id)
         if fut is None:
             raise KeyError(f"Unknown task: {task_id}")
         try:
-            return await asyncio.wait_for(fut, timeout=timeout)
+            return await asyncio.wait_for(asyncio.shield(fut), timeout=timeout)
         finally:
-            self._results.pop(task_id, None)
+            if consume:
+                self._results.pop(task_id, None)
+
+    def has_task(self, task_id: str) -> bool:
+        """Check if a task exists in the queue."""
+        return task_id in self._results or task_id in self._active or task_id in self._queued_ids
+
+    def get_task_status(self, task_id: str) -> TaskStatus:
+        """Get the current status of a task."""
+        if (active := self._active.get(task_id)) is not None:
+            if active.cancelled():
+                return TaskStatus.CANCELLED
+            if not active.done():
+                return TaskStatus.RUNNING
+
+        if (fut := self._results.get(task_id)) is not None:
+            if fut.cancelled():
+                return TaskStatus.CANCELLED
+            if not fut.done():
+                return TaskStatus.QUEUED
+            if fut.exception() is not None:
+                return TaskStatus.FAILED
+            return TaskStatus.COMPLETED
+
+        if task_id in self._queued_ids:
+            return TaskStatus.QUEUED
+
+        return TaskStatus.UNKNOWN
+
+    def peek_result(self, task_id: str) -> Any:
+        """Peek at a task result without consuming it."""
+        fut = self._results.get(task_id)
+        if fut is None:
+            raise KeyError(f"Unknown task: {task_id}")
+        if not fut.done():
+            raise asyncio.InvalidStateError(f"Task is not complete: {task_id}")
+        return fut.result()
+
+    async def forget(self, task_id: str) -> bool:
+        """Remove a task from the queue. Returns True if the task was found and removed."""
+        removed = False
+        async with self._lock:
+            if self._results.pop(task_id, None) is not None:
+                removed = True
+            if self._active.pop(task_id, None) is not None:
+                removed = True
+            if task_id in self._queued_ids:
+                self._queued_ids.discard(task_id)
+                removed = True
+        return removed
 
     async def _worker_loop(self) -> None:
         """Main worker loop: picks tasks from queue and executes them."""
@@ -174,6 +241,8 @@ class TaskQueue:
                 if not self._running:
                     break
                 continue  # Go back and check heap under lock
+
+            self._queued_ids.discard(task.task_id)
 
             if task.cancelled:
                 fut = self._results.pop(task.task_id, None)

@@ -31,7 +31,10 @@ class WebFetchHandler:
         url = params.get("url", "").strip()
         max_length = params.get("max_length", 15000)
         # Coerce string to int (LLM sometimes sends numeric args as strings)
-        max_length = int(max_length) if isinstance(max_length, str) else max_length
+        try:
+            max_length = int(max_length)
+        except (TypeError, ValueError):
+            max_length = 15000
 
         if not url:
             return "❌ web_fetch missing required parameter 'url'."

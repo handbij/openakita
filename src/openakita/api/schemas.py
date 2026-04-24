@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+
+class AttachmentType(str, Enum):
+    """Attachment content type."""
+
+    IMAGE = "image"
+    FILE = "file"
+    VOICE = "voice"
 
 
 class ChatRequest(BaseModel):
@@ -50,7 +59,7 @@ class ChatRequest(BaseModel):
 class AttachmentInfo(BaseModel):
     """Attachment metadata."""
 
-    type: str = Field(..., description="image | file | voice")
+    type: AttachmentType = Field(..., description="image | file | voice")
     name: str = Field(..., description="Filename")
     url: str | None = Field(None, description="URL or data URI")
     mime_type: str | None = Field(None, description="MIME type")

@@ -1819,7 +1819,9 @@ class OrgRuntime:
         from openakita.llm.types import AllEndpointsFailedError
 
         if isinstance(error, AllEndpointsFailedError):
-            return bool(error.error_categories & {"quota", "auth"})
+            categories = set(getattr(error, "error_categories", ()) or ())
+            if categories:
+                return bool(categories & {"quota", "auth"})
         err_lower = str(error).lower()
         return any(kw in err_lower for kw in [
             "insufficient balance", "insufficient_balance", "quota",

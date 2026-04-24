@@ -346,6 +346,10 @@ class LLMProvider(ABC):
         if any(
             kw in err_lower
             for kw in [
+                "(402)",
+                "more credits",
+                "fewer max_tokens",
+                "can only afford",
                 "allocationquota",
                 "freetieronly",
                 "insufficient_quota",

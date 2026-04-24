@@ -146,6 +146,25 @@ class TestGetAccessors:
             await runtime.shutdown()
 
 
+class TestQuotaAuthDetection:
+    def test_all_endpoints_failed_without_categories_does_not_crash(self):
+        error = Exception.__new__(__import__("openakita.llm.types", fromlist=["AllEndpointsFailedError"]).AllEndpointsFailedError)
+        Exception.__init__(error, "insufficient balance")
+        error.is_structural = False
+
+        assert OrgRuntime._is_quota_auth_error(error) is True
+
+    def test_all_endpoints_failed_uses_explicit_categories(self):
+        from openakita.llm.types import AllEndpointsFailedError
+
+        error = AllEndpointsFailedError(
+            "all endpoints failed",
+            error_categories={"quota"},
+        )
+
+        assert OrgRuntime._is_quota_auth_error(error) is True
+
+
 class TestSendCommand:
     async def test_send_command_to_root(
         self, runtime: OrgRuntime, org_manager: OrgManager,
@@ -356,5 +375,4 @@ class TestStateTransitions:
             assert loaded.status in (OrgStatus.ACTIVE, OrgStatus.RUNNING)
         finally:
             await runtime.shutdown()
-
 

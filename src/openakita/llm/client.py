@@ -1020,6 +1020,7 @@ class LLMClient:
                         f"All endpoints failed with structural errors "
                         f"(cooldown {min_cd}s). {hint} Last error: {last_err}",
                         is_structural=True,
+                        error_categories={"structural"},
                     )
 
                 # -- All quota/auth errors; retry is pointless -> fail fast --
@@ -1029,7 +1030,8 @@ class LLMClient:
                     hint = _friendly_error_hint(quota_or_auth)
                     raise AllEndpointsFailedError(
                         f"All endpoints failed with {'/'.join(categories)} errors. "
-                        f"{hint} Last error: {last_err}"
+                        f"{hint} Last error: {last_err}",
+                        error_categories=set(categories),
                     )
 
             # -- Fallback 3: "last-resort bypass" - bypass cooldowns (aligned with Portkey) --
@@ -1057,7 +1059,8 @@ class LLMClient:
             hint = _friendly_error_hint(base_capability_matched)
             raise AllEndpointsFailedError(
                 f"All endpoints failed with {'/'.join(categories)} errors. "
-                f"{hint} Last error: {last_err}"
+                f"{hint} Last error: {last_err}",
+                error_categories=set(categories),
             )
 
         # -- Fallback 4: final fallback - try all endpoints --
@@ -1280,7 +1283,7 @@ class LLMClient:
     ):
         """Unified retry wrapper, decisions based on structured HTTP status codes.
 
-        - 413: automatically halve max_tokens and retry once
+        - 402/413: automatically halve max_tokens and retry once
         - 429/529/503: exponential backoff + jitter (cancel-aware)
         - cancel_event: race against the cancel event
         - Errors without a status_code (timeout/connection): fall back to legacy string-matching retry logic
@@ -1291,7 +1294,7 @@ class LLMClient:
         """
         from .retry import should_retry as _legacy_should_retry
 
-        _413_retried = False
+        _token_limit_retried = False
         last_error: Exception | None = None
 
         for attempt in range(1, max_attempts + 1):
@@ -1312,13 +1315,13 @@ class LLMClient:
                 last_error = e
                 sc = e.status_code
 
-                # 413 Payload Too Large -> auto-reduce max_tokens by 50%, only once
-                if sc == 413 and request and not _413_retried:
-                    _413_retried = True
+                # 402/413 token-limit style failure -> auto-reduce max_tokens by 50%, only once
+                if sc in (402, 413) and request and not _token_limit_retried:
+                    _token_limit_retried = True
                     current = request.max_tokens or 16384
                     request.max_tokens = max(current // 2, 1024)
                     logger.info(
-                        f"[LLM] endpoint={provider_name} status=413, "
+                        f"[LLM] endpoint={provider_name} status={sc}, "
                         f"reducing max_tokens {current} → {request.max_tokens}"
                     )
                     continue
@@ -1465,7 +1468,10 @@ class LLMClient:
 
                 from .providers.base import LLMProvider as _BaseProvider
 
-                auto_category = _BaseProvider._classify_error(error_str)
+                if e.status_code == 402:
+                    auto_category = "quota"
+                else:
+                    auto_category = _BaseProvider._classify_error(error_str)
 
                 if auto_category == "quota":
                     logger.error(
@@ -1618,6 +1624,7 @@ class LLMClient:
         raise AllEndpointsFailedError(
             f"All endpoints failed: {'; '.join(errors)}\n{hint}",
             is_structural=all_structural,
+            error_categories={fp.error_category for fp in failed_providers if fp.error_category},
         )
 
     def _try_self_heal(self, error: LLMError, request: LLMRequest, provider) -> bool:

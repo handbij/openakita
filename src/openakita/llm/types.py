@@ -676,11 +676,18 @@ class UnsupportedMediaError(LLMError):
 
 
 class AllEndpointsFailedError(LLMError):
-    """All endpoints failed"""
+    """All endpoints failed."""
 
-    def __init__(self, message: str, *, is_structural: bool = False):
+    def __init__(
+        self,
+        message: str,
+        *,
+        is_structural: bool = False,
+        error_categories: set[str] | None = None,
+    ):
         super().__init__(message)
         self.is_structural = is_structural
+        self.error_categories = set(error_categories or ())
 
 
 class ConfigurationError(LLMError):

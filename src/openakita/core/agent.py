@@ -2562,20 +2562,22 @@ general Q&A yourself.
 
     # ==================== Attachment Memory Helpers ====================
 
-    def _record_inbound_attachments(
+    async def _record_inbound_attachments(
         self,
-        session_id: str,
+        session: "Session | None",
         pending_images: list | None,
         pending_videos: list | None,
         pending_audio: list | None,
         pending_files: list | None,
         desktop_attachments: list | None,
-    ) -> None:
-        """将本轮用户发送的媒体/文件记录到记忆系统"""
-        if not self.memory_manager:
-            return
+    ) -> list[str]:
+        """Process and record inbound attachments.
 
-        if pending_images:
+        Returns list of any transcripts from voice attachments.
+        """
+        transcripts: list[str] = []
+
+        if pending_images and self.memory_manager:
             for img in pending_images:
                 src = img.get("source") or {}
                 img_url = img.get("image_url")
@@ -2589,7 +2591,7 @@ general Q&A yourself.
                     file_size=img.get("file_size", 0),
                 )
 
-        if pending_videos:
+        if pending_videos and self.memory_manager:
             for vid in pending_videos:
                 src = vid.get("source") or {}
                 vid_url = vid.get("video_url")
@@ -2603,7 +2605,7 @@ general Q&A yourself.
                     file_size=vid.get("file_size", 0),
                 )
 
-        if pending_audio:
+        if pending_audio and self.memory_manager:
             for aud in pending_audio:
                 self.memory_manager.record_attachment(
                     filename=aud.get("filename", "audio"),
@@ -2614,7 +2616,7 @@ general Q&A yourself.
                     file_size=aud.get("file_size", 0),
                 )
 
-        if pending_files:
+        if pending_files and self.memory_manager:
             for fdata in pending_files:
                 self.memory_manager.record_attachment(
                     filename=fdata.get("filename", "file"),
@@ -2627,16 +2629,68 @@ general Q&A yourself.
 
         if desktop_attachments:
             for att in desktop_attachments:
-                att_type = getattr(att, "type", None) or ""
-                att_name = getattr(att, "name", None) or "file"
-                att_url = getattr(att, "url", None) or ""
-                att_mime = getattr(att, "mime_type", None) or att_type
-                self.memory_manager.record_attachment(
-                    filename=att_name,
-                    mime_type=att_mime,
-                    url=att_url,
-                    direction="inbound",
-                )
+                # Support both dict-style and object-style access
+                if isinstance(att, dict):
+                    att_type = att.get("type", "")
+                    att_name = att.get("name", "file")
+                    att_url = att.get("url", "")
+                    att_mime = att.get("mime_type", "") or att_type
+                else:
+                    att_type = getattr(att, "type", None) or ""
+                    att_name = getattr(att, "name", None) or "file"
+                    att_url = getattr(att, "url", None) or ""
+                    att_mime = getattr(att, "mime_type", None) or att_type
+
+                # Handle voice attachments - transcribe via MediaHandler
+                if att_type in (AttachmentType.VOICE.value, AttachmentType.VOICE, "voice"):
+                    if att_url:
+                        try:
+                            from ..channels.media.handler import MediaHandler
+
+                            handler = MediaHandler()
+                            transcript = await process_voice_attachment(
+                                url=att_url,
+                                handler=handler,
+                            )
+                            if transcript:
+                                transcripts.append(transcript)
+                                # Store in session context for tool access
+                                if session:
+                                    session.set_metadata(
+                                        f"voice_transcript_{att_name}",
+                                        transcript,
+                                    )
+                                logger.info(
+                                    f"[Agent] Voice attachment transcribed: {att_name} -> {len(transcript)} chars"
+                                )
+                        except Exception as e:
+                            logger.warning(f"[Agent] Voice transcription failed for {att_name}: {e}")
+
+                # Record to memory
+                if self.memory_manager:
+                    self.memory_manager.record_attachment(
+                        filename=att_name,
+                        mime_type=att_mime,
+                        url=att_url,
+                        direction="inbound",
+                    )
+
+        return transcripts
+
+    def _build_user_message_with_attachments(
+        self,
+        message: str,
+        transcripts: list[str],
+    ) -> str:
+        """Build user message with any voice transcripts prepended."""
+        if not transcripts:
+            return message
+
+        transcript_section = "\n".join(
+            f"[Voice transcript]: {t}" for t in transcripts
+        )
+
+        return f"{transcript_section}\n\n{message}"
 
     @staticmethod
     def _extract_outbound_attachments(
@@ -4080,14 +4134,25 @@ general Q&A yourself.
             messages.append({"role": "user", "content": compiled_message})
 
         # 10.5. Record incoming attachments (images/videos/files) to memory
-        self._record_inbound_attachments(
-            session_id,
+        # Also transcribe voice attachments and return transcripts
+        voice_transcripts = await self._record_inbound_attachments(
+            session,
             pending_images,
             pending_videos,
             pending_audio,
             pending_files,
             attachments,
         )
+        # If there are voice transcripts, prepend them to the user message
+        if voice_transcripts:
+            compiled_message = self._build_user_message_with_attachments(
+                compiled_message,
+                voice_transcripts,
+            )
+            logger.info(
+                f"[Session:{session_id}] Voice transcripts added to message: "
+                f"{len(voice_transcripts)} transcript(s)"
+            )
 
         # 11. Context compression
         messages = await self._compress_context(messages)

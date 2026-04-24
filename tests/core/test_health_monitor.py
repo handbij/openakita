@@ -59,3 +59,27 @@ async def test_health_monitor_finds_stale_tasks():
     report = await monitor.check_health(orchestrator=mock_orchestrator)
 
     assert "sess_1" in report.stale_tasks
+
+
+@pytest.mark.asyncio
+async def test_health_monitor_auto_cancels_stale_tasks():
+    import time
+
+    config = HealthConfig(stale_task_age=1)
+    monitor = HealthMonitor(config=config)
+
+    # Mock agent with cancel method
+    mock_agent = MagicMock()
+    mock_agent.cancel_current_task = MagicMock()
+
+    monitor._agents = {"sess_1": mock_agent}
+    monitor._active_tasks = {
+        "sess_1": {"task_id": "t1", "start_time": time.time() - 10}
+    }
+
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.cleanup_expired_delegations = AsyncMock(return_value=[])
+
+    await monitor.check_health(orchestrator=mock_orchestrator, auto_recover=True)
+
+    mock_agent.cancel_current_task.assert_called_once()

@@ -12,7 +12,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ..agents.orchestrator import AgentOrchestrator
@@ -42,6 +42,7 @@ class HealthMonitor:
     def __init__(self, config: HealthConfig | None = None):
         self.config = config or HealthConfig()
         self._active_tasks: dict[str, dict] = {}
+        self._agents: dict[str, Any] = {}
         self._running = False
         self._task: asyncio.Task | None = None
 
@@ -61,11 +62,21 @@ class HealthMonitor:
         """Remove a task from tracking (completed or cancelled)."""
         self._active_tasks.pop(session_id, None)
 
+    def register_agent(self, session_id: str, agent: Any) -> None:
+        """Register an agent for auto-recovery."""
+        self._agents[session_id] = agent
+
     async def check_health(
         self,
         orchestrator: "AgentOrchestrator | None" = None,
+        auto_recover: bool = False,
     ) -> HealthReport:
-        """Run a single health check across all subsystems."""
+        """Run a single health check across all subsystems.
+
+        Args:
+            orchestrator: Optional orchestrator for delegation cleanup
+            auto_recover: If True, automatically cancel stale tasks
+        """
         stale_tasks = self._find_stale_tasks()
         stale_delegations = []
 
@@ -73,6 +84,9 @@ class HealthMonitor:
             stale_delegations = await orchestrator.cleanup_expired_delegations()
 
         orphaned = self._find_orphaned_processes()
+
+        if auto_recover and stale_tasks:
+            await self._recover_stale_tasks(stale_tasks)
 
         report = HealthReport(
             stale_tasks=stale_tasks,
@@ -89,6 +103,18 @@ class HealthMonitor:
             )
 
         return report
+
+    async def _recover_stale_tasks(self, session_ids: list[str]) -> None:
+        """Cancel stale tasks and notify users."""
+        for session_id in session_ids:
+            agent = self._agents.get(session_id)
+            if agent and hasattr(agent, 'cancel_current_task'):
+                logger.warning(f"[HealthMonitor] Auto-cancelling stale task: {session_id}")
+                agent.cancel_current_task(
+                    reason="Task cancelled by health monitor (exceeded max age)",
+                    session_id=session_id,
+                )
+            self.unregister_task(session_id)
 
     def _find_stale_tasks(self) -> list[str]:
         """Find tasks that have been running too long."""

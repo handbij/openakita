@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from openakita.agents.profile import AgentType
-from openakita.agents.task_queue import TaskQueue
+from openakita.agents.task_queue import Priority, QueuedTask, TaskQueue
 from openakita.core.timeout_utils import check_progress_timeout
 
 if TYPE_CHECKING:
@@ -333,6 +333,12 @@ class AgentOrchestrator:
         # Key: "{session_id}:{agent_profile_id}", Value: state dict
         self._sub_agent_states: dict[str, dict] = {}
         self._sub_cleanup_tasks: dict[str, asyncio.Task] = {}
+
+        # Async delegation indexes
+        self._delegations: dict[str, DelegationRecord] = {}
+        self._queue_to_delegation: dict[str, str] = {}
+        self._batches: dict[str, BatchRecord] = {}
+        self._task_queue.set_handler(self._run_queued_delegation)
 
     # ------------------------------------------------------------------
     # External wiring
@@ -1405,6 +1411,266 @@ class AgentOrchestrator:
         return default
 
     # ------------------------------------------------------------------
+    # State and handoff helpers
+    # ------------------------------------------------------------------
+
+    def _prepare_sub_agent_state(
+        self,
+        session: Any,
+        *,
+        from_agent: str,
+        to_agent: str,
+        reason: str,
+        delegation_id: str | None = None,
+        batch_id: str | None = None,
+    ) -> str:
+        state_key = f"{session.id}:{to_agent}:{uuid.uuid4().hex[:8]}"
+        profile_name = to_agent
+        profile_icon = "🤖"
+        agent_type = None
+        cli_provider_id = None
+
+        if self._profile_store:
+            profile = self._profile_store.get(to_agent)
+            if profile:
+                profile_name = profile.get_display_name()
+                profile_icon = profile.icon or "🤖"
+                agent_type = profile.type.value
+                cli_provider_id = (
+                    profile.cli_provider_id.value
+                    if getattr(profile, "cli_provider_id", None)
+                    else None
+                )
+
+        self._sub_agent_states[state_key] = {
+            "agent_id": to_agent,
+            "profile_id": to_agent,
+            "agent_type": agent_type,
+            "cli_provider_id": cli_provider_id,
+            "session_id": session.id,
+            "chat_id": getattr(session, "chat_id", session.id),
+            "name": profile_name,
+            "icon": profile_icon,
+            "status": SubAgentStatus.STARTING.value,
+            "iteration": 0,
+            "tools_executed": [],
+            "tools_total": 0,
+            "elapsed_s": 0,
+            "live_entries": [],
+            "from_agent": from_agent,
+            "reason": reason or "",
+            "delegation_id": delegation_id,
+            "batch_id": batch_id,
+        }
+        return state_key
+
+    @staticmethod
+    def _append_handoff_event(session: Any, from_agent: str, to_agent: str, reason: str) -> None:
+        if not session or not hasattr(session, "context"):
+            return
+        if not hasattr(session.context, "handoff_events"):
+            return
+        session.context.handoff_events.append(
+            {"from_agent": from_agent, "to_agent": to_agent, "reason": reason or ""}
+        )
+        if len(session.context.handoff_events) > MAX_HANDOFF_EVENTS:
+            session.context.handoff_events = session.context.handoff_events[-MAX_HANDOFF_EVENTS:]
+
+    # ------------------------------------------------------------------
+    # Async delegation launch
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _new_delegation_id() -> str:
+        return f"{DLG_ID_PREFIX}{uuid.uuid4().hex[:12]}"
+
+    @staticmethod
+    def _new_batch_id() -> str:
+        return f"{BATCH_ID_PREFIX}{uuid.uuid4().hex[:12]}"
+
+    async def start_delegation(
+        self,
+        *,
+        session: Any,
+        from_agent: str,
+        to_agent: str,
+        message: str,
+        depth: int = 0,
+        reason: str = "",
+        isolated_browser: Any = None,
+        batch_id: str | None = None,
+        display_id: str | None = None,
+    ) -> dict[str, Any]:
+        self._ensure_deps()
+        delegation_id = self._new_delegation_id()
+        state_key = self._prepare_sub_agent_state(
+            session,
+            from_agent=from_agent,
+            to_agent=to_agent,
+            reason=reason,
+            delegation_id=delegation_id,
+            batch_id=batch_id,
+        )
+        self._append_handoff_event(session, from_agent, to_agent, reason)
+
+        payload = {
+            "session": session,
+            "from_agent": from_agent,
+            "to_agent": to_agent,
+            "message": message,
+            "depth": depth,
+            "reason": reason or "",
+            "isolated_browser": isolated_browser,
+            "state_key": state_key,
+            "delegation_id": delegation_id,
+        }
+        queue_task_id = await self._task_queue.enqueue(
+            getattr(session, "session_key", session.id),
+            to_agent,
+            payload,
+            Priority.NORMAL,
+        )
+
+        record = DelegationRecord(
+            delegation_id=delegation_id,
+            queue_task_id=queue_task_id,
+            state_key=state_key,
+            session_id=session.id,
+            chat_id=getattr(session, "chat_id", session.id),
+            from_agent=from_agent,
+            to_agent=to_agent,
+            batch_id=batch_id,
+            status=SubAgentStatus.STARTING,
+        )
+        self._delegations[delegation_id] = record
+        self._queue_to_delegation[queue_task_id] = delegation_id
+        await self._task_queue.start()
+
+        return {
+            "status": "async_launched",
+            "delegation_id": delegation_id,
+            "agent_id": display_id or to_agent,
+            "queue_task_id": queue_task_id,
+        }
+
+    async def start_delegation_batch(
+        self,
+        *,
+        session: Any,
+        from_agent: str,
+        tasks: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        batch_id = self._new_batch_id()
+
+        async def launch_one(task: dict[str, Any]) -> dict[str, Any]:
+            return await self.start_delegation(
+                session=session,
+                from_agent=from_agent,
+                to_agent=str(task["agent_id"]),
+                message=str(task["message"]),
+                reason=str(task.get("reason", "") or ""),
+                isolated_browser=task.get("isolated_browser"),
+                batch_id=batch_id,
+                display_id=str(task.get("display_id") or task["agent_id"]),
+            )
+
+        delegations = await asyncio.gather(*[launch_one(task) for task in tasks])
+
+        self._batches[batch_id] = BatchRecord(
+            batch_id=batch_id,
+            delegation_ids=[item["delegation_id"] for item in delegations],
+            session_id=session.id,
+        )
+
+        return {"status": "async_batch_launched", "batch_id": batch_id, "delegations": list(delegations)}
+
+    async def _run_queued_delegation(self, task: QueuedTask) -> str:
+        delegation_id = self._queue_to_delegation.get(task.task_id)
+        if not delegation_id:
+            raise KeyError(f"Unknown queued delegation: {task.task_id}")
+
+        record = self._delegations[delegation_id]
+        record.mark_running()
+        payload = task.payload
+        try:
+            return await self._dispatch(
+                payload["session"],
+                payload["message"],
+                payload["to_agent"],
+                int(payload.get("depth", 0)) + 1,
+                from_agent=payload["from_agent"],
+                isolated_browser=payload.get("isolated_browser"),
+                pre_state_key=payload["state_key"],
+            )
+        finally:
+            isolated = payload.get("isolated_browser")
+            if isolated is not None and hasattr(isolated, "stop"):
+                await isolated.stop()
+
+    def _serialize_delegation_record(self, record: DelegationRecord) -> dict[str, Any]:
+        state = self._sub_agent_states.get(record.state_key, {})
+        if state:
+            payload = self._serialize_sub_state(
+                state,
+                status=record.status.value,
+                include_live_entries=True,
+            )
+        else:
+            payload = {
+                "session_id": record.session_id,
+                "chat_id": record.chat_id,
+                "agent_id": record.to_agent,
+                "profile_id": record.to_agent,
+                "status": record.status.value,
+            }
+
+        payload.update(
+            {
+                "delegation_id": record.delegation_id,
+                "batch_id": record.batch_id,
+                "queue_task_id": record.queue_task_id,
+                "from_agent": record.from_agent,
+                "to_agent": record.to_agent,
+                "created_at": record.created_at,
+                "updated_at": record.updated_at,
+                "expires_at": record.expires_at,
+            }
+        )
+        if record.terminal:
+            payload["terminal"] = {
+                "status": record.terminal.status.value,
+                "result": record.terminal.result,
+                "error": record.terminal.error,
+                "cancel_reason": record.terminal.cancel_reason,
+                "completed_at": record.terminal.completed_at,
+            }
+        return payload
+
+    def get_delegation_status(self, target: dict[str, Any] | DelegationTarget) -> dict[str, Any]:
+        parsed = target if isinstance(target, DelegationTarget) else DelegationTarget.from_dict(target)
+        if parsed.type == DelegationTargetType.DELEGATION:
+            record = self._delegations.get(parsed.id)
+            if record is None:
+                raise KeyError(f"Unknown delegation: {parsed.id}")
+            return self._serialize_delegation_record(record)
+
+        batch = self._batches.get(parsed.id)
+        if batch is None:
+            raise KeyError(f"Unknown batch: {parsed.id}")
+        return {
+            "target": {"type": parsed.type.value, "id": parsed.id},
+            "batch_id": batch.batch_id,
+            "session_id": batch.session_id,
+            "created_at": batch.created_at,
+            "expires_at": batch.expires_at,
+            "delegations": [
+                self._serialize_delegation_record(self._delegations[delegation_id])
+                for delegation_id in batch.delegation_ids
+                if delegation_id in self._delegations
+            ],
+        }
+
+    # ------------------------------------------------------------------
     # Delegation (called by agent tools)
     # ------------------------------------------------------------------
 
@@ -1448,53 +1714,16 @@ class AgentOrchestrator:
 
         # Pre-register sub-agent state immediately so frontend polling
         # can pick it up before _run_with_progress_timeout starts
-        state_key = f"{session.id}:{to_agent}:{uuid.uuid4().hex[:8]}"
-        profile_name = to_agent
-        profile_icon = "🤖"
-        agent_type = None
-        cli_provider_id = None
-        if self._profile_store:
-            p = self._profile_store.get(to_agent)
-            if p:
-                profile_name = p.get_display_name()
-                profile_icon = p.icon or "🤖"
-                agent_type = p.type.value
-                cli_provider_id = (
-                    p.cli_provider_id.value if getattr(p, "cli_provider_id", None) else None
-                )
-        self._sub_agent_states[state_key] = {
-            "agent_id": to_agent,
-            "profile_id": to_agent,
-            "agent_type": agent_type,
-            "cli_provider_id": cli_provider_id,
-            "session_id": session.id,
-            "chat_id": getattr(session, "chat_id", session.id),
-            "name": profile_name,
-            "icon": profile_icon,
-            "status": "starting",
-            "iteration": 0,
-            "tools_executed": [],
-            "tools_total": 0,
-            "elapsed_s": 0,
-            "live_entries": [],
-            "from_agent": from_agent,
-            "reason": reason or "",
-        }
+        state_key = self._prepare_sub_agent_state(
+            session,
+            from_agent=from_agent,
+            to_agent=to_agent,
+            reason=reason,
+        )
 
         # Emit handoff event for SSE stream (session.context.handoff_events)
-        if session and hasattr(session, "context") and hasattr(session.context, "handoff_events"):
-            _MAX_HANDOFF_EVENTS = 100
-            session.context.handoff_events.append(
-                {
-                    "from_agent": from_agent,
-                    "to_agent": to_agent,
-                    "reason": reason or "",
-                }
-            )
-            if len(session.context.handoff_events) > _MAX_HANDOFF_EVENTS:
-                session.context.handoff_events = session.context.handoff_events[
-                    -_MAX_HANDOFF_EVENTS:
-                ]
+        self._append_handoff_event(session, from_agent, to_agent, reason)
+
         return await self._dispatch(
             session,
             message,

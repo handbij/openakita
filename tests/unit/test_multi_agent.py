@@ -1774,3 +1774,100 @@ class TestConcurrency:
         assert len(results) == 5
         for i, r in enumerate(results):
             assert f"agent-{i}" in r
+
+
+# ================================================================
+# Async Delegation Launch Tests
+# ================================================================
+
+class TestAsyncDelegationLaunch:
+    @pytest.mark.asyncio
+    async def test_start_delegation_returns_before_dispatch_completes(self):
+        orch = AgentOrchestrator()
+        session = _make_session(session_id="async-sess")
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def fake_dispatch(*args, **kwargs):
+            started.set()
+            await release.wait()
+            return "sub-agent result"
+
+        orch._ensure_deps = MagicMock()
+        orch._dispatch = AsyncMock(side_effect=fake_dispatch)
+
+        try:
+            launch = await orch.start_delegation(
+                session=session,
+                from_agent="default",
+                to_agent="helper",
+                message="[Task Instruction]\ndo work",
+                reason="test",
+            )
+
+            assert launch["status"] == "async_launched"
+            assert launch["delegation_id"].startswith("dlg_")
+            assert launch["agent_id"] == "helper"
+            assert len(session.context.handoff_events) == 1
+
+            await asyncio.wait_for(started.wait(), timeout=1.0)
+            status = orch.get_delegation_status(
+                {"type": "delegation", "id": launch["delegation_id"]}
+            )
+            assert status["delegation_id"] == launch["delegation_id"]
+            assert status["status"] in {"starting", "running"}
+
+            release.set()
+            record = orch._delegations[launch["delegation_id"]]
+            assert await orch.task_queue.wait_for(
+                record.queue_task_id,
+                timeout=1.0,
+                consume=False,
+            ) == "sub-agent result"
+        finally:
+            await orch.task_queue.stop()
+
+    @pytest.mark.asyncio
+    async def test_start_delegation_batch_returns_one_batch_handle(self):
+        orch = AgentOrchestrator()
+        session = _make_session(session_id="batch-sess")
+
+        async def fake_dispatch(*args, **kwargs):
+            await asyncio.sleep(0.01)
+            return "done"
+
+        orch._ensure_deps = MagicMock()
+        orch._dispatch = AsyncMock(side_effect=fake_dispatch)
+
+        try:
+            launch = await orch.start_delegation_batch(
+                session=session,
+                from_agent="default",
+                tasks=[
+                    {
+                        "agent_id": "helper-a",
+                        "message": "[Task Instruction]\nA",
+                        "reason": "A",
+                        "display_id": "helper-a",
+                    },
+                    {
+                        "agent_id": "helper-b",
+                        "message": "[Task Instruction]\nB",
+                        "reason": "B",
+                        "display_id": "helper-b",
+                    },
+                ],
+            )
+
+            assert launch["status"] == "async_batch_launched"
+            assert launch["batch_id"].startswith("batch_")
+            assert len(launch["delegations"]) == 2
+            assert len(session.context.handoff_events) == 2
+
+            batch_status = orch.get_delegation_status(
+                {"type": "batch", "id": launch["batch_id"]}
+            )
+            assert batch_status["batch_id"] == launch["batch_id"]
+            assert len(batch_status["delegations"]) == 2
+        finally:
+            await orch.task_queue.stop()

@@ -3446,8 +3446,7 @@ general Q&A yourself.
         try:
             self._has_pending_image_attachments = bool(attachments) and any(
                 (
-                    (att_type := (getattr(a, "type", "") or "")) == AttachmentType.IMAGE.value
-                    or att_type == AttachmentType.IMAGE
+                    (att_type := (getattr(a, "type", "") or "")) == AttachmentType.IMAGE
                     or (getattr(a, "mime_type", "") or "").startswith("image/")
                     or (getattr(a, "url", "") or "").startswith("data:image/")
                 )
@@ -3819,8 +3818,7 @@ general Q&A yourself.
                 att_mime = getattr(att, "mime_type", None) or att_type
 
                 is_image = (
-                    att_type == AttachmentType.IMAGE.value
-                    or att_type == AttachmentType.IMAGE
+                    att_type == AttachmentType.IMAGE
                     or (att_mime or "").startswith("image/")
                     or (att_url or "").startswith("data:image/")
                 )

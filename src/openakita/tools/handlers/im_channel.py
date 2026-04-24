@@ -121,13 +121,18 @@ class IMChannelHandler:
                 return await self._get_chat_history(params)
             return self._get_chat_history_desktop(params)
 
+        # get_voice_file and get_image_file support Desktop mode with fallback
+        if tool_name == "get_voice_file":
+            if get_im_session():
+                return self._get_voice_file(params)
+            return await self._get_voice_file_desktop(params)
+        elif tool_name == "get_image_file":
+            if get_im_session():
+                return self._get_image_file(params)
+            return self._get_image_file_desktop(params)
+
         if not get_im_session():
             return "❌ Not currently in an IM session; this tool cannot be used"
-
-        if tool_name == "get_voice_file":
-            return self._get_voice_file(params)
-        elif tool_name == "get_image_file":
-            return self._get_image_file(params)
         elif tool_name in (
             "get_chat_info",
             "get_user_info",
@@ -898,6 +903,103 @@ class IMChannelHandler:
                 return f"Image file path: {local_path}"
 
         return "❌ Current message has no image file"
+
+    async def _get_voice_file_desktop(self, params: dict) -> str:
+        """Get voice file path in Desktop mode (from desktop attachments)."""
+        session = getattr(self.agent, "_current_session", None)
+        if not session:
+            sid = getattr(self.agent, "_current_session_id", None)
+            if sid:
+                sm = getattr(self.agent, "_session_manager", None)
+                if sm:
+                    session = sm.get_session_by_id(sid)
+
+        if not session:
+            return "❌ No active session; cannot retrieve voice file"
+
+        # Check for voice transcripts stored by _record_inbound_attachments
+        voice_transcripts = []
+        for key in session.list_metadata_keys() if hasattr(session, "list_metadata_keys") else []:
+            if key.startswith("voice_transcript_"):
+                transcript = session.get_metadata(key)
+                if transcript:
+                    voice_transcripts.append((key.replace("voice_transcript_", ""), transcript))
+
+        if voice_transcripts:
+            result = "Voice attachments found:\n"
+            for name, transcript in voice_transcripts:
+                result += f"\n📎 {name}:\nTranscription: {transcript}\n"
+            return result
+
+        # Check pending_audio (may exist from IM-style processing)
+        pending_audio = session.get_metadata("pending_audio")
+        if pending_audio and len(pending_audio) > 0:
+            audio = pending_audio[0]
+            local_path = audio.get("local_path")
+            if local_path and Path(local_path).exists():
+                transcription = audio.get("transcription")
+                info = f"Voice file path: {local_path}"
+                if transcription:
+                    info += f"\nTranscription: {transcription}"
+                return info
+
+        # Check desktop_attachments metadata for voice type
+        desktop_attachments = session.get_metadata("desktop_attachments")
+        if desktop_attachments:
+            for att in desktop_attachments:
+                att_type = att.get("type", "") if isinstance(att, dict) else getattr(att, "type", "")
+                if att_type in ("voice", "audio"):
+                    url = att.get("url", "") if isinstance(att, dict) else getattr(att, "url", "")
+                    name = att.get("name", "audio") if isinstance(att, dict) else getattr(att, "name", "audio")
+                    if url:
+                        # Try to resolve the URL to local file
+                        from ...core.agent import resolve_attachment_to_local
+                        try:
+                            local_path = await resolve_attachment_to_local(url)
+                            if local_path and Path(local_path).exists():
+                                return f"Voice file path: {local_path}\nFilename: {name}"
+                        except Exception as e:
+                            logger.warning(f"[IM] Failed to resolve voice attachment: {e}")
+                    return f"Voice attachment: {name} (URL: {url[:50]}...)" if url else f"Voice attachment: {name}"
+
+        return "❌ No voice file found in current session"
+
+    def _get_image_file_desktop(self, params: dict) -> str:
+        """Get image file path in Desktop mode (from desktop attachments)."""
+        session = getattr(self.agent, "_current_session", None)
+        if not session:
+            sid = getattr(self.agent, "_current_session_id", None)
+            if sid:
+                sm = getattr(self.agent, "_session_manager", None)
+                if sm:
+                    session = sm.get_session_by_id(sid)
+
+        if not session:
+            return "❌ No active session; cannot retrieve image file"
+
+        # Check pending_images (may exist from IM-style processing)
+        pending_images = session.get_metadata("pending_images")
+        if pending_images and len(pending_images) > 0:
+            image = pending_images[0]
+            local_path = image.get("local_path")
+            if local_path and Path(local_path).exists():
+                return f"Image file path: {local_path}"
+
+        # Check desktop_attachments metadata for image type
+        desktop_attachments = session.get_metadata("desktop_attachments")
+        if desktop_attachments:
+            for att in desktop_attachments:
+                att_type = att.get("type", "") if isinstance(att, dict) else getattr(att, "type", "")
+                if att_type == "image":
+                    url = att.get("url", "") if isinstance(att, dict) else getattr(att, "url", "")
+                    name = att.get("name", "image") if isinstance(att, dict) else getattr(att, "name", "image")
+                    if url and url.startswith("file://"):
+                        local_path = url[7:]  # Remove file:// prefix
+                        if Path(local_path).exists():
+                            return f"Image file path: {local_path}"
+                    return f"Image attachment: {name} (URL available)"
+
+        return "❌ No image file found in current session"
 
     def _fallback_history_from_sqlite(self, session, limit: int) -> str | None:
         """Fallback: load history from SQLite conversation_turns (for process-crash recovery)"""

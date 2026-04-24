@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 
-class AttachmentType(str, Enum):
+class AttachmentType(StrEnum):
     """Attachment content type."""
 
     IMAGE = "image"

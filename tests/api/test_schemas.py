@@ -31,3 +31,10 @@ def test_attachment_info_rejects_invalid_type():
             type="invalid_type",
             name="file.txt",
         )
+
+
+def test_attachment_info_serialises_type_as_string():
+    att = AttachmentInfo(type=AttachmentType.IMAGE, name="photo.jpg")
+    data = att.model_dump()
+    assert data["type"] == "image"
+    assert isinstance(data["type"], str)
